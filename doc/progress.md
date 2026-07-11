@@ -74,7 +74,9 @@ Create Lab（Micro/Standard Profile）→ Plan（资源分配预览）→ Apply�
 
 周期采集已部署 lab 的**实际状态**并回填，UI 显示真实状态而非期望状态。
 
-- **两档采集**（`internal/observer`，Kratos transport.Server 生命周期）：2s 快速采集（一条 `docker ps -a` 批量拿全部容器状态）；6s 深度采集（并发信号量 8，对每个 running 容器单次 exec 组合脚本一次拿到接口 up/total、BGP established/configured、路由总数）。设计 §13 的 2/3/5s 分表合并为两档，减少 exec 压力；noop 运行时整体跳过。
+- **两档采集**（`internal/observer`，Kratos transport.Server 生命周期）：2s 快速采集（一条 `docker ps -a` 批量拿全部容器状态）；6s 深度采集（并发信号量 8，对每个 running 容器单次 exec 组合脚本一次拿到接口状态、BGP established/configured、路由总数、VRRP 角色）。设计 §13 的 2/3/5s 分表合并为两档，减少 exec 压力；noop 运行时整体跳过。
+- **接口统计只覆盖模拟对象**：拓扑链路端点 + 建模的逻辑接口（leaf 的 vlanif、server 的 bond0），并逐接口回填 up/down；br0、VRRP macvlan、管理口 eth0 等实现层接口不计入，仿真视图与拓扑模型口径一致。VRRP 网关角色（Master/Backup）单独采集（`show vrrp json`），避免把 backup 侧 macvlan 的 protodown 误读为接口故障。
+- **管理视角按需查询**：`GET /api/v1/labs/{labId}/nodes/{nodeId}/runtime`（`biz.RuntimeUsecase`）返回底层容器状态与全部内核接口（名称/状态/MAC/地址，含实现层管道），只在打开时 exec，不进周期采集。
 - **漂移自动纠正**（有意突破"Observer 只写 Observed"原则）：容器实际状态映射 node phase（running→Running / paused→Stopped / 其它→Failed），lab phase 由设备推导（全开 Running / 全停 Stopped / 混合 Degraded），Planning 等过渡态不碰；手动 `docker pause`、宿主机重启等漂移在一个采集周期内自动收敛。
 - **WebSocket 推送**：`GET /ws/v1/labs/{labId}/topology`，连接即发最新快照、每次采集全量推送；慢消费者跳帧不阻塞。`lastObserved` 语义为"数据最后变化时间"——仅观测值变化时落库，稳态零写放大。
 - 单测覆盖漂移纠正、稳态零写、未部署跳过、订阅广播与解析函数。
@@ -82,7 +84,7 @@ Create Lab（Micro/Standard Profile）→ Plan（资源分配预览）→ Apply�
 ### Web UI(Vue 3 + TypeScript + Pinia + Element Plus + Cytoscape.js)
 
 - **三页面**：Labs（创建/Plan 预览/Apply/删除）、Topology、Operations（步骤进度，2s 轮询）；vue-i18n 国际化（中/英，默认跟随系统，可切换）。
-- **拓扑画布**：分层 Clos 布局 + Pod/机柜 compound 分组框；按角色语义化设备图标（内联 SVG），右上角实时状态角标（绿=运行且 BGP 全建立 / 橙=BGP 未收敛 / 灰=暂停 / 红=异常）；所有链路统一细的近黑灰（`#303133`）静态实线，选中设备蓝色边框并联动高亮直连链路，停止设备及其链路置灰；观测推送走**增量更新**（结构未变时原地刷新图标/类，不重置用户缩放/拖拽）；节点抽屉展示配置 + 实时观测（运行状态、BGP 会话 x/y、路由数、接口 up x/y、最后观测时间），抽屉非模态（开着也能继续操作画布）。
+- **拓扑画布**：分层 Clos 布局 + Pod/机柜 compound 分组框；按角色语义化设备图标（内联 SVG），右上角实时状态角标（绿=运行且 BGP 全建立 / 橙=BGP 未收敛 / 灰=暂停 / 红=异常）；所有链路统一细的近黑灰（`#303133`）静态实线，选中设备蓝色边框并联动高亮直连链路，停止设备及其链路置灰；观测推送走**增量更新**（结构未变时原地刷新图标/类，不重置用户缩放/拖拽）；节点抽屉分「模拟视角 / 运行时」两个标签页——模拟视角展示配置 + 实时观测（运行状态、BGP 会话 x/y、路由数、接口 up x/y、VRRP 网关角色、最后观测时间）、接口表（拓扑链路 + vlanif/bond0，逐接口 up/down，本端/对端地址）与 BGP 配置表（`GET /api/v1/labs/{labId}/nodes/{nodeId}/bgp`，`TopologyUsecase.GetNodeBGP` 直接复用 `frr.BuildRouterConfigs`，展示邻居/远端 AS/对端与 leaf 的 SERVERS 动态监听组，与下发的 frr.conf 永不漂移），路由三层按真实运维逻辑分标签页按需拉取——**BGP**（`/nodes/{id}/bgp-table`，`show ip bgp json` 的 Loc-RIB 全部候选路径，best/multi/iBGP 标记 + AS-Path + 下一跳设备名，best path 选择前的视角）、**RIB**（`/nodes/{id}/routes`，zebra 路由表，前缀/协议/AD/Metric/ECMP 下一跳）、**FIB**（`/nodes/{id}/fib`，内核 `ip -j route show table all`，对齐真实交换机的两层：main 表 LPM 转发条目 + local 表本机条目（标 `local`，等价 ASIC host/punt 表），broadcast/multicast/127/8/IPv6 等内核噪声过滤），三层条目数呈漏斗递减，可直观对照 best path 选择与 RIB→FIB 下装；运行时标签页按需拉取底层容器状态与全部内核接口（含 br0、VRRP macvlan、eth0 等实现细节）；抽屉非模态（开着也能继续操作画布，点画布空白自动收回）。
 - **Web 终端**：双击设备节点弹出可拖拽/缩放/最大化的悬浮多标签 xterm.js 终端（交换机/路由器进 vtysh，server 进 bash），经 WebSocket 对接容器内 PTY（creack/pty + `docker exec -it`）；最小化停靠为右下角胶囊（会话数 + hover 列表 + 后台活动指示点）。
 - **启停控制**：页头一键启停数据中心按钮 + 节点抽屉设备启停按钮。
 - 前端加入 Playwright（devDependency），用于 UI 验证截图与后续 E2E。

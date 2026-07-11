@@ -26,7 +26,8 @@ Web UI 查看拓扑(分层 Clos 视图 + Pod/机柜分组框 + 统一配色链�
 - **前端**：Vue 3 + TypeScript + Pinia + Element Plus + Cytoscape.js，Labs / Topology / Operations 三个页面；vue-i18n 国际化（简体中文/English，默认跟随系统语言，可在侧边栏切换）。
 - **Web 终端**：拓扑图上双击设备节点，弹出可拖拽/缩放的悬浮多标签 xterm.js 终端（交换机/路由器进 vtysh，server 进 bash），经 WebSocket（`/ws/v1/labs/{labId}/nodes/{nodeId}/terminal`）对接容器内 PTY；需 containerlab 运行时且 lab 已部署。
 - **启停控制**：一键启停整个数据中心与设备粒度启停，统一为 docker pause/unpause 冻结语义 —— 保留 veth 接线与设备配置，停止即静默（邻居 BGP/VRRP 按真实故障收敛），启动即秒级解冻；停止的设备与其相关链路在拓扑图上置灰。
-- **Observer 状态采集**：周期采集容器运行态（2s）与 BGP 会话/路由数/接口状态（6s，单次 exec 组合脚本），回填 Node observed 状态并经 WebSocket（`/ws/v1/labs/{labId}/topology`）实时推送；拓扑节点显示状态角标（绿=运行/橙=BGP 未收敛/灰=暂停/红=异常），节点抽屉展示真实 BGP 会话、路由数、接口状态；观测到手动 pause、宿主机重启等造成的状态漂移会自动纠正 node/lab phase。
+- **Observer 状态采集**：周期采集容器运行态（2s）与 BGP 会话/路由数/接口状态/VRRP 角色（6s，单次 exec 组合脚本），回填 Node observed 状态并经 WebSocket（`/ws/v1/labs/{labId}/topology`）实时推送；接口统计只覆盖模拟对象（拓扑链路端点 + leaf vlanif / server bond0），网桥、VRRP macvlan、管理口等实现层接口归运行时视角；拓扑节点显示状态角标（绿=运行/橙=BGP 未收敛/灰=暂停/红=异常）；观测到手动 pause、宿主机重启等造成的状态漂移会自动纠正 node/lab phase。
+- **节点多视角抽屉**：按真实数据中心运维逻辑分五个标签页——模拟视角（配置 + 实时观测 + 接口表含本端/对端地址 + BGP 配置表含 iBGP/eBGP 标注）、BGP（Loc-RIB 全部候选路径，best/multi/iBGP 标记，best path 选择前的视角）、RIB（zebra 路由表，AD/Metric/ECMP）、FIB（内核转发表，LPM 转发条目 + 本机 host 条目两层）、运行时（容器状态与全部内核接口）；路由三层按需拉取，条目数呈漏斗递减，可逐层对照选路与下装；点击画布空白自动收回抽屉。
 - **拓扑链路配色**：所有链路（fabric / server access / MLAG peer）统一为细的近黑灰色静态实线，点击只加粗不变色；选中设备边框为蓝色，并联动高亮其全部直连链路；红/绿等强调色留给后续链路质量/故障展示。
 - **一键启停**：`scripts/dcnetlab up|down|status|logs`（或 `make up` / `make down`），同时管理后端 Controller 和前端 UI。
 

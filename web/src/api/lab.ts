@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { Lab, Link, Node, Operation, Plan, ProfileInfo, TopologySpec } from '../types/models'
+import type { Lab, Link, Node, NodeBGP, NodeBGPTable, NodeRoutes, NodeRuntime, Operation, Plan, ProfileInfo, TopologySpec } from '../types/models'
 
 const base = '/api/v1'
 
@@ -26,6 +26,16 @@ export const labApi = {
     api.post<Node>(`${base}/labs/${labId}/nodes/${nodeId}/start`),
   stopNode: (labId: string, nodeId: string) =>
     api.post<Node>(`${base}/labs/${labId}/nodes/${nodeId}/stop`),
+  nodeRuntime: (labId: string, nodeId: string) =>
+    api.get<NodeRuntime>(`${base}/labs/${labId}/nodes/${nodeId}/runtime`),
+  nodeBGP: (labId: string, nodeId: string) =>
+    api.get<NodeBGP>(`${base}/labs/${labId}/nodes/${nodeId}/bgp`),
+  nodeRoutes: (labId: string, nodeId: string) =>
+    api.get<NodeRoutes>(`${base}/labs/${labId}/nodes/${nodeId}/routes`),
+  nodeBGPTable: (labId: string, nodeId: string) =>
+    api.get<NodeBGPTable>(`${base}/labs/${labId}/nodes/${nodeId}/bgp-table`),
+  nodeFIB: (labId: string, nodeId: string) =>
+    api.get<NodeRoutes>(`${base}/labs/${labId}/nodes/${nodeId}/fib`),
 
   createPlan: (id: string) => api.post<Plan>(`${base}/labs/${id}/plans`),
   getPlan: (planId: string) => api.get<Plan>(`${base}/plans/${planId}`),

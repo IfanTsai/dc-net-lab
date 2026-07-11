@@ -24,6 +24,11 @@ const OperationDCNetLabCreateLab = "/dcnetlab.v1.DCNetLab/CreateLab"
 const OperationDCNetLabCreatePlan = "/dcnetlab.v1.DCNetLab/CreatePlan"
 const OperationDCNetLabDeleteLab = "/dcnetlab.v1.DCNetLab/DeleteLab"
 const OperationDCNetLabGetLab = "/dcnetlab.v1.DCNetLab/GetLab"
+const OperationDCNetLabGetNodeBGP = "/dcnetlab.v1.DCNetLab/GetNodeBGP"
+const OperationDCNetLabGetNodeBGPTable = "/dcnetlab.v1.DCNetLab/GetNodeBGPTable"
+const OperationDCNetLabGetNodeFIB = "/dcnetlab.v1.DCNetLab/GetNodeFIB"
+const OperationDCNetLabGetNodeRoutes = "/dcnetlab.v1.DCNetLab/GetNodeRoutes"
+const OperationDCNetLabGetNodeRuntime = "/dcnetlab.v1.DCNetLab/GetNodeRuntime"
 const OperationDCNetLabGetOperation = "/dcnetlab.v1.DCNetLab/GetOperation"
 const OperationDCNetLabGetPlan = "/dcnetlab.v1.DCNetLab/GetPlan"
 const OperationDCNetLabHealthz = "/dcnetlab.v1.DCNetLab/Healthz"
@@ -47,6 +52,28 @@ type DCNetLabHTTPServer interface {
 	CreatePlan(context.Context, *CreatePlanRequest) (*Plan, error)
 	DeleteLab(context.Context, *DeleteLabRequest) (*OperationRef, error)
 	GetLab(context.Context, *GetLabRequest) (*Lab, error)
+	// GetNodeBGP GetNodeBGP returns the BGP configuration of one node as derived
+	// by the FRR compiler from the topology model: eBGP neighbors over
+	// fabric links, the MLAG iBGP session and the leaf's dynamic server
+	// peer-group. Empty for nodes that do not run BGP.
+	GetNodeBGP(context.Context, *GetNodeBGPRequest) (*NodeBGP, error)
+	// GetNodeBGPTable GetNodeBGPTable returns the live BGP Loc-RIB of one deployed
+	// node (`show ip bgp`): every candidate path per prefix, before
+	// best-path selection reduces them to the RIB entry.
+	GetNodeBGPTable(context.Context, *GetNodeBGPTableRequest) (*NodeBGPTable, error)
+	// GetNodeFIB GetNodeFIB returns the live kernel forwarding table of one
+	// deployed node (`ip route`): what actually forwards packets, as
+	// installed by zebra from the RIB.
+	GetNodeFIB(context.Context, *GetNodeFIBRequest) (*NodeFIB, error)
+	// GetNodeRoutes GetNodeRoutes returns the live IPv4 routing table (FRR RIB) of
+	// one deployed node; routes are empty unless the container is
+	// running.
+	GetNodeRoutes(context.Context, *GetNodeRoutesRequest) (*NodeRoutes, error)
+	// GetNodeRuntime GetNodeRuntime returns the management view of one deployed node:
+	// the underlying container state and every kernel interface inside
+	// it, including implementation plumbing (bridge, VRRP macvlan,
+	// management eth0) that the simulated topology does not model.
+	GetNodeRuntime(context.Context, *GetNodeRuntimeRequest) (*NodeRuntime, error)
 	// GetOperation --- Operations & Generations ---
 	GetOperation(context.Context, *GetOperationRequest) (*Operation, error)
 	GetPlan(context.Context, *GetPlanRequest) (*Plan, error)
@@ -82,6 +109,11 @@ func RegisterDCNetLabHTTPServer(s *http.Server, srv DCNetLabHTTPServer) {
 	r.GET("/api/v1/labs/{lab_id}/allocations", _DCNetLab_ListAllocations0_HTTP_Handler(srv))
 	r.POST("/api/v1/labs/{lab_id}/nodes/{node_id}/start", _DCNetLab_StartNode0_HTTP_Handler(srv))
 	r.POST("/api/v1/labs/{lab_id}/nodes/{node_id}/stop", _DCNetLab_StopNode0_HTTP_Handler(srv))
+	r.GET("/api/v1/labs/{lab_id}/nodes/{node_id}/runtime", _DCNetLab_GetNodeRuntime0_HTTP_Handler(srv))
+	r.GET("/api/v1/labs/{lab_id}/nodes/{node_id}/bgp", _DCNetLab_GetNodeBGP0_HTTP_Handler(srv))
+	r.GET("/api/v1/labs/{lab_id}/nodes/{node_id}/routes", _DCNetLab_GetNodeRoutes0_HTTP_Handler(srv))
+	r.GET("/api/v1/labs/{lab_id}/nodes/{node_id}/bgp-table", _DCNetLab_GetNodeBGPTable0_HTTP_Handler(srv))
+	r.GET("/api/v1/labs/{lab_id}/nodes/{node_id}/fib", _DCNetLab_GetNodeFIB0_HTTP_Handler(srv))
 	r.POST("/api/v1/labs/{lab_id}/plans", _DCNetLab_CreatePlan0_HTTP_Handler(srv))
 	r.GET("/api/v1/plans/{id}", _DCNetLab_GetPlan0_HTTP_Handler(srv))
 	r.POST("/api/v1/plans/{id}/apply", _DCNetLab_ApplyPlan0_HTTP_Handler(srv))
@@ -343,6 +375,116 @@ func _DCNetLab_StopNode0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Cont
 	}
 }
 
+func _DCNetLab_GetNodeRuntime0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in GetNodeRuntimeRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabGetNodeRuntime)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.GetNodeRuntime(ctx, req.(*GetNodeRuntimeRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*NodeRuntime)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_GetNodeBGP0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in GetNodeBGPRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabGetNodeBGP)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.GetNodeBGP(ctx, req.(*GetNodeBGPRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*NodeBGP)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_GetNodeRoutes0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in GetNodeRoutesRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabGetNodeRoutes)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.GetNodeRoutes(ctx, req.(*GetNodeRoutesRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*NodeRoutes)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_GetNodeBGPTable0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in GetNodeBGPTableRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabGetNodeBGPTable)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.GetNodeBGPTable(ctx, req.(*GetNodeBGPTableRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*NodeBGPTable)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_GetNodeFIB0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in GetNodeFIBRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabGetNodeFIB)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.GetNodeFIB(ctx, req.(*GetNodeFIBRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*NodeFIB)
+		return ctx.Result(200, reply)
+	}
+}
+
 func _DCNetLab_CreatePlan0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
 	return func(ctx http.Context) error {
 		var in CreatePlanRequest
@@ -527,6 +669,28 @@ type DCNetLabHTTPClient interface {
 	CreatePlan(ctx context.Context, req *CreatePlanRequest, opts ...http.CallOption) (rsp *Plan, err error)
 	DeleteLab(ctx context.Context, req *DeleteLabRequest, opts ...http.CallOption) (rsp *OperationRef, err error)
 	GetLab(ctx context.Context, req *GetLabRequest, opts ...http.CallOption) (rsp *Lab, err error)
+	// GetNodeBGP GetNodeBGP returns the BGP configuration of one node as derived
+	// by the FRR compiler from the topology model: eBGP neighbors over
+	// fabric links, the MLAG iBGP session and the leaf's dynamic server
+	// peer-group. Empty for nodes that do not run BGP.
+	GetNodeBGP(ctx context.Context, req *GetNodeBGPRequest, opts ...http.CallOption) (rsp *NodeBGP, err error)
+	// GetNodeBGPTable GetNodeBGPTable returns the live BGP Loc-RIB of one deployed
+	// node (`show ip bgp`): every candidate path per prefix, before
+	// best-path selection reduces them to the RIB entry.
+	GetNodeBGPTable(ctx context.Context, req *GetNodeBGPTableRequest, opts ...http.CallOption) (rsp *NodeBGPTable, err error)
+	// GetNodeFIB GetNodeFIB returns the live kernel forwarding table of one
+	// deployed node (`ip route`): what actually forwards packets, as
+	// installed by zebra from the RIB.
+	GetNodeFIB(ctx context.Context, req *GetNodeFIBRequest, opts ...http.CallOption) (rsp *NodeFIB, err error)
+	// GetNodeRoutes GetNodeRoutes returns the live IPv4 routing table (FRR RIB) of
+	// one deployed node; routes are empty unless the container is
+	// running.
+	GetNodeRoutes(ctx context.Context, req *GetNodeRoutesRequest, opts ...http.CallOption) (rsp *NodeRoutes, err error)
+	// GetNodeRuntime GetNodeRuntime returns the management view of one deployed node:
+	// the underlying container state and every kernel interface inside
+	// it, including implementation plumbing (bridge, VRRP macvlan,
+	// management eth0) that the simulated topology does not model.
+	GetNodeRuntime(ctx context.Context, req *GetNodeRuntimeRequest, opts ...http.CallOption) (rsp *NodeRuntime, err error)
 	// GetOperation --- Operations & Generations ---
 	GetOperation(ctx context.Context, req *GetOperationRequest, opts ...http.CallOption) (rsp *Operation, err error)
 	GetPlan(ctx context.Context, req *GetPlanRequest, opts ...http.CallOption) (rsp *Plan, err error)
@@ -616,6 +780,88 @@ func (c *DCNetLabHTTPClientImpl) GetLab(ctx context.Context, in *GetLabRequest, 
 	pattern := "/api/v1/labs/{id}"
 	path := binding.EncodeURL(pattern, in, true)
 	opts = append(opts, http.Operation(OperationDCNetLabGetLab))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetNodeBGP GetNodeBGP returns the BGP configuration of one node as derived
+// by the FRR compiler from the topology model: eBGP neighbors over
+// fabric links, the MLAG iBGP session and the leaf's dynamic server
+// peer-group. Empty for nodes that do not run BGP.
+func (c *DCNetLabHTTPClientImpl) GetNodeBGP(ctx context.Context, in *GetNodeBGPRequest, opts ...http.CallOption) (*NodeBGP, error) {
+	var out NodeBGP
+	pattern := "/api/v1/labs/{lab_id}/nodes/{node_id}/bgp"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationDCNetLabGetNodeBGP))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetNodeBGPTable GetNodeBGPTable returns the live BGP Loc-RIB of one deployed
+// node (`show ip bgp`): every candidate path per prefix, before
+// best-path selection reduces them to the RIB entry.
+func (c *DCNetLabHTTPClientImpl) GetNodeBGPTable(ctx context.Context, in *GetNodeBGPTableRequest, opts ...http.CallOption) (*NodeBGPTable, error) {
+	var out NodeBGPTable
+	pattern := "/api/v1/labs/{lab_id}/nodes/{node_id}/bgp-table"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationDCNetLabGetNodeBGPTable))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetNodeFIB GetNodeFIB returns the live kernel forwarding table of one
+// deployed node (`ip route`): what actually forwards packets, as
+// installed by zebra from the RIB.
+func (c *DCNetLabHTTPClientImpl) GetNodeFIB(ctx context.Context, in *GetNodeFIBRequest, opts ...http.CallOption) (*NodeFIB, error) {
+	var out NodeFIB
+	pattern := "/api/v1/labs/{lab_id}/nodes/{node_id}/fib"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationDCNetLabGetNodeFIB))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetNodeRoutes GetNodeRoutes returns the live IPv4 routing table (FRR RIB) of
+// one deployed node; routes are empty unless the container is
+// running.
+func (c *DCNetLabHTTPClientImpl) GetNodeRoutes(ctx context.Context, in *GetNodeRoutesRequest, opts ...http.CallOption) (*NodeRoutes, error) {
+	var out NodeRoutes
+	pattern := "/api/v1/labs/{lab_id}/nodes/{node_id}/routes"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationDCNetLabGetNodeRoutes))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetNodeRuntime GetNodeRuntime returns the management view of one deployed node:
+// the underlying container state and every kernel interface inside
+// it, including implementation plumbing (bridge, VRRP macvlan,
+// management eth0) that the simulated topology does not model.
+func (c *DCNetLabHTTPClientImpl) GetNodeRuntime(ctx context.Context, in *GetNodeRuntimeRequest, opts ...http.CallOption) (*NodeRuntime, error) {
+	var out NodeRuntime
+	pattern := "/api/v1/labs/{lab_id}/nodes/{node_id}/runtime"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationDCNetLabGetNodeRuntime))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
 	if err != nil {

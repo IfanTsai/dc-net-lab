@@ -2,6 +2,7 @@ package model
 
 import (
 	"net/netip"
+	"slices"
 	"time"
 )
 
@@ -75,17 +76,44 @@ type NodeSpec struct {
 	BGPPeers       []netip.Addr `json:"bgpPeers,omitempty"`
 }
 
+// InterfaceStatus is the observed state of one simulated interface.
+type InterfaceStatus struct {
+	Name string `json:"name"`
+	Up   bool   `json:"up"`
+}
+
 // NodeStatus is the observed state of a node, filled by the observer.
 // LastObserved is when these values last changed, not the last poll.
+// Interface counts and Interfaces cover only the simulated objects:
+// topology link endpoints plus modeled logical interfaces (the
+// gateway vlanif on leaves, bond0 on servers); container plumbing is
+// served separately by the node runtime (management) view.
 type NodeStatus struct {
-	RuntimeState    RuntimeState `json:"runtimeState"`
-	ContainerID     string       `json:"containerId,omitempty"`
-	RouteCount      int          `json:"routeCount"`
-	BGPEstablished  int          `json:"bgpEstablished"`
-	BGPConfigured   int          `json:"bgpConfigured"`
-	InterfacesUp    int          `json:"interfacesUp"`
-	InterfacesTotal int          `json:"interfacesTotal"`
-	LastObserved    time.Time    `json:"lastObserved,omitzero"`
+	RuntimeState    RuntimeState      `json:"runtimeState"`
+	ContainerID     string            `json:"containerId,omitempty"`
+	RouteCount      int               `json:"routeCount"`
+	BGPEstablished  int               `json:"bgpEstablished"`
+	BGPConfigured   int               `json:"bgpConfigured"`
+	InterfacesUp    int               `json:"interfacesUp"`
+	InterfacesTotal int               `json:"interfacesTotal"`
+	Interfaces      []InterfaceStatus `json:"interfaces,omitempty"`
+	VRRPState       string            `json:"vrrpState,omitempty"`
+	LastObserved    time.Time         `json:"lastObserved,omitzero"`
+}
+
+// Equal reports whether two observed states match; the Interfaces
+// slice makes NodeStatus non-comparable with ==.
+func (s NodeStatus) Equal(o NodeStatus) bool {
+	return s.RuntimeState == o.RuntimeState &&
+		s.ContainerID == o.ContainerID &&
+		s.RouteCount == o.RouteCount &&
+		s.BGPEstablished == o.BGPEstablished &&
+		s.BGPConfigured == o.BGPConfigured &&
+		s.InterfacesUp == o.InterfacesUp &&
+		s.InterfacesTotal == o.InterfacesTotal &&
+		slices.Equal(s.Interfaces, o.Interfaces) &&
+		s.VRRPState == o.VRRPState &&
+		s.LastObserved.Equal(o.LastObserved)
 }
 
 // IsRouter reports whether the node runs FRR BGP.

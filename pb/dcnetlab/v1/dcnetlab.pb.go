@@ -821,7 +821,63 @@ func (x *NodeSpec) GetBgpPeers() []string {
 	return nil
 }
 
+// InterfaceStatus is the observed state of one simulated interface.
+type InterfaceStatus struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Up            bool                   `protobuf:"varint,2,opt,name=up,proto3" json:"up,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InterfaceStatus) Reset() {
+	*x = InterfaceStatus{}
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InterfaceStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InterfaceStatus) ProtoMessage() {}
+
+func (x *InterfaceStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InterfaceStatus.ProtoReflect.Descriptor instead.
+func (*InterfaceStatus) Descriptor() ([]byte, []int) {
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *InterfaceStatus) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *InterfaceStatus) GetUp() bool {
+	if x != nil {
+		return x.Up
+	}
+	return false
+}
+
 // NodeStatus is the observed state of a node, filled by the observer.
+// Interface counts and the interface list cover only the simulated
+// objects: topology link endpoints plus modeled logical interfaces
+// (the gateway vlanif on leaves, bond0 on servers).
 type NodeStatus struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	RuntimeState    string                 `protobuf:"bytes,1,opt,name=runtime_state,json=runtimeState,proto3" json:"runtime_state,omitempty"`
@@ -832,13 +888,17 @@ type NodeStatus struct {
 	InterfacesUp    int32                  `protobuf:"varint,6,opt,name=interfaces_up,json=interfacesUp,proto3" json:"interfaces_up,omitempty"`
 	InterfacesTotal int32                  `protobuf:"varint,7,opt,name=interfaces_total,json=interfacesTotal,proto3" json:"interfaces_total,omitempty"`
 	LastObserved    *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=last_observed,json=lastObserved,proto3" json:"last_observed,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// vrrp_state is the VRRP gateway role of a leaf: Master, Backup or
+	// empty for nodes without VRRP.
+	VrrpState     string             `protobuf:"bytes,9,opt,name=vrrp_state,json=vrrpState,proto3" json:"vrrp_state,omitempty"`
+	Interfaces    []*InterfaceStatus `protobuf:"bytes,10,rep,name=interfaces,proto3" json:"interfaces,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *NodeStatus) Reset() {
 	*x = NodeStatus{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[10]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -850,7 +910,7 @@ func (x *NodeStatus) String() string {
 func (*NodeStatus) ProtoMessage() {}
 
 func (x *NodeStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[10]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -863,7 +923,7 @@ func (x *NodeStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeStatus.ProtoReflect.Descriptor instead.
 func (*NodeStatus) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{10}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *NodeStatus) GetRuntimeState() string {
@@ -922,6 +982,20 @@ func (x *NodeStatus) GetLastObserved() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *NodeStatus) GetVrrpState() string {
+	if x != nil {
+		return x.VrrpState
+	}
+	return ""
+}
+
+func (x *NodeStatus) GetInterfaces() []*InterfaceStatus {
+	if x != nil {
+		return x.Interfaces
+	}
+	return nil
+}
+
 // Node is one device in the fabric: router, switch or server.
 type Node struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -934,7 +1008,7 @@ type Node struct {
 
 func (x *Node) Reset() {
 	*x = Node{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[11]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -946,7 +1020,7 @@ func (x *Node) String() string {
 func (*Node) ProtoMessage() {}
 
 func (x *Node) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[11]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -959,7 +1033,7 @@ func (x *Node) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Node.ProtoReflect.Descriptor instead.
 func (*Node) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{11}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *Node) GetMeta() *ResourceMeta {
@@ -996,7 +1070,7 @@ type LinkEndpoint struct {
 
 func (x *LinkEndpoint) Reset() {
 	*x = LinkEndpoint{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[12]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1008,7 +1082,7 @@ func (x *LinkEndpoint) String() string {
 func (*LinkEndpoint) ProtoMessage() {}
 
 func (x *LinkEndpoint) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[12]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1021,7 +1095,7 @@ func (x *LinkEndpoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LinkEndpoint.ProtoReflect.Descriptor instead.
 func (*LinkEndpoint) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{12}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *LinkEndpoint) GetNodeId() string {
@@ -1068,7 +1142,7 @@ type LinkSpec struct {
 
 func (x *LinkSpec) Reset() {
 	*x = LinkSpec{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[13]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1080,7 +1154,7 @@ func (x *LinkSpec) String() string {
 func (*LinkSpec) ProtoMessage() {}
 
 func (x *LinkSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[13]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1093,7 +1167,7 @@ func (x *LinkSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LinkSpec.ProtoReflect.Descriptor instead.
 func (*LinkSpec) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{13}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *LinkSpec) GetLabId() string {
@@ -1148,7 +1222,7 @@ type LinkStatus struct {
 
 func (x *LinkStatus) Reset() {
 	*x = LinkStatus{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[14]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1160,7 +1234,7 @@ func (x *LinkStatus) String() string {
 func (*LinkStatus) ProtoMessage() {}
 
 func (x *LinkStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[14]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1173,7 +1247,7 @@ func (x *LinkStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LinkStatus.ProtoReflect.Descriptor instead.
 func (*LinkStatus) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{14}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *LinkStatus) GetAdminUp() bool {
@@ -1202,7 +1276,7 @@ type Link struct {
 
 func (x *Link) Reset() {
 	*x = Link{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[15]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1214,7 +1288,7 @@ func (x *Link) String() string {
 func (*Link) ProtoMessage() {}
 
 func (x *Link) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[15]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1227,7 +1301,7 @@ func (x *Link) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Link.ProtoReflect.Descriptor instead.
 func (*Link) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{15}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *Link) GetMeta() *ResourceMeta {
@@ -1263,7 +1337,7 @@ type PlanOperation struct {
 
 func (x *PlanOperation) Reset() {
 	*x = PlanOperation{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[16]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1275,7 +1349,7 @@ func (x *PlanOperation) String() string {
 func (*PlanOperation) ProtoMessage() {}
 
 func (x *PlanOperation) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[16]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1288,7 +1362,7 @@ func (x *PlanOperation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanOperation.ProtoReflect.Descriptor instead.
 func (*PlanOperation) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{16}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *PlanOperation) GetType() string {
@@ -1324,7 +1398,7 @@ type Allocation struct {
 
 func (x *Allocation) Reset() {
 	*x = Allocation{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[17]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1336,7 +1410,7 @@ func (x *Allocation) String() string {
 func (*Allocation) ProtoMessage() {}
 
 func (x *Allocation) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[17]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1349,7 +1423,7 @@ func (x *Allocation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Allocation.ProtoReflect.Descriptor instead.
 func (*Allocation) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{17}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *Allocation) GetPool() string {
@@ -1384,7 +1458,7 @@ type PlanWarning struct {
 
 func (x *PlanWarning) Reset() {
 	*x = PlanWarning{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[18]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1396,7 +1470,7 @@ func (x *PlanWarning) String() string {
 func (*PlanWarning) ProtoMessage() {}
 
 func (x *PlanWarning) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[18]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1409,7 +1483,7 @@ func (x *PlanWarning) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanWarning.ProtoReflect.Descriptor instead.
 func (*PlanWarning) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{18}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *PlanWarning) GetCode() string {
@@ -1445,7 +1519,7 @@ type Plan struct {
 
 func (x *Plan) Reset() {
 	*x = Plan{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[19]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1457,7 +1531,7 @@ func (x *Plan) String() string {
 func (*Plan) ProtoMessage() {}
 
 func (x *Plan) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[19]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1470,7 +1544,7 @@ func (x *Plan) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Plan.ProtoReflect.Descriptor instead.
 func (*Plan) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{19}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *Plan) GetId() string {
@@ -1550,7 +1624,7 @@ type OperationStep struct {
 
 func (x *OperationStep) Reset() {
 	*x = OperationStep{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[20]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1562,7 +1636,7 @@ func (x *OperationStep) String() string {
 func (*OperationStep) ProtoMessage() {}
 
 func (x *OperationStep) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[20]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1575,7 +1649,7 @@ func (x *OperationStep) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OperationStep.ProtoReflect.Descriptor instead.
 func (*OperationStep) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{20}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *OperationStep) GetName() string {
@@ -1624,7 +1698,7 @@ type OperationError struct {
 
 func (x *OperationError) Reset() {
 	*x = OperationError{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[21]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1636,7 +1710,7 @@ func (x *OperationError) String() string {
 func (*OperationError) ProtoMessage() {}
 
 func (x *OperationError) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[21]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1649,7 +1723,7 @@ func (x *OperationError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OperationError.ProtoReflect.Descriptor instead.
 func (*OperationError) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{21}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *OperationError) GetCode() string {
@@ -1677,7 +1751,7 @@ type ResourceRef struct {
 
 func (x *ResourceRef) Reset() {
 	*x = ResourceRef{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[22]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1689,7 +1763,7 @@ func (x *ResourceRef) String() string {
 func (*ResourceRef) ProtoMessage() {}
 
 func (x *ResourceRef) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[22]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1702,7 +1776,7 @@ func (x *ResourceRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceRef.ProtoReflect.Descriptor instead.
 func (*ResourceRef) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{22}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ResourceRef) GetType() string {
@@ -1740,7 +1814,7 @@ type Operation struct {
 
 func (x *Operation) Reset() {
 	*x = Operation{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[23]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1752,7 +1826,7 @@ func (x *Operation) String() string {
 func (*Operation) ProtoMessage() {}
 
 func (x *Operation) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[23]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1765,7 +1839,7 @@ func (x *Operation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Operation.ProtoReflect.Descriptor instead.
 func (*Operation) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{23}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *Operation) GetId() string {
@@ -1848,7 +1922,7 @@ type OperationRef struct {
 
 func (x *OperationRef) Reset() {
 	*x = OperationRef{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[24]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1860,7 +1934,7 @@ func (x *OperationRef) String() string {
 func (*OperationRef) ProtoMessage() {}
 
 func (x *OperationRef) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[24]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1873,7 +1947,7 @@ func (x *OperationRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OperationRef.ProtoReflect.Descriptor instead.
 func (*OperationRef) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{24}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *OperationRef) GetOperationId() string {
@@ -1896,7 +1970,7 @@ type CreateLabRequest struct {
 
 func (x *CreateLabRequest) Reset() {
 	*x = CreateLabRequest{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[25]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1908,7 +1982,7 @@ func (x *CreateLabRequest) String() string {
 func (*CreateLabRequest) ProtoMessage() {}
 
 func (x *CreateLabRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[25]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1921,7 +1995,7 @@ func (x *CreateLabRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateLabRequest.ProtoReflect.Descriptor instead.
 func (*CreateLabRequest) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{25}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *CreateLabRequest) GetName() string {
@@ -1953,7 +2027,7 @@ type ListLabsRequest struct {
 
 func (x *ListLabsRequest) Reset() {
 	*x = ListLabsRequest{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[26]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1965,7 +2039,7 @@ func (x *ListLabsRequest) String() string {
 func (*ListLabsRequest) ProtoMessage() {}
 
 func (x *ListLabsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[26]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1978,7 +2052,7 @@ func (x *ListLabsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListLabsRequest.ProtoReflect.Descriptor instead.
 func (*ListLabsRequest) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{26}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{27}
 }
 
 type ListLabsReply struct {
@@ -1990,7 +2064,7 @@ type ListLabsReply struct {
 
 func (x *ListLabsReply) Reset() {
 	*x = ListLabsReply{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[27]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2002,7 +2076,7 @@ func (x *ListLabsReply) String() string {
 func (*ListLabsReply) ProtoMessage() {}
 
 func (x *ListLabsReply) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[27]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2015,7 +2089,7 @@ func (x *ListLabsReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListLabsReply.ProtoReflect.Descriptor instead.
 func (*ListLabsReply) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{27}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *ListLabsReply) GetLabs() []*Lab {
@@ -2034,7 +2108,7 @@ type GetLabRequest struct {
 
 func (x *GetLabRequest) Reset() {
 	*x = GetLabRequest{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[28]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2046,7 +2120,7 @@ func (x *GetLabRequest) String() string {
 func (*GetLabRequest) ProtoMessage() {}
 
 func (x *GetLabRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[28]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2059,7 +2133,7 @@ func (x *GetLabRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetLabRequest.ProtoReflect.Descriptor instead.
 func (*GetLabRequest) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{28}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *GetLabRequest) GetId() string {
@@ -2078,7 +2152,7 @@ type DeleteLabRequest struct {
 
 func (x *DeleteLabRequest) Reset() {
 	*x = DeleteLabRequest{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[29]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2090,7 +2164,7 @@ func (x *DeleteLabRequest) String() string {
 func (*DeleteLabRequest) ProtoMessage() {}
 
 func (x *DeleteLabRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[29]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2103,7 +2177,7 @@ func (x *DeleteLabRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteLabRequest.ProtoReflect.Descriptor instead.
 func (*DeleteLabRequest) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{29}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *DeleteLabRequest) GetId() string {
@@ -2122,7 +2196,7 @@ type StartLabRequest struct {
 
 func (x *StartLabRequest) Reset() {
 	*x = StartLabRequest{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[30]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2134,7 +2208,7 @@ func (x *StartLabRequest) String() string {
 func (*StartLabRequest) ProtoMessage() {}
 
 func (x *StartLabRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[30]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2147,7 +2221,7 @@ func (x *StartLabRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartLabRequest.ProtoReflect.Descriptor instead.
 func (*StartLabRequest) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{30}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *StartLabRequest) GetId() string {
@@ -2166,7 +2240,7 @@ type StopLabRequest struct {
 
 func (x *StopLabRequest) Reset() {
 	*x = StopLabRequest{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[31]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2178,7 +2252,7 @@ func (x *StopLabRequest) String() string {
 func (*StopLabRequest) ProtoMessage() {}
 
 func (x *StopLabRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[31]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2191,7 +2265,7 @@ func (x *StopLabRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopLabRequest.ProtoReflect.Descriptor instead.
 func (*StopLabRequest) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{31}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *StopLabRequest) GetId() string {
@@ -2211,7 +2285,7 @@ type StartNodeRequest struct {
 
 func (x *StartNodeRequest) Reset() {
 	*x = StartNodeRequest{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[32]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2223,7 +2297,7 @@ func (x *StartNodeRequest) String() string {
 func (*StartNodeRequest) ProtoMessage() {}
 
 func (x *StartNodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[32]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2236,7 +2310,7 @@ func (x *StartNodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartNodeRequest.ProtoReflect.Descriptor instead.
 func (*StartNodeRequest) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{32}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *StartNodeRequest) GetLabId() string {
@@ -2263,7 +2337,7 @@ type StopNodeRequest struct {
 
 func (x *StopNodeRequest) Reset() {
 	*x = StopNodeRequest{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[33]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2275,7 +2349,7 @@ func (x *StopNodeRequest) String() string {
 func (*StopNodeRequest) ProtoMessage() {}
 
 func (x *StopNodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[33]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2288,7 +2362,7 @@ func (x *StopNodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopNodeRequest.ProtoReflect.Descriptor instead.
 func (*StopNodeRequest) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{33}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *StopNodeRequest) GetLabId() string {
@@ -2305,6 +2379,1042 @@ func (x *StopNodeRequest) GetNodeId() string {
 	return ""
 }
 
+type GetNodeRuntimeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	LabId         string                 `protobuf:"bytes,1,opt,name=lab_id,json=labId,proto3" json:"lab_id,omitempty"`
+	NodeId        string                 `protobuf:"bytes,2,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetNodeRuntimeRequest) Reset() {
+	*x = GetNodeRuntimeRequest{}
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetNodeRuntimeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetNodeRuntimeRequest) ProtoMessage() {}
+
+func (x *GetNodeRuntimeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetNodeRuntimeRequest.ProtoReflect.Descriptor instead.
+func (*GetNodeRuntimeRequest) Descriptor() ([]byte, []int) {
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *GetNodeRuntimeRequest) GetLabId() string {
+	if x != nil {
+		return x.LabId
+	}
+	return ""
+}
+
+func (x *GetNodeRuntimeRequest) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+// RuntimeInterface is one kernel interface of a node's container.
+type RuntimeInterface struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// state is the raw operational state from `ip -br link`:
+	// UP, DOWN, UNKNOWN, LOWERLAYERDOWN.
+	State         string   `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"`
+	Mac           string   `protobuf:"bytes,3,opt,name=mac,proto3" json:"mac,omitempty"`
+	Addresses     []string `protobuf:"bytes,4,rep,name=addresses,proto3" json:"addresses,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RuntimeInterface) Reset() {
+	*x = RuntimeInterface{}
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RuntimeInterface) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RuntimeInterface) ProtoMessage() {}
+
+func (x *RuntimeInterface) ProtoReflect() protoreflect.Message {
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RuntimeInterface.ProtoReflect.Descriptor instead.
+func (*RuntimeInterface) Descriptor() ([]byte, []int) {
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *RuntimeInterface) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *RuntimeInterface) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *RuntimeInterface) GetMac() string {
+	if x != nil {
+		return x.Mac
+	}
+	return ""
+}
+
+func (x *RuntimeInterface) GetAddresses() []string {
+	if x != nil {
+		return x.Addresses
+	}
+	return nil
+}
+
+// NodeRuntime is the management view of one deployed node.
+type NodeRuntime struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// container_state is the docker container state ("running",
+	// "paused", "exited", ... or "missing").
+	ContainerState string `protobuf:"bytes,1,opt,name=container_state,json=containerState,proto3" json:"container_state,omitempty"`
+	// interfaces is empty unless the container is running.
+	Interfaces    []*RuntimeInterface `protobuf:"bytes,2,rep,name=interfaces,proto3" json:"interfaces,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NodeRuntime) Reset() {
+	*x = NodeRuntime{}
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NodeRuntime) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NodeRuntime) ProtoMessage() {}
+
+func (x *NodeRuntime) ProtoReflect() protoreflect.Message {
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NodeRuntime.ProtoReflect.Descriptor instead.
+func (*NodeRuntime) Descriptor() ([]byte, []int) {
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *NodeRuntime) GetContainerState() string {
+	if x != nil {
+		return x.ContainerState
+	}
+	return ""
+}
+
+func (x *NodeRuntime) GetInterfaces() []*RuntimeInterface {
+	if x != nil {
+		return x.Interfaces
+	}
+	return nil
+}
+
+type GetNodeBGPRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	LabId         string                 `protobuf:"bytes,1,opt,name=lab_id,json=labId,proto3" json:"lab_id,omitempty"`
+	NodeId        string                 `protobuf:"bytes,2,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetNodeBGPRequest) Reset() {
+	*x = GetNodeBGPRequest{}
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetNodeBGPRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetNodeBGPRequest) ProtoMessage() {}
+
+func (x *GetNodeBGPRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetNodeBGPRequest.ProtoReflect.Descriptor instead.
+func (*GetNodeBGPRequest) Descriptor() ([]byte, []int) {
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *GetNodeBGPRequest) GetLabId() string {
+	if x != nil {
+		return x.LabId
+	}
+	return ""
+}
+
+func (x *GetNodeBGPRequest) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+// BGPNeighbor is one statically configured BGP session.
+type BGPNeighbor struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Address  string                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
+	RemoteAs uint32                 `protobuf:"varint,2,opt,name=remote_as,json=remoteAs,proto3" json:"remote_as,omitempty"`
+	// description names the peer device (as in frr.conf).
+	Description   string `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BGPNeighbor) Reset() {
+	*x = BGPNeighbor{}
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BGPNeighbor) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BGPNeighbor) ProtoMessage() {}
+
+func (x *BGPNeighbor) ProtoReflect() protoreflect.Message {
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BGPNeighbor.ProtoReflect.Descriptor instead.
+func (*BGPNeighbor) Descriptor() ([]byte, []int) {
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *BGPNeighbor) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
+func (x *BGPNeighbor) GetRemoteAs() uint32 {
+	if x != nil {
+		return x.RemoteAs
+	}
+	return 0
+}
+
+func (x *BGPNeighbor) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+// BGPServerGroup is the leaf's dynamic peer-group listening for the
+// rack's servers on the VLAN subnet.
+type BGPServerGroup struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RemoteAs      uint32                 `protobuf:"varint,1,opt,name=remote_as,json=remoteAs,proto3" json:"remote_as,omitempty"`
+	ListenRange   string                 `protobuf:"bytes,2,opt,name=listen_range,json=listenRange,proto3" json:"listen_range,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BGPServerGroup) Reset() {
+	*x = BGPServerGroup{}
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BGPServerGroup) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BGPServerGroup) ProtoMessage() {}
+
+func (x *BGPServerGroup) ProtoReflect() protoreflect.Message {
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BGPServerGroup.ProtoReflect.Descriptor instead.
+func (*BGPServerGroup) Descriptor() ([]byte, []int) {
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *BGPServerGroup) GetRemoteAs() uint32 {
+	if x != nil {
+		return x.RemoteAs
+	}
+	return 0
+}
+
+func (x *BGPServerGroup) GetListenRange() string {
+	if x != nil {
+		return x.ListenRange
+	}
+	return ""
+}
+
+// NodeBGP is the compiled BGP configuration of one node.
+type NodeBGP struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Asn           uint32                 `protobuf:"varint,1,opt,name=asn,proto3" json:"asn,omitempty"`
+	RouterId      string                 `protobuf:"bytes,2,opt,name=router_id,json=routerId,proto3" json:"router_id,omitempty"`
+	Neighbors     []*BGPNeighbor         `protobuf:"bytes,3,rep,name=neighbors,proto3" json:"neighbors,omitempty"`
+	ServerGroup   *BGPServerGroup        `protobuf:"bytes,4,opt,name=server_group,json=serverGroup,proto3" json:"server_group,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NodeBGP) Reset() {
+	*x = NodeBGP{}
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NodeBGP) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NodeBGP) ProtoMessage() {}
+
+func (x *NodeBGP) ProtoReflect() protoreflect.Message {
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NodeBGP.ProtoReflect.Descriptor instead.
+func (*NodeBGP) Descriptor() ([]byte, []int) {
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *NodeBGP) GetAsn() uint32 {
+	if x != nil {
+		return x.Asn
+	}
+	return 0
+}
+
+func (x *NodeBGP) GetRouterId() string {
+	if x != nil {
+		return x.RouterId
+	}
+	return ""
+}
+
+func (x *NodeBGP) GetNeighbors() []*BGPNeighbor {
+	if x != nil {
+		return x.Neighbors
+	}
+	return nil
+}
+
+func (x *NodeBGP) GetServerGroup() *BGPServerGroup {
+	if x != nil {
+		return x.ServerGroup
+	}
+	return nil
+}
+
+type GetNodeRoutesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	LabId         string                 `protobuf:"bytes,1,opt,name=lab_id,json=labId,proto3" json:"lab_id,omitempty"`
+	NodeId        string                 `protobuf:"bytes,2,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetNodeRoutesRequest) Reset() {
+	*x = GetNodeRoutesRequest{}
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetNodeRoutesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetNodeRoutesRequest) ProtoMessage() {}
+
+func (x *GetNodeRoutesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetNodeRoutesRequest.ProtoReflect.Descriptor instead.
+func (*GetNodeRoutesRequest) Descriptor() ([]byte, []int) {
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{42}
+}
+
+func (x *GetNodeRoutesRequest) GetLabId() string {
+	if x != nil {
+		return x.LabId
+	}
+	return ""
+}
+
+func (x *GetNodeRoutesRequest) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+// RouteNexthop is one next hop of a RIB entry; via is empty for
+// directly connected routes.
+type RouteNexthop struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Via           string                 `protobuf:"bytes,1,opt,name=via,proto3" json:"via,omitempty"`
+	Interface     string                 `protobuf:"bytes,2,opt,name=interface,proto3" json:"interface,omitempty"`
+	Active        bool                   `protobuf:"varint,3,opt,name=active,proto3" json:"active,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RouteNexthop) Reset() {
+	*x = RouteNexthop{}
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[43]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RouteNexthop) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RouteNexthop) ProtoMessage() {}
+
+func (x *RouteNexthop) ProtoReflect() protoreflect.Message {
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[43]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RouteNexthop.ProtoReflect.Descriptor instead.
+func (*RouteNexthop) Descriptor() ([]byte, []int) {
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{43}
+}
+
+func (x *RouteNexthop) GetVia() string {
+	if x != nil {
+		return x.Via
+	}
+	return ""
+}
+
+func (x *RouteNexthop) GetInterface() string {
+	if x != nil {
+		return x.Interface
+	}
+	return ""
+}
+
+func (x *RouteNexthop) GetActive() bool {
+	if x != nil {
+		return x.Active
+	}
+	return false
+}
+
+// Route is one IPv4 RIB entry as reported by FRR. The FIB view
+// reuses it: kind is "local" for host entries (traffic addressed to
+// the device itself, the ASIC host/punt table equivalent) and empty
+// for forwarding (LPM) entries.
+type Route struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Prefix string                 `protobuf:"bytes,1,opt,name=prefix,proto3" json:"prefix,omitempty"`
+	// protocol is the FRR origin: bgp, connected, static, kernel, ...
+	Protocol      string          `protobuf:"bytes,2,opt,name=protocol,proto3" json:"protocol,omitempty"`
+	Selected      bool            `protobuf:"varint,3,opt,name=selected,proto3" json:"selected,omitempty"`
+	Distance      int32           `protobuf:"varint,4,opt,name=distance,proto3" json:"distance,omitempty"`
+	Metric        int32           `protobuf:"varint,5,opt,name=metric,proto3" json:"metric,omitempty"`
+	Nexthops      []*RouteNexthop `protobuf:"bytes,6,rep,name=nexthops,proto3" json:"nexthops,omitempty"`
+	Kind          string          `protobuf:"bytes,7,opt,name=kind,proto3" json:"kind,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Route) Reset() {
+	*x = Route{}
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[44]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Route) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Route) ProtoMessage() {}
+
+func (x *Route) ProtoReflect() protoreflect.Message {
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[44]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Route.ProtoReflect.Descriptor instead.
+func (*Route) Descriptor() ([]byte, []int) {
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{44}
+}
+
+func (x *Route) GetPrefix() string {
+	if x != nil {
+		return x.Prefix
+	}
+	return ""
+}
+
+func (x *Route) GetProtocol() string {
+	if x != nil {
+		return x.Protocol
+	}
+	return ""
+}
+
+func (x *Route) GetSelected() bool {
+	if x != nil {
+		return x.Selected
+	}
+	return false
+}
+
+func (x *Route) GetDistance() int32 {
+	if x != nil {
+		return x.Distance
+	}
+	return 0
+}
+
+func (x *Route) GetMetric() int32 {
+	if x != nil {
+		return x.Metric
+	}
+	return 0
+}
+
+func (x *Route) GetNexthops() []*RouteNexthop {
+	if x != nil {
+		return x.Nexthops
+	}
+	return nil
+}
+
+func (x *Route) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+// NodeRoutes is the live routing table of one deployed node.
+type NodeRoutes struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// container_state is the docker container state; routes are only
+	// collected from a running container.
+	ContainerState string   `protobuf:"bytes,1,opt,name=container_state,json=containerState,proto3" json:"container_state,omitempty"`
+	Routes         []*Route `protobuf:"bytes,2,rep,name=routes,proto3" json:"routes,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *NodeRoutes) Reset() {
+	*x = NodeRoutes{}
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NodeRoutes) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NodeRoutes) ProtoMessage() {}
+
+func (x *NodeRoutes) ProtoReflect() protoreflect.Message {
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NodeRoutes.ProtoReflect.Descriptor instead.
+func (*NodeRoutes) Descriptor() ([]byte, []int) {
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *NodeRoutes) GetContainerState() string {
+	if x != nil {
+		return x.ContainerState
+	}
+	return ""
+}
+
+func (x *NodeRoutes) GetRoutes() []*Route {
+	if x != nil {
+		return x.Routes
+	}
+	return nil
+}
+
+type GetNodeBGPTableRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	LabId         string                 `protobuf:"bytes,1,opt,name=lab_id,json=labId,proto3" json:"lab_id,omitempty"`
+	NodeId        string                 `protobuf:"bytes,2,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetNodeBGPTableRequest) Reset() {
+	*x = GetNodeBGPTableRequest{}
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetNodeBGPTableRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetNodeBGPTableRequest) ProtoMessage() {}
+
+func (x *GetNodeBGPTableRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetNodeBGPTableRequest.ProtoReflect.Descriptor instead.
+func (*GetNodeBGPTableRequest) Descriptor() ([]byte, []int) {
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *GetNodeBGPTableRequest) GetLabId() string {
+	if x != nil {
+		return x.LabId
+	}
+	return ""
+}
+
+func (x *GetNodeBGPTableRequest) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+// BGPPath is one candidate path of the BGP Loc-RIB.
+type BGPPath struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Prefix    string                 `protobuf:"bytes,1,opt,name=prefix,proto3" json:"prefix,omitempty"`
+	Best      bool                   `protobuf:"varint,2,opt,name=best,proto3" json:"best,omitempty"`
+	Multipath bool                   `protobuf:"varint,3,opt,name=multipath,proto3" json:"multipath,omitempty"`
+	Valid     bool                   `protobuf:"varint,4,opt,name=valid,proto3" json:"valid,omitempty"`
+	// internal marks an iBGP path (pathFrom internal).
+	Internal  bool   `protobuf:"varint,5,opt,name=internal,proto3" json:"internal,omitempty"`
+	AsPath    string `protobuf:"bytes,6,opt,name=as_path,json=asPath,proto3" json:"as_path,omitempty"`
+	Origin    string `protobuf:"bytes,7,opt,name=origin,proto3" json:"origin,omitempty"`
+	LocalPref uint32 `protobuf:"varint,8,opt,name=local_pref,json=localPref,proto3" json:"local_pref,omitempty"`
+	Peer      string `protobuf:"bytes,9,opt,name=peer,proto3" json:"peer,omitempty"`
+	Nexthop   string `protobuf:"bytes,10,opt,name=nexthop,proto3" json:"nexthop,omitempty"`
+	// nexthop_name is the advertising device's hostname when known.
+	NexthopName   string `protobuf:"bytes,11,opt,name=nexthop_name,json=nexthopName,proto3" json:"nexthop_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BGPPath) Reset() {
+	*x = BGPPath{}
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BGPPath) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BGPPath) ProtoMessage() {}
+
+func (x *BGPPath) ProtoReflect() protoreflect.Message {
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BGPPath.ProtoReflect.Descriptor instead.
+func (*BGPPath) Descriptor() ([]byte, []int) {
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *BGPPath) GetPrefix() string {
+	if x != nil {
+		return x.Prefix
+	}
+	return ""
+}
+
+func (x *BGPPath) GetBest() bool {
+	if x != nil {
+		return x.Best
+	}
+	return false
+}
+
+func (x *BGPPath) GetMultipath() bool {
+	if x != nil {
+		return x.Multipath
+	}
+	return false
+}
+
+func (x *BGPPath) GetValid() bool {
+	if x != nil {
+		return x.Valid
+	}
+	return false
+}
+
+func (x *BGPPath) GetInternal() bool {
+	if x != nil {
+		return x.Internal
+	}
+	return false
+}
+
+func (x *BGPPath) GetAsPath() string {
+	if x != nil {
+		return x.AsPath
+	}
+	return ""
+}
+
+func (x *BGPPath) GetOrigin() string {
+	if x != nil {
+		return x.Origin
+	}
+	return ""
+}
+
+func (x *BGPPath) GetLocalPref() uint32 {
+	if x != nil {
+		return x.LocalPref
+	}
+	return 0
+}
+
+func (x *BGPPath) GetPeer() string {
+	if x != nil {
+		return x.Peer
+	}
+	return ""
+}
+
+func (x *BGPPath) GetNexthop() string {
+	if x != nil {
+		return x.Nexthop
+	}
+	return ""
+}
+
+func (x *BGPPath) GetNexthopName() string {
+	if x != nil {
+		return x.NexthopName
+	}
+	return ""
+}
+
+// NodeBGPTable is the live BGP Loc-RIB of one deployed node.
+type NodeBGPTable struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ContainerState string                 `protobuf:"bytes,1,opt,name=container_state,json=containerState,proto3" json:"container_state,omitempty"`
+	RouterId       string                 `protobuf:"bytes,2,opt,name=router_id,json=routerId,proto3" json:"router_id,omitempty"`
+	LocalAs        uint32                 `protobuf:"varint,3,opt,name=local_as,json=localAs,proto3" json:"local_as,omitempty"`
+	Paths          []*BGPPath             `protobuf:"bytes,4,rep,name=paths,proto3" json:"paths,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *NodeBGPTable) Reset() {
+	*x = NodeBGPTable{}
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NodeBGPTable) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NodeBGPTable) ProtoMessage() {}
+
+func (x *NodeBGPTable) ProtoReflect() protoreflect.Message {
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NodeBGPTable.ProtoReflect.Descriptor instead.
+func (*NodeBGPTable) Descriptor() ([]byte, []int) {
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{48}
+}
+
+func (x *NodeBGPTable) GetContainerState() string {
+	if x != nil {
+		return x.ContainerState
+	}
+	return ""
+}
+
+func (x *NodeBGPTable) GetRouterId() string {
+	if x != nil {
+		return x.RouterId
+	}
+	return ""
+}
+
+func (x *NodeBGPTable) GetLocalAs() uint32 {
+	if x != nil {
+		return x.LocalAs
+	}
+	return 0
+}
+
+func (x *NodeBGPTable) GetPaths() []*BGPPath {
+	if x != nil {
+		return x.Paths
+	}
+	return nil
+}
+
+type GetNodeFIBRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	LabId         string                 `protobuf:"bytes,1,opt,name=lab_id,json=labId,proto3" json:"lab_id,omitempty"`
+	NodeId        string                 `protobuf:"bytes,2,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetNodeFIBRequest) Reset() {
+	*x = GetNodeFIBRequest{}
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[49]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetNodeFIBRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetNodeFIBRequest) ProtoMessage() {}
+
+func (x *GetNodeFIBRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[49]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetNodeFIBRequest.ProtoReflect.Descriptor instead.
+func (*GetNodeFIBRequest) Descriptor() ([]byte, []int) {
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{49}
+}
+
+func (x *GetNodeFIBRequest) GetLabId() string {
+	if x != nil {
+		return x.LabId
+	}
+	return ""
+}
+
+func (x *GetNodeFIBRequest) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+// NodeFIB is the live kernel forwarding table of one deployed node;
+// entries reuse Route (distance/selected are not meaningful here).
+type NodeFIB struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ContainerState string                 `protobuf:"bytes,1,opt,name=container_state,json=containerState,proto3" json:"container_state,omitempty"`
+	Routes         []*Route               `protobuf:"bytes,2,rep,name=routes,proto3" json:"routes,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *NodeFIB) Reset() {
+	*x = NodeFIB{}
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[50]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NodeFIB) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NodeFIB) ProtoMessage() {}
+
+func (x *NodeFIB) ProtoReflect() protoreflect.Message {
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[50]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NodeFIB.ProtoReflect.Descriptor instead.
+func (*NodeFIB) Descriptor() ([]byte, []int) {
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{50}
+}
+
+func (x *NodeFIB) GetContainerState() string {
+	if x != nil {
+		return x.ContainerState
+	}
+	return ""
+}
+
+func (x *NodeFIB) GetRoutes() []*Route {
+	if x != nil {
+		return x.Routes
+	}
+	return nil
+}
+
 type ListNodesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	LabId         string                 `protobuf:"bytes,1,opt,name=lab_id,json=labId,proto3" json:"lab_id,omitempty"`
@@ -2314,7 +3424,7 @@ type ListNodesRequest struct {
 
 func (x *ListNodesRequest) Reset() {
 	*x = ListNodesRequest{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[34]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2326,7 +3436,7 @@ func (x *ListNodesRequest) String() string {
 func (*ListNodesRequest) ProtoMessage() {}
 
 func (x *ListNodesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[34]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2339,7 +3449,7 @@ func (x *ListNodesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListNodesRequest.ProtoReflect.Descriptor instead.
 func (*ListNodesRequest) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{34}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *ListNodesRequest) GetLabId() string {
@@ -2358,7 +3468,7 @@ type ListNodesReply struct {
 
 func (x *ListNodesReply) Reset() {
 	*x = ListNodesReply{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[35]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2370,7 +3480,7 @@ func (x *ListNodesReply) String() string {
 func (*ListNodesReply) ProtoMessage() {}
 
 func (x *ListNodesReply) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[35]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2383,7 +3493,7 @@ func (x *ListNodesReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListNodesReply.ProtoReflect.Descriptor instead.
 func (*ListNodesReply) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{35}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *ListNodesReply) GetNodes() []*Node {
@@ -2402,7 +3512,7 @@ type ListLinksRequest struct {
 
 func (x *ListLinksRequest) Reset() {
 	*x = ListLinksRequest{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[36]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2414,7 +3524,7 @@ func (x *ListLinksRequest) String() string {
 func (*ListLinksRequest) ProtoMessage() {}
 
 func (x *ListLinksRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[36]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2427,7 +3537,7 @@ func (x *ListLinksRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListLinksRequest.ProtoReflect.Descriptor instead.
 func (*ListLinksRequest) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{36}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *ListLinksRequest) GetLabId() string {
@@ -2446,7 +3556,7 @@ type ListLinksReply struct {
 
 func (x *ListLinksReply) Reset() {
 	*x = ListLinksReply{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[37]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2458,7 +3568,7 @@ func (x *ListLinksReply) String() string {
 func (*ListLinksReply) ProtoMessage() {}
 
 func (x *ListLinksReply) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[37]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2471,7 +3581,7 @@ func (x *ListLinksReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListLinksReply.ProtoReflect.Descriptor instead.
 func (*ListLinksReply) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{37}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *ListLinksReply) GetLinks() []*Link {
@@ -2490,7 +3600,7 @@ type ListAllocationsRequest struct {
 
 func (x *ListAllocationsRequest) Reset() {
 	*x = ListAllocationsRequest{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[38]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2502,7 +3612,7 @@ func (x *ListAllocationsRequest) String() string {
 func (*ListAllocationsRequest) ProtoMessage() {}
 
 func (x *ListAllocationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[38]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2515,7 +3625,7 @@ func (x *ListAllocationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAllocationsRequest.ProtoReflect.Descriptor instead.
 func (*ListAllocationsRequest) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{38}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *ListAllocationsRequest) GetLabId() string {
@@ -2534,7 +3644,7 @@ type ListAllocationsReply struct {
 
 func (x *ListAllocationsReply) Reset() {
 	*x = ListAllocationsReply{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[39]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2546,7 +3656,7 @@ func (x *ListAllocationsReply) String() string {
 func (*ListAllocationsReply) ProtoMessage() {}
 
 func (x *ListAllocationsReply) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[39]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2559,7 +3669,7 @@ func (x *ListAllocationsReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAllocationsReply.ProtoReflect.Descriptor instead.
 func (*ListAllocationsReply) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{39}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *ListAllocationsReply) GetAllocations() []*Allocation {
@@ -2578,7 +3688,7 @@ type CreatePlanRequest struct {
 
 func (x *CreatePlanRequest) Reset() {
 	*x = CreatePlanRequest{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[40]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2590,7 +3700,7 @@ func (x *CreatePlanRequest) String() string {
 func (*CreatePlanRequest) ProtoMessage() {}
 
 func (x *CreatePlanRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[40]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2603,7 +3713,7 @@ func (x *CreatePlanRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePlanRequest.ProtoReflect.Descriptor instead.
 func (*CreatePlanRequest) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{40}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *CreatePlanRequest) GetLabId() string {
@@ -2622,7 +3732,7 @@ type GetPlanRequest struct {
 
 func (x *GetPlanRequest) Reset() {
 	*x = GetPlanRequest{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[41]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2634,7 +3744,7 @@ func (x *GetPlanRequest) String() string {
 func (*GetPlanRequest) ProtoMessage() {}
 
 func (x *GetPlanRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[41]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2647,7 +3757,7 @@ func (x *GetPlanRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPlanRequest.ProtoReflect.Descriptor instead.
 func (*GetPlanRequest) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{41}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *GetPlanRequest) GetId() string {
@@ -2666,7 +3776,7 @@ type ApplyPlanRequest struct {
 
 func (x *ApplyPlanRequest) Reset() {
 	*x = ApplyPlanRequest{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[42]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2678,7 +3788,7 @@ func (x *ApplyPlanRequest) String() string {
 func (*ApplyPlanRequest) ProtoMessage() {}
 
 func (x *ApplyPlanRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[42]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2691,7 +3801,7 @@ func (x *ApplyPlanRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyPlanRequest.ProtoReflect.Descriptor instead.
 func (*ApplyPlanRequest) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{42}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *ApplyPlanRequest) GetId() string {
@@ -2710,7 +3820,7 @@ type GetOperationRequest struct {
 
 func (x *GetOperationRequest) Reset() {
 	*x = GetOperationRequest{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[43]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2722,7 +3832,7 @@ func (x *GetOperationRequest) String() string {
 func (*GetOperationRequest) ProtoMessage() {}
 
 func (x *GetOperationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[43]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2735,7 +3845,7 @@ func (x *GetOperationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetOperationRequest.ProtoReflect.Descriptor instead.
 func (*GetOperationRequest) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{43}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *GetOperationRequest) GetId() string {
@@ -2754,7 +3864,7 @@ type ListOperationsRequest struct {
 
 func (x *ListOperationsRequest) Reset() {
 	*x = ListOperationsRequest{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[44]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2766,7 +3876,7 @@ func (x *ListOperationsRequest) String() string {
 func (*ListOperationsRequest) ProtoMessage() {}
 
 func (x *ListOperationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[44]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2779,7 +3889,7 @@ func (x *ListOperationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOperationsRequest.ProtoReflect.Descriptor instead.
 func (*ListOperationsRequest) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{44}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *ListOperationsRequest) GetLabId() string {
@@ -2798,7 +3908,7 @@ type ListOperationsReply struct {
 
 func (x *ListOperationsReply) Reset() {
 	*x = ListOperationsReply{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[45]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2810,7 +3920,7 @@ func (x *ListOperationsReply) String() string {
 func (*ListOperationsReply) ProtoMessage() {}
 
 func (x *ListOperationsReply) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[45]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2823,7 +3933,7 @@ func (x *ListOperationsReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOperationsReply.ProtoReflect.Descriptor instead.
 func (*ListOperationsReply) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{45}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *ListOperationsReply) GetOperations() []*Operation {
@@ -2842,7 +3952,7 @@ type ListGenerationsRequest struct {
 
 func (x *ListGenerationsRequest) Reset() {
 	*x = ListGenerationsRequest{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[46]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2854,7 +3964,7 @@ func (x *ListGenerationsRequest) String() string {
 func (*ListGenerationsRequest) ProtoMessage() {}
 
 func (x *ListGenerationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[46]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2867,7 +3977,7 @@ func (x *ListGenerationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListGenerationsRequest.ProtoReflect.Descriptor instead.
 func (*ListGenerationsRequest) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{46}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *ListGenerationsRequest) GetLabId() string {
@@ -2886,7 +3996,7 @@ type ListGenerationsReply struct {
 
 func (x *ListGenerationsReply) Reset() {
 	*x = ListGenerationsReply{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[47]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2898,7 +4008,7 @@ func (x *ListGenerationsReply) String() string {
 func (*ListGenerationsReply) ProtoMessage() {}
 
 func (x *ListGenerationsReply) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[47]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2911,7 +4021,7 @@ func (x *ListGenerationsReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListGenerationsReply.ProtoReflect.Descriptor instead.
 func (*ListGenerationsReply) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{47}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *ListGenerationsReply) GetGenerations() []int64 {
@@ -2929,7 +4039,7 @@ type ListProfilesRequest struct {
 
 func (x *ListProfilesRequest) Reset() {
 	*x = ListProfilesRequest{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[48]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2941,7 +4051,7 @@ func (x *ListProfilesRequest) String() string {
 func (*ListProfilesRequest) ProtoMessage() {}
 
 func (x *ListProfilesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[48]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2954,7 +4064,7 @@ func (x *ListProfilesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProfilesRequest.ProtoReflect.Descriptor instead.
 func (*ListProfilesRequest) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{48}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{65}
 }
 
 // ProfileInfo names one predefined topology profile.
@@ -2968,7 +4078,7 @@ type ProfileInfo struct {
 
 func (x *ProfileInfo) Reset() {
 	*x = ProfileInfo{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[49]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2980,7 +4090,7 @@ func (x *ProfileInfo) String() string {
 func (*ProfileInfo) ProtoMessage() {}
 
 func (x *ProfileInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[49]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2993,7 +4103,7 @@ func (x *ProfileInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProfileInfo.ProtoReflect.Descriptor instead.
 func (*ProfileInfo) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{49}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *ProfileInfo) GetName() string {
@@ -3019,7 +4129,7 @@ type ListProfilesReply struct {
 
 func (x *ListProfilesReply) Reset() {
 	*x = ListProfilesReply{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[50]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3031,7 +4141,7 @@ func (x *ListProfilesReply) String() string {
 func (*ListProfilesReply) ProtoMessage() {}
 
 func (x *ListProfilesReply) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[50]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3044,7 +4154,7 @@ func (x *ListProfilesReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProfilesReply.ProtoReflect.Descriptor instead.
 func (*ListProfilesReply) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{50}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *ListProfilesReply) GetProfiles() []*ProfileInfo {
@@ -3062,7 +4172,7 @@ type HealthzRequest struct {
 
 func (x *HealthzRequest) Reset() {
 	*x = HealthzRequest{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[51]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3074,7 +4184,7 @@ func (x *HealthzRequest) String() string {
 func (*HealthzRequest) ProtoMessage() {}
 
 func (x *HealthzRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[51]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3087,7 +4197,7 @@ func (x *HealthzRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthzRequest.ProtoReflect.Descriptor instead.
 func (*HealthzRequest) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{51}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{68}
 }
 
 type HealthzReply struct {
@@ -3099,7 +4209,7 @@ type HealthzReply struct {
 
 func (x *HealthzReply) Reset() {
 	*x = HealthzReply{}
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[52]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3111,7 +4221,7 @@ func (x *HealthzReply) String() string {
 func (*HealthzReply) ProtoMessage() {}
 
 func (x *HealthzReply) ProtoReflect() protoreflect.Message {
-	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[52]
+	mi := &file_dcnetlab_v1_dcnetlab_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3124,7 +4234,7 @@ func (x *HealthzReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthzReply.ProtoReflect.Descriptor instead.
 func (*HealthzReply) Descriptor() ([]byte, []int) {
-	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{52}
+	return file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *HealthzReply) GetStatus() string {
@@ -3211,7 +4321,10 @@ const file_dcnetlab_v1_dcnetlab_proto_rawDesc = "" +
 	"\rvrrp_priority\x18\x0f \x01(\x05R\fvrrpPriority\x12\x18\n" +
 	"\aaddress\x18\x10 \x01(\tR\aaddress\x12'\n" +
 	"\x0fdefault_gateway\x18\x11 \x01(\tR\x0edefaultGateway\x12\x1b\n" +
-	"\tbgp_peers\x18\x12 \x03(\tR\bbgpPeers\"\xd6\x02\n" +
+	"\tbgp_peers\x18\x12 \x03(\tR\bbgpPeers\"5\n" +
+	"\x0fInterfaceStatus\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x0e\n" +
+	"\x02up\x18\x02 \x01(\bR\x02up\"\xb3\x03\n" +
 	"\n" +
 	"NodeStatus\x12#\n" +
 	"\rruntime_state\x18\x01 \x01(\tR\fruntimeState\x12!\n" +
@@ -3222,7 +4335,13 @@ const file_dcnetlab_v1_dcnetlab_proto_rawDesc = "" +
 	"\x0ebgp_configured\x18\x05 \x01(\x05R\rbgpConfigured\x12#\n" +
 	"\rinterfaces_up\x18\x06 \x01(\x05R\finterfacesUp\x12)\n" +
 	"\x10interfaces_total\x18\a \x01(\x05R\x0finterfacesTotal\x12?\n" +
-	"\rlast_observed\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\flastObserved\"\x91\x01\n" +
+	"\rlast_observed\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\flastObserved\x12\x1d\n" +
+	"\n" +
+	"vrrp_state\x18\t \x01(\tR\tvrrpState\x12<\n" +
+	"\n" +
+	"interfaces\x18\n" +
+	" \x03(\v2\x1c.dcnetlab.v1.InterfaceStatusR\n" +
+	"interfaces\"\x91\x01\n" +
 	"\x04Node\x12-\n" +
 	"\x04meta\x18\x01 \x01(\v2\x19.dcnetlab.v1.ResourceMetaR\x04meta\x12)\n" +
 	"\x04spec\x18\x02 \x01(\v2\x15.dcnetlab.v1.NodeSpecR\x04spec\x12/\n" +
@@ -3324,7 +4443,82 @@ const file_dcnetlab_v1_dcnetlab_proto_rawDesc = "" +
 	"\anode_id\x18\x02 \x01(\tR\x06nodeId\"A\n" +
 	"\x0fStopNodeRequest\x12\x15\n" +
 	"\x06lab_id\x18\x01 \x01(\tR\x05labId\x12\x17\n" +
-	"\anode_id\x18\x02 \x01(\tR\x06nodeId\")\n" +
+	"\anode_id\x18\x02 \x01(\tR\x06nodeId\"G\n" +
+	"\x15GetNodeRuntimeRequest\x12\x15\n" +
+	"\x06lab_id\x18\x01 \x01(\tR\x05labId\x12\x17\n" +
+	"\anode_id\x18\x02 \x01(\tR\x06nodeId\"l\n" +
+	"\x10RuntimeInterface\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
+	"\x05state\x18\x02 \x01(\tR\x05state\x12\x10\n" +
+	"\x03mac\x18\x03 \x01(\tR\x03mac\x12\x1c\n" +
+	"\taddresses\x18\x04 \x03(\tR\taddresses\"u\n" +
+	"\vNodeRuntime\x12'\n" +
+	"\x0fcontainer_state\x18\x01 \x01(\tR\x0econtainerState\x12=\n" +
+	"\n" +
+	"interfaces\x18\x02 \x03(\v2\x1d.dcnetlab.v1.RuntimeInterfaceR\n" +
+	"interfaces\"C\n" +
+	"\x11GetNodeBGPRequest\x12\x15\n" +
+	"\x06lab_id\x18\x01 \x01(\tR\x05labId\x12\x17\n" +
+	"\anode_id\x18\x02 \x01(\tR\x06nodeId\"f\n" +
+	"\vBGPNeighbor\x12\x18\n" +
+	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x1b\n" +
+	"\tremote_as\x18\x02 \x01(\rR\bremoteAs\x12 \n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\"P\n" +
+	"\x0eBGPServerGroup\x12\x1b\n" +
+	"\tremote_as\x18\x01 \x01(\rR\bremoteAs\x12!\n" +
+	"\flisten_range\x18\x02 \x01(\tR\vlistenRange\"\xb0\x01\n" +
+	"\aNodeBGP\x12\x10\n" +
+	"\x03asn\x18\x01 \x01(\rR\x03asn\x12\x1b\n" +
+	"\trouter_id\x18\x02 \x01(\tR\brouterId\x126\n" +
+	"\tneighbors\x18\x03 \x03(\v2\x18.dcnetlab.v1.BGPNeighborR\tneighbors\x12>\n" +
+	"\fserver_group\x18\x04 \x01(\v2\x1b.dcnetlab.v1.BGPServerGroupR\vserverGroup\"F\n" +
+	"\x14GetNodeRoutesRequest\x12\x15\n" +
+	"\x06lab_id\x18\x01 \x01(\tR\x05labId\x12\x17\n" +
+	"\anode_id\x18\x02 \x01(\tR\x06nodeId\"V\n" +
+	"\fRouteNexthop\x12\x10\n" +
+	"\x03via\x18\x01 \x01(\tR\x03via\x12\x1c\n" +
+	"\tinterface\x18\x02 \x01(\tR\tinterface\x12\x16\n" +
+	"\x06active\x18\x03 \x01(\bR\x06active\"\xd6\x01\n" +
+	"\x05Route\x12\x16\n" +
+	"\x06prefix\x18\x01 \x01(\tR\x06prefix\x12\x1a\n" +
+	"\bprotocol\x18\x02 \x01(\tR\bprotocol\x12\x1a\n" +
+	"\bselected\x18\x03 \x01(\bR\bselected\x12\x1a\n" +
+	"\bdistance\x18\x04 \x01(\x05R\bdistance\x12\x16\n" +
+	"\x06metric\x18\x05 \x01(\x05R\x06metric\x125\n" +
+	"\bnexthops\x18\x06 \x03(\v2\x19.dcnetlab.v1.RouteNexthopR\bnexthops\x12\x12\n" +
+	"\x04kind\x18\a \x01(\tR\x04kind\"a\n" +
+	"\n" +
+	"NodeRoutes\x12'\n" +
+	"\x0fcontainer_state\x18\x01 \x01(\tR\x0econtainerState\x12*\n" +
+	"\x06routes\x18\x02 \x03(\v2\x12.dcnetlab.v1.RouteR\x06routes\"H\n" +
+	"\x16GetNodeBGPTableRequest\x12\x15\n" +
+	"\x06lab_id\x18\x01 \x01(\tR\x05labId\x12\x17\n" +
+	"\anode_id\x18\x02 \x01(\tR\x06nodeId\"\xa6\x02\n" +
+	"\aBGPPath\x12\x16\n" +
+	"\x06prefix\x18\x01 \x01(\tR\x06prefix\x12\x12\n" +
+	"\x04best\x18\x02 \x01(\bR\x04best\x12\x1c\n" +
+	"\tmultipath\x18\x03 \x01(\bR\tmultipath\x12\x14\n" +
+	"\x05valid\x18\x04 \x01(\bR\x05valid\x12\x1a\n" +
+	"\binternal\x18\x05 \x01(\bR\binternal\x12\x17\n" +
+	"\aas_path\x18\x06 \x01(\tR\x06asPath\x12\x16\n" +
+	"\x06origin\x18\a \x01(\tR\x06origin\x12\x1d\n" +
+	"\n" +
+	"local_pref\x18\b \x01(\rR\tlocalPref\x12\x12\n" +
+	"\x04peer\x18\t \x01(\tR\x04peer\x12\x18\n" +
+	"\anexthop\x18\n" +
+	" \x01(\tR\anexthop\x12!\n" +
+	"\fnexthop_name\x18\v \x01(\tR\vnexthopName\"\x9b\x01\n" +
+	"\fNodeBGPTable\x12'\n" +
+	"\x0fcontainer_state\x18\x01 \x01(\tR\x0econtainerState\x12\x1b\n" +
+	"\trouter_id\x18\x02 \x01(\tR\brouterId\x12\x19\n" +
+	"\blocal_as\x18\x03 \x01(\rR\alocalAs\x12*\n" +
+	"\x05paths\x18\x04 \x03(\v2\x14.dcnetlab.v1.BGPPathR\x05paths\"C\n" +
+	"\x11GetNodeFIBRequest\x12\x15\n" +
+	"\x06lab_id\x18\x01 \x01(\tR\x05labId\x12\x17\n" +
+	"\anode_id\x18\x02 \x01(\tR\x06nodeId\"^\n" +
+	"\aNodeFIB\x12'\n" +
+	"\x0fcontainer_state\x18\x01 \x01(\tR\x0econtainerState\x12*\n" +
+	"\x06routes\x18\x02 \x03(\v2\x12.dcnetlab.v1.RouteR\x06routes\")\n" +
 	"\x10ListNodesRequest\x12\x15\n" +
 	"\x06lab_id\x18\x01 \x01(\tR\x05labId\"9\n" +
 	"\x0eListNodesReply\x12'\n" +
@@ -3363,7 +4557,7 @@ const file_dcnetlab_v1_dcnetlab_proto_rawDesc = "" +
 	"\bprofiles\x18\x01 \x03(\v2\x18.dcnetlab.v1.ProfileInfoR\bprofiles\"\x10\n" +
 	"\x0eHealthzRequest\"&\n" +
 	"\fHealthzReply\x12\x16\n" +
-	"\x06status\x18\x01 \x01(\tR\x06status2\xf8\x0f\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status2\xff\x14\n" +
 	"\bDCNetLab\x12U\n" +
 	"\tCreateLab\x12\x1d.dcnetlab.v1.CreateLabRequest\x1a\x10.dcnetlab.v1.Lab\"\x17\x82\xd3\xe4\x93\x02\x11:\x01*\"\f/api/v1/labs\x12Z\n" +
 	"\bListLabs\x12\x1c.dcnetlab.v1.ListLabsRequest\x1a\x1a.dcnetlab.v1.ListLabsReply\"\x14\x82\xd3\xe4\x93\x02\x0e\x12\f/api/v1/labs\x12Q\n" +
@@ -3375,7 +4569,14 @@ const file_dcnetlab_v1_dcnetlab_proto_rawDesc = "" +
 	"\tListLinks\x12\x1d.dcnetlab.v1.ListLinksRequest\x1a\x1b.dcnetlab.v1.ListLinksReply\"#\x82\xd3\xe4\x93\x02\x1d\x12\x1b/api/v1/labs/{lab_id}/links\x12\x84\x01\n" +
 	"\x0fListAllocations\x12#.dcnetlab.v1.ListAllocationsRequest\x1a!.dcnetlab.v1.ListAllocationsReply\")\x82\xd3\xe4\x93\x02#\x12!/api/v1/labs/{lab_id}/allocations\x12u\n" +
 	"\tStartNode\x12\x1d.dcnetlab.v1.StartNodeRequest\x1a\x11.dcnetlab.v1.Node\"6\x82\xd3\xe4\x93\x020:\x01*\"+/api/v1/labs/{lab_id}/nodes/{node_id}/start\x12r\n" +
-	"\bStopNode\x12\x1c.dcnetlab.v1.StopNodeRequest\x1a\x11.dcnetlab.v1.Node\"5\x82\xd3\xe4\x93\x02/:\x01*\"*/api/v1/labs/{lab_id}/nodes/{node_id}/stop\x12g\n" +
+	"\bStopNode\x12\x1c.dcnetlab.v1.StopNodeRequest\x1a\x11.dcnetlab.v1.Node\"5\x82\xd3\xe4\x93\x02/:\x01*\"*/api/v1/labs/{lab_id}/nodes/{node_id}/stop\x12\x85\x01\n" +
+	"\x0eGetNodeRuntime\x12\".dcnetlab.v1.GetNodeRuntimeRequest\x1a\x18.dcnetlab.v1.NodeRuntime\"5\x82\xd3\xe4\x93\x02/\x12-/api/v1/labs/{lab_id}/nodes/{node_id}/runtime\x12u\n" +
+	"\n" +
+	"GetNodeBGP\x12\x1e.dcnetlab.v1.GetNodeBGPRequest\x1a\x14.dcnetlab.v1.NodeBGP\"1\x82\xd3\xe4\x93\x02+\x12)/api/v1/labs/{lab_id}/nodes/{node_id}/bgp\x12\x81\x01\n" +
+	"\rGetNodeRoutes\x12!.dcnetlab.v1.GetNodeRoutesRequest\x1a\x17.dcnetlab.v1.NodeRoutes\"4\x82\xd3\xe4\x93\x02.\x12,/api/v1/labs/{lab_id}/nodes/{node_id}/routes\x12\x8a\x01\n" +
+	"\x0fGetNodeBGPTable\x12#.dcnetlab.v1.GetNodeBGPTableRequest\x1a\x19.dcnetlab.v1.NodeBGPTable\"7\x82\xd3\xe4\x93\x021\x12//api/v1/labs/{lab_id}/nodes/{node_id}/bgp-table\x12u\n" +
+	"\n" +
+	"GetNodeFIB\x12\x1e.dcnetlab.v1.GetNodeFIBRequest\x1a\x14.dcnetlab.v1.NodeFIB\"1\x82\xd3\xe4\x93\x02+\x12)/api/v1/labs/{lab_id}/nodes/{node_id}/fib\x12g\n" +
 	"\n" +
 	"CreatePlan\x12\x1e.dcnetlab.v1.CreatePlanRequest\x1a\x11.dcnetlab.v1.Plan\"&\x82\xd3\xe4\x93\x02 :\x01*\"\x1b/api/v1/labs/{lab_id}/plans\x12U\n" +
 	"\aGetPlan\x12\x1b.dcnetlab.v1.GetPlanRequest\x1a\x11.dcnetlab.v1.Plan\"\x1a\x82\xd3\xe4\x93\x02\x14\x12\x12/api/v1/plans/{id}\x12j\n" +
@@ -3398,7 +4599,7 @@ func file_dcnetlab_v1_dcnetlab_proto_rawDescGZIP() []byte {
 	return file_dcnetlab_v1_dcnetlab_proto_rawDescData
 }
 
-var file_dcnetlab_v1_dcnetlab_proto_msgTypes = make([]protoimpl.MessageInfo, 53)
+var file_dcnetlab_v1_dcnetlab_proto_msgTypes = make([]protoimpl.MessageInfo, 70)
 var file_dcnetlab_v1_dcnetlab_proto_goTypes = []any{
 	(*ResourceError)(nil),          // 0: dcnetlab.v1.ResourceError
 	(*ResourceMeta)(nil),           // 1: dcnetlab.v1.ResourceMeta
@@ -3410,56 +4611,73 @@ var file_dcnetlab_v1_dcnetlab_proto_goTypes = []any{
 	(*LabStatus)(nil),              // 7: dcnetlab.v1.LabStatus
 	(*Lab)(nil),                    // 8: dcnetlab.v1.Lab
 	(*NodeSpec)(nil),               // 9: dcnetlab.v1.NodeSpec
-	(*NodeStatus)(nil),             // 10: dcnetlab.v1.NodeStatus
-	(*Node)(nil),                   // 11: dcnetlab.v1.Node
-	(*LinkEndpoint)(nil),           // 12: dcnetlab.v1.LinkEndpoint
-	(*LinkSpec)(nil),               // 13: dcnetlab.v1.LinkSpec
-	(*LinkStatus)(nil),             // 14: dcnetlab.v1.LinkStatus
-	(*Link)(nil),                   // 15: dcnetlab.v1.Link
-	(*PlanOperation)(nil),          // 16: dcnetlab.v1.PlanOperation
-	(*Allocation)(nil),             // 17: dcnetlab.v1.Allocation
-	(*PlanWarning)(nil),            // 18: dcnetlab.v1.PlanWarning
-	(*Plan)(nil),                   // 19: dcnetlab.v1.Plan
-	(*OperationStep)(nil),          // 20: dcnetlab.v1.OperationStep
-	(*OperationError)(nil),         // 21: dcnetlab.v1.OperationError
-	(*ResourceRef)(nil),            // 22: dcnetlab.v1.ResourceRef
-	(*Operation)(nil),              // 23: dcnetlab.v1.Operation
-	(*OperationRef)(nil),           // 24: dcnetlab.v1.OperationRef
-	(*CreateLabRequest)(nil),       // 25: dcnetlab.v1.CreateLabRequest
-	(*ListLabsRequest)(nil),        // 26: dcnetlab.v1.ListLabsRequest
-	(*ListLabsReply)(nil),          // 27: dcnetlab.v1.ListLabsReply
-	(*GetLabRequest)(nil),          // 28: dcnetlab.v1.GetLabRequest
-	(*DeleteLabRequest)(nil),       // 29: dcnetlab.v1.DeleteLabRequest
-	(*StartLabRequest)(nil),        // 30: dcnetlab.v1.StartLabRequest
-	(*StopLabRequest)(nil),         // 31: dcnetlab.v1.StopLabRequest
-	(*StartNodeRequest)(nil),       // 32: dcnetlab.v1.StartNodeRequest
-	(*StopNodeRequest)(nil),        // 33: dcnetlab.v1.StopNodeRequest
-	(*ListNodesRequest)(nil),       // 34: dcnetlab.v1.ListNodesRequest
-	(*ListNodesReply)(nil),         // 35: dcnetlab.v1.ListNodesReply
-	(*ListLinksRequest)(nil),       // 36: dcnetlab.v1.ListLinksRequest
-	(*ListLinksReply)(nil),         // 37: dcnetlab.v1.ListLinksReply
-	(*ListAllocationsRequest)(nil), // 38: dcnetlab.v1.ListAllocationsRequest
-	(*ListAllocationsReply)(nil),   // 39: dcnetlab.v1.ListAllocationsReply
-	(*CreatePlanRequest)(nil),      // 40: dcnetlab.v1.CreatePlanRequest
-	(*GetPlanRequest)(nil),         // 41: dcnetlab.v1.GetPlanRequest
-	(*ApplyPlanRequest)(nil),       // 42: dcnetlab.v1.ApplyPlanRequest
-	(*GetOperationRequest)(nil),    // 43: dcnetlab.v1.GetOperationRequest
-	(*ListOperationsRequest)(nil),  // 44: dcnetlab.v1.ListOperationsRequest
-	(*ListOperationsReply)(nil),    // 45: dcnetlab.v1.ListOperationsReply
-	(*ListGenerationsRequest)(nil), // 46: dcnetlab.v1.ListGenerationsRequest
-	(*ListGenerationsReply)(nil),   // 47: dcnetlab.v1.ListGenerationsReply
-	(*ListProfilesRequest)(nil),    // 48: dcnetlab.v1.ListProfilesRequest
-	(*ProfileInfo)(nil),            // 49: dcnetlab.v1.ProfileInfo
-	(*ListProfilesReply)(nil),      // 50: dcnetlab.v1.ListProfilesReply
-	(*HealthzRequest)(nil),         // 51: dcnetlab.v1.HealthzRequest
-	(*HealthzReply)(nil),           // 52: dcnetlab.v1.HealthzReply
-	(*timestamppb.Timestamp)(nil),  // 53: google.protobuf.Timestamp
+	(*InterfaceStatus)(nil),        // 10: dcnetlab.v1.InterfaceStatus
+	(*NodeStatus)(nil),             // 11: dcnetlab.v1.NodeStatus
+	(*Node)(nil),                   // 12: dcnetlab.v1.Node
+	(*LinkEndpoint)(nil),           // 13: dcnetlab.v1.LinkEndpoint
+	(*LinkSpec)(nil),               // 14: dcnetlab.v1.LinkSpec
+	(*LinkStatus)(nil),             // 15: dcnetlab.v1.LinkStatus
+	(*Link)(nil),                   // 16: dcnetlab.v1.Link
+	(*PlanOperation)(nil),          // 17: dcnetlab.v1.PlanOperation
+	(*Allocation)(nil),             // 18: dcnetlab.v1.Allocation
+	(*PlanWarning)(nil),            // 19: dcnetlab.v1.PlanWarning
+	(*Plan)(nil),                   // 20: dcnetlab.v1.Plan
+	(*OperationStep)(nil),          // 21: dcnetlab.v1.OperationStep
+	(*OperationError)(nil),         // 22: dcnetlab.v1.OperationError
+	(*ResourceRef)(nil),            // 23: dcnetlab.v1.ResourceRef
+	(*Operation)(nil),              // 24: dcnetlab.v1.Operation
+	(*OperationRef)(nil),           // 25: dcnetlab.v1.OperationRef
+	(*CreateLabRequest)(nil),       // 26: dcnetlab.v1.CreateLabRequest
+	(*ListLabsRequest)(nil),        // 27: dcnetlab.v1.ListLabsRequest
+	(*ListLabsReply)(nil),          // 28: dcnetlab.v1.ListLabsReply
+	(*GetLabRequest)(nil),          // 29: dcnetlab.v1.GetLabRequest
+	(*DeleteLabRequest)(nil),       // 30: dcnetlab.v1.DeleteLabRequest
+	(*StartLabRequest)(nil),        // 31: dcnetlab.v1.StartLabRequest
+	(*StopLabRequest)(nil),         // 32: dcnetlab.v1.StopLabRequest
+	(*StartNodeRequest)(nil),       // 33: dcnetlab.v1.StartNodeRequest
+	(*StopNodeRequest)(nil),        // 34: dcnetlab.v1.StopNodeRequest
+	(*GetNodeRuntimeRequest)(nil),  // 35: dcnetlab.v1.GetNodeRuntimeRequest
+	(*RuntimeInterface)(nil),       // 36: dcnetlab.v1.RuntimeInterface
+	(*NodeRuntime)(nil),            // 37: dcnetlab.v1.NodeRuntime
+	(*GetNodeBGPRequest)(nil),      // 38: dcnetlab.v1.GetNodeBGPRequest
+	(*BGPNeighbor)(nil),            // 39: dcnetlab.v1.BGPNeighbor
+	(*BGPServerGroup)(nil),         // 40: dcnetlab.v1.BGPServerGroup
+	(*NodeBGP)(nil),                // 41: dcnetlab.v1.NodeBGP
+	(*GetNodeRoutesRequest)(nil),   // 42: dcnetlab.v1.GetNodeRoutesRequest
+	(*RouteNexthop)(nil),           // 43: dcnetlab.v1.RouteNexthop
+	(*Route)(nil),                  // 44: dcnetlab.v1.Route
+	(*NodeRoutes)(nil),             // 45: dcnetlab.v1.NodeRoutes
+	(*GetNodeBGPTableRequest)(nil), // 46: dcnetlab.v1.GetNodeBGPTableRequest
+	(*BGPPath)(nil),                // 47: dcnetlab.v1.BGPPath
+	(*NodeBGPTable)(nil),           // 48: dcnetlab.v1.NodeBGPTable
+	(*GetNodeFIBRequest)(nil),      // 49: dcnetlab.v1.GetNodeFIBRequest
+	(*NodeFIB)(nil),                // 50: dcnetlab.v1.NodeFIB
+	(*ListNodesRequest)(nil),       // 51: dcnetlab.v1.ListNodesRequest
+	(*ListNodesReply)(nil),         // 52: dcnetlab.v1.ListNodesReply
+	(*ListLinksRequest)(nil),       // 53: dcnetlab.v1.ListLinksRequest
+	(*ListLinksReply)(nil),         // 54: dcnetlab.v1.ListLinksReply
+	(*ListAllocationsRequest)(nil), // 55: dcnetlab.v1.ListAllocationsRequest
+	(*ListAllocationsReply)(nil),   // 56: dcnetlab.v1.ListAllocationsReply
+	(*CreatePlanRequest)(nil),      // 57: dcnetlab.v1.CreatePlanRequest
+	(*GetPlanRequest)(nil),         // 58: dcnetlab.v1.GetPlanRequest
+	(*ApplyPlanRequest)(nil),       // 59: dcnetlab.v1.ApplyPlanRequest
+	(*GetOperationRequest)(nil),    // 60: dcnetlab.v1.GetOperationRequest
+	(*ListOperationsRequest)(nil),  // 61: dcnetlab.v1.ListOperationsRequest
+	(*ListOperationsReply)(nil),    // 62: dcnetlab.v1.ListOperationsReply
+	(*ListGenerationsRequest)(nil), // 63: dcnetlab.v1.ListGenerationsRequest
+	(*ListGenerationsReply)(nil),   // 64: dcnetlab.v1.ListGenerationsReply
+	(*ListProfilesRequest)(nil),    // 65: dcnetlab.v1.ListProfilesRequest
+	(*ProfileInfo)(nil),            // 66: dcnetlab.v1.ProfileInfo
+	(*ListProfilesReply)(nil),      // 67: dcnetlab.v1.ListProfilesReply
+	(*HealthzRequest)(nil),         // 68: dcnetlab.v1.HealthzRequest
+	(*HealthzReply)(nil),           // 69: dcnetlab.v1.HealthzReply
+	(*timestamppb.Timestamp)(nil),  // 70: google.protobuf.Timestamp
 }
 var file_dcnetlab_v1_dcnetlab_proto_depIdxs = []int32{
-	53, // 0: dcnetlab.v1.ResourceError.time:type_name -> google.protobuf.Timestamp
+	70, // 0: dcnetlab.v1.ResourceError.time:type_name -> google.protobuf.Timestamp
 	0,  // 1: dcnetlab.v1.ResourceMeta.last_error:type_name -> dcnetlab.v1.ResourceError
-	53, // 2: dcnetlab.v1.ResourceMeta.created_at:type_name -> google.protobuf.Timestamp
-	53, // 3: dcnetlab.v1.ResourceMeta.updated_at:type_name -> google.protobuf.Timestamp
+	70, // 2: dcnetlab.v1.ResourceMeta.created_at:type_name -> google.protobuf.Timestamp
+	70, // 3: dcnetlab.v1.ResourceMeta.updated_at:type_name -> google.protobuf.Timestamp
 	4,  // 4: dcnetlab.v1.TopologySpec.pods:type_name -> dcnetlab.v1.PodSpec
 	5,  // 5: dcnetlab.v1.LabSpec.topology:type_name -> dcnetlab.v1.TopologySpec
 	2,  // 6: dcnetlab.v1.LabSpec.pools:type_name -> dcnetlab.v1.AddressPool
@@ -3467,77 +4685,95 @@ var file_dcnetlab_v1_dcnetlab_proto_depIdxs = []int32{
 	1,  // 8: dcnetlab.v1.Lab.meta:type_name -> dcnetlab.v1.ResourceMeta
 	6,  // 9: dcnetlab.v1.Lab.spec:type_name -> dcnetlab.v1.LabSpec
 	7,  // 10: dcnetlab.v1.Lab.status:type_name -> dcnetlab.v1.LabStatus
-	53, // 11: dcnetlab.v1.NodeStatus.last_observed:type_name -> google.protobuf.Timestamp
-	1,  // 12: dcnetlab.v1.Node.meta:type_name -> dcnetlab.v1.ResourceMeta
-	9,  // 13: dcnetlab.v1.Node.spec:type_name -> dcnetlab.v1.NodeSpec
-	10, // 14: dcnetlab.v1.Node.status:type_name -> dcnetlab.v1.NodeStatus
-	12, // 15: dcnetlab.v1.LinkSpec.endpoint_a:type_name -> dcnetlab.v1.LinkEndpoint
-	12, // 16: dcnetlab.v1.LinkSpec.endpoint_b:type_name -> dcnetlab.v1.LinkEndpoint
-	1,  // 17: dcnetlab.v1.Link.meta:type_name -> dcnetlab.v1.ResourceMeta
-	13, // 18: dcnetlab.v1.Link.spec:type_name -> dcnetlab.v1.LinkSpec
-	14, // 19: dcnetlab.v1.Link.status:type_name -> dcnetlab.v1.LinkStatus
-	16, // 20: dcnetlab.v1.Plan.operations:type_name -> dcnetlab.v1.PlanOperation
-	17, // 21: dcnetlab.v1.Plan.allocations:type_name -> dcnetlab.v1.Allocation
-	18, // 22: dcnetlab.v1.Plan.warnings:type_name -> dcnetlab.v1.PlanWarning
-	53, // 23: dcnetlab.v1.Plan.created_at:type_name -> google.protobuf.Timestamp
-	53, // 24: dcnetlab.v1.OperationStep.started_at:type_name -> google.protobuf.Timestamp
-	53, // 25: dcnetlab.v1.OperationStep.finished_at:type_name -> google.protobuf.Timestamp
-	22, // 26: dcnetlab.v1.Operation.resource:type_name -> dcnetlab.v1.ResourceRef
-	20, // 27: dcnetlab.v1.Operation.steps:type_name -> dcnetlab.v1.OperationStep
-	21, // 28: dcnetlab.v1.Operation.error:type_name -> dcnetlab.v1.OperationError
-	53, // 29: dcnetlab.v1.Operation.created_at:type_name -> google.protobuf.Timestamp
-	53, // 30: dcnetlab.v1.Operation.updated_at:type_name -> google.protobuf.Timestamp
-	5,  // 31: dcnetlab.v1.CreateLabRequest.topology:type_name -> dcnetlab.v1.TopologySpec
-	8,  // 32: dcnetlab.v1.ListLabsReply.labs:type_name -> dcnetlab.v1.Lab
-	11, // 33: dcnetlab.v1.ListNodesReply.nodes:type_name -> dcnetlab.v1.Node
-	15, // 34: dcnetlab.v1.ListLinksReply.links:type_name -> dcnetlab.v1.Link
-	17, // 35: dcnetlab.v1.ListAllocationsReply.allocations:type_name -> dcnetlab.v1.Allocation
-	23, // 36: dcnetlab.v1.ListOperationsReply.operations:type_name -> dcnetlab.v1.Operation
-	5,  // 37: dcnetlab.v1.ProfileInfo.topology:type_name -> dcnetlab.v1.TopologySpec
-	49, // 38: dcnetlab.v1.ListProfilesReply.profiles:type_name -> dcnetlab.v1.ProfileInfo
-	25, // 39: dcnetlab.v1.DCNetLab.CreateLab:input_type -> dcnetlab.v1.CreateLabRequest
-	26, // 40: dcnetlab.v1.DCNetLab.ListLabs:input_type -> dcnetlab.v1.ListLabsRequest
-	28, // 41: dcnetlab.v1.DCNetLab.GetLab:input_type -> dcnetlab.v1.GetLabRequest
-	29, // 42: dcnetlab.v1.DCNetLab.DeleteLab:input_type -> dcnetlab.v1.DeleteLabRequest
-	30, // 43: dcnetlab.v1.DCNetLab.StartLab:input_type -> dcnetlab.v1.StartLabRequest
-	31, // 44: dcnetlab.v1.DCNetLab.StopLab:input_type -> dcnetlab.v1.StopLabRequest
-	34, // 45: dcnetlab.v1.DCNetLab.ListNodes:input_type -> dcnetlab.v1.ListNodesRequest
-	36, // 46: dcnetlab.v1.DCNetLab.ListLinks:input_type -> dcnetlab.v1.ListLinksRequest
-	38, // 47: dcnetlab.v1.DCNetLab.ListAllocations:input_type -> dcnetlab.v1.ListAllocationsRequest
-	32, // 48: dcnetlab.v1.DCNetLab.StartNode:input_type -> dcnetlab.v1.StartNodeRequest
-	33, // 49: dcnetlab.v1.DCNetLab.StopNode:input_type -> dcnetlab.v1.StopNodeRequest
-	40, // 50: dcnetlab.v1.DCNetLab.CreatePlan:input_type -> dcnetlab.v1.CreatePlanRequest
-	41, // 51: dcnetlab.v1.DCNetLab.GetPlan:input_type -> dcnetlab.v1.GetPlanRequest
-	42, // 52: dcnetlab.v1.DCNetLab.ApplyPlan:input_type -> dcnetlab.v1.ApplyPlanRequest
-	43, // 53: dcnetlab.v1.DCNetLab.GetOperation:input_type -> dcnetlab.v1.GetOperationRequest
-	44, // 54: dcnetlab.v1.DCNetLab.ListOperations:input_type -> dcnetlab.v1.ListOperationsRequest
-	46, // 55: dcnetlab.v1.DCNetLab.ListGenerations:input_type -> dcnetlab.v1.ListGenerationsRequest
-	48, // 56: dcnetlab.v1.DCNetLab.ListProfiles:input_type -> dcnetlab.v1.ListProfilesRequest
-	51, // 57: dcnetlab.v1.DCNetLab.Healthz:input_type -> dcnetlab.v1.HealthzRequest
-	8,  // 58: dcnetlab.v1.DCNetLab.CreateLab:output_type -> dcnetlab.v1.Lab
-	27, // 59: dcnetlab.v1.DCNetLab.ListLabs:output_type -> dcnetlab.v1.ListLabsReply
-	8,  // 60: dcnetlab.v1.DCNetLab.GetLab:output_type -> dcnetlab.v1.Lab
-	24, // 61: dcnetlab.v1.DCNetLab.DeleteLab:output_type -> dcnetlab.v1.OperationRef
-	24, // 62: dcnetlab.v1.DCNetLab.StartLab:output_type -> dcnetlab.v1.OperationRef
-	24, // 63: dcnetlab.v1.DCNetLab.StopLab:output_type -> dcnetlab.v1.OperationRef
-	35, // 64: dcnetlab.v1.DCNetLab.ListNodes:output_type -> dcnetlab.v1.ListNodesReply
-	37, // 65: dcnetlab.v1.DCNetLab.ListLinks:output_type -> dcnetlab.v1.ListLinksReply
-	39, // 66: dcnetlab.v1.DCNetLab.ListAllocations:output_type -> dcnetlab.v1.ListAllocationsReply
-	11, // 67: dcnetlab.v1.DCNetLab.StartNode:output_type -> dcnetlab.v1.Node
-	11, // 68: dcnetlab.v1.DCNetLab.StopNode:output_type -> dcnetlab.v1.Node
-	19, // 69: dcnetlab.v1.DCNetLab.CreatePlan:output_type -> dcnetlab.v1.Plan
-	19, // 70: dcnetlab.v1.DCNetLab.GetPlan:output_type -> dcnetlab.v1.Plan
-	24, // 71: dcnetlab.v1.DCNetLab.ApplyPlan:output_type -> dcnetlab.v1.OperationRef
-	23, // 72: dcnetlab.v1.DCNetLab.GetOperation:output_type -> dcnetlab.v1.Operation
-	45, // 73: dcnetlab.v1.DCNetLab.ListOperations:output_type -> dcnetlab.v1.ListOperationsReply
-	47, // 74: dcnetlab.v1.DCNetLab.ListGenerations:output_type -> dcnetlab.v1.ListGenerationsReply
-	50, // 75: dcnetlab.v1.DCNetLab.ListProfiles:output_type -> dcnetlab.v1.ListProfilesReply
-	52, // 76: dcnetlab.v1.DCNetLab.Healthz:output_type -> dcnetlab.v1.HealthzReply
-	58, // [58:77] is the sub-list for method output_type
-	39, // [39:58] is the sub-list for method input_type
-	39, // [39:39] is the sub-list for extension type_name
-	39, // [39:39] is the sub-list for extension extendee
-	0,  // [0:39] is the sub-list for field type_name
+	70, // 11: dcnetlab.v1.NodeStatus.last_observed:type_name -> google.protobuf.Timestamp
+	10, // 12: dcnetlab.v1.NodeStatus.interfaces:type_name -> dcnetlab.v1.InterfaceStatus
+	1,  // 13: dcnetlab.v1.Node.meta:type_name -> dcnetlab.v1.ResourceMeta
+	9,  // 14: dcnetlab.v1.Node.spec:type_name -> dcnetlab.v1.NodeSpec
+	11, // 15: dcnetlab.v1.Node.status:type_name -> dcnetlab.v1.NodeStatus
+	13, // 16: dcnetlab.v1.LinkSpec.endpoint_a:type_name -> dcnetlab.v1.LinkEndpoint
+	13, // 17: dcnetlab.v1.LinkSpec.endpoint_b:type_name -> dcnetlab.v1.LinkEndpoint
+	1,  // 18: dcnetlab.v1.Link.meta:type_name -> dcnetlab.v1.ResourceMeta
+	14, // 19: dcnetlab.v1.Link.spec:type_name -> dcnetlab.v1.LinkSpec
+	15, // 20: dcnetlab.v1.Link.status:type_name -> dcnetlab.v1.LinkStatus
+	17, // 21: dcnetlab.v1.Plan.operations:type_name -> dcnetlab.v1.PlanOperation
+	18, // 22: dcnetlab.v1.Plan.allocations:type_name -> dcnetlab.v1.Allocation
+	19, // 23: dcnetlab.v1.Plan.warnings:type_name -> dcnetlab.v1.PlanWarning
+	70, // 24: dcnetlab.v1.Plan.created_at:type_name -> google.protobuf.Timestamp
+	70, // 25: dcnetlab.v1.OperationStep.started_at:type_name -> google.protobuf.Timestamp
+	70, // 26: dcnetlab.v1.OperationStep.finished_at:type_name -> google.protobuf.Timestamp
+	23, // 27: dcnetlab.v1.Operation.resource:type_name -> dcnetlab.v1.ResourceRef
+	21, // 28: dcnetlab.v1.Operation.steps:type_name -> dcnetlab.v1.OperationStep
+	22, // 29: dcnetlab.v1.Operation.error:type_name -> dcnetlab.v1.OperationError
+	70, // 30: dcnetlab.v1.Operation.created_at:type_name -> google.protobuf.Timestamp
+	70, // 31: dcnetlab.v1.Operation.updated_at:type_name -> google.protobuf.Timestamp
+	5,  // 32: dcnetlab.v1.CreateLabRequest.topology:type_name -> dcnetlab.v1.TopologySpec
+	8,  // 33: dcnetlab.v1.ListLabsReply.labs:type_name -> dcnetlab.v1.Lab
+	36, // 34: dcnetlab.v1.NodeRuntime.interfaces:type_name -> dcnetlab.v1.RuntimeInterface
+	39, // 35: dcnetlab.v1.NodeBGP.neighbors:type_name -> dcnetlab.v1.BGPNeighbor
+	40, // 36: dcnetlab.v1.NodeBGP.server_group:type_name -> dcnetlab.v1.BGPServerGroup
+	43, // 37: dcnetlab.v1.Route.nexthops:type_name -> dcnetlab.v1.RouteNexthop
+	44, // 38: dcnetlab.v1.NodeRoutes.routes:type_name -> dcnetlab.v1.Route
+	47, // 39: dcnetlab.v1.NodeBGPTable.paths:type_name -> dcnetlab.v1.BGPPath
+	44, // 40: dcnetlab.v1.NodeFIB.routes:type_name -> dcnetlab.v1.Route
+	12, // 41: dcnetlab.v1.ListNodesReply.nodes:type_name -> dcnetlab.v1.Node
+	16, // 42: dcnetlab.v1.ListLinksReply.links:type_name -> dcnetlab.v1.Link
+	18, // 43: dcnetlab.v1.ListAllocationsReply.allocations:type_name -> dcnetlab.v1.Allocation
+	24, // 44: dcnetlab.v1.ListOperationsReply.operations:type_name -> dcnetlab.v1.Operation
+	5,  // 45: dcnetlab.v1.ProfileInfo.topology:type_name -> dcnetlab.v1.TopologySpec
+	66, // 46: dcnetlab.v1.ListProfilesReply.profiles:type_name -> dcnetlab.v1.ProfileInfo
+	26, // 47: dcnetlab.v1.DCNetLab.CreateLab:input_type -> dcnetlab.v1.CreateLabRequest
+	27, // 48: dcnetlab.v1.DCNetLab.ListLabs:input_type -> dcnetlab.v1.ListLabsRequest
+	29, // 49: dcnetlab.v1.DCNetLab.GetLab:input_type -> dcnetlab.v1.GetLabRequest
+	30, // 50: dcnetlab.v1.DCNetLab.DeleteLab:input_type -> dcnetlab.v1.DeleteLabRequest
+	31, // 51: dcnetlab.v1.DCNetLab.StartLab:input_type -> dcnetlab.v1.StartLabRequest
+	32, // 52: dcnetlab.v1.DCNetLab.StopLab:input_type -> dcnetlab.v1.StopLabRequest
+	51, // 53: dcnetlab.v1.DCNetLab.ListNodes:input_type -> dcnetlab.v1.ListNodesRequest
+	53, // 54: dcnetlab.v1.DCNetLab.ListLinks:input_type -> dcnetlab.v1.ListLinksRequest
+	55, // 55: dcnetlab.v1.DCNetLab.ListAllocations:input_type -> dcnetlab.v1.ListAllocationsRequest
+	33, // 56: dcnetlab.v1.DCNetLab.StartNode:input_type -> dcnetlab.v1.StartNodeRequest
+	34, // 57: dcnetlab.v1.DCNetLab.StopNode:input_type -> dcnetlab.v1.StopNodeRequest
+	35, // 58: dcnetlab.v1.DCNetLab.GetNodeRuntime:input_type -> dcnetlab.v1.GetNodeRuntimeRequest
+	38, // 59: dcnetlab.v1.DCNetLab.GetNodeBGP:input_type -> dcnetlab.v1.GetNodeBGPRequest
+	42, // 60: dcnetlab.v1.DCNetLab.GetNodeRoutes:input_type -> dcnetlab.v1.GetNodeRoutesRequest
+	46, // 61: dcnetlab.v1.DCNetLab.GetNodeBGPTable:input_type -> dcnetlab.v1.GetNodeBGPTableRequest
+	49, // 62: dcnetlab.v1.DCNetLab.GetNodeFIB:input_type -> dcnetlab.v1.GetNodeFIBRequest
+	57, // 63: dcnetlab.v1.DCNetLab.CreatePlan:input_type -> dcnetlab.v1.CreatePlanRequest
+	58, // 64: dcnetlab.v1.DCNetLab.GetPlan:input_type -> dcnetlab.v1.GetPlanRequest
+	59, // 65: dcnetlab.v1.DCNetLab.ApplyPlan:input_type -> dcnetlab.v1.ApplyPlanRequest
+	60, // 66: dcnetlab.v1.DCNetLab.GetOperation:input_type -> dcnetlab.v1.GetOperationRequest
+	61, // 67: dcnetlab.v1.DCNetLab.ListOperations:input_type -> dcnetlab.v1.ListOperationsRequest
+	63, // 68: dcnetlab.v1.DCNetLab.ListGenerations:input_type -> dcnetlab.v1.ListGenerationsRequest
+	65, // 69: dcnetlab.v1.DCNetLab.ListProfiles:input_type -> dcnetlab.v1.ListProfilesRequest
+	68, // 70: dcnetlab.v1.DCNetLab.Healthz:input_type -> dcnetlab.v1.HealthzRequest
+	8,  // 71: dcnetlab.v1.DCNetLab.CreateLab:output_type -> dcnetlab.v1.Lab
+	28, // 72: dcnetlab.v1.DCNetLab.ListLabs:output_type -> dcnetlab.v1.ListLabsReply
+	8,  // 73: dcnetlab.v1.DCNetLab.GetLab:output_type -> dcnetlab.v1.Lab
+	25, // 74: dcnetlab.v1.DCNetLab.DeleteLab:output_type -> dcnetlab.v1.OperationRef
+	25, // 75: dcnetlab.v1.DCNetLab.StartLab:output_type -> dcnetlab.v1.OperationRef
+	25, // 76: dcnetlab.v1.DCNetLab.StopLab:output_type -> dcnetlab.v1.OperationRef
+	52, // 77: dcnetlab.v1.DCNetLab.ListNodes:output_type -> dcnetlab.v1.ListNodesReply
+	54, // 78: dcnetlab.v1.DCNetLab.ListLinks:output_type -> dcnetlab.v1.ListLinksReply
+	56, // 79: dcnetlab.v1.DCNetLab.ListAllocations:output_type -> dcnetlab.v1.ListAllocationsReply
+	12, // 80: dcnetlab.v1.DCNetLab.StartNode:output_type -> dcnetlab.v1.Node
+	12, // 81: dcnetlab.v1.DCNetLab.StopNode:output_type -> dcnetlab.v1.Node
+	37, // 82: dcnetlab.v1.DCNetLab.GetNodeRuntime:output_type -> dcnetlab.v1.NodeRuntime
+	41, // 83: dcnetlab.v1.DCNetLab.GetNodeBGP:output_type -> dcnetlab.v1.NodeBGP
+	45, // 84: dcnetlab.v1.DCNetLab.GetNodeRoutes:output_type -> dcnetlab.v1.NodeRoutes
+	48, // 85: dcnetlab.v1.DCNetLab.GetNodeBGPTable:output_type -> dcnetlab.v1.NodeBGPTable
+	50, // 86: dcnetlab.v1.DCNetLab.GetNodeFIB:output_type -> dcnetlab.v1.NodeFIB
+	20, // 87: dcnetlab.v1.DCNetLab.CreatePlan:output_type -> dcnetlab.v1.Plan
+	20, // 88: dcnetlab.v1.DCNetLab.GetPlan:output_type -> dcnetlab.v1.Plan
+	25, // 89: dcnetlab.v1.DCNetLab.ApplyPlan:output_type -> dcnetlab.v1.OperationRef
+	24, // 90: dcnetlab.v1.DCNetLab.GetOperation:output_type -> dcnetlab.v1.Operation
+	62, // 91: dcnetlab.v1.DCNetLab.ListOperations:output_type -> dcnetlab.v1.ListOperationsReply
+	64, // 92: dcnetlab.v1.DCNetLab.ListGenerations:output_type -> dcnetlab.v1.ListGenerationsReply
+	67, // 93: dcnetlab.v1.DCNetLab.ListProfiles:output_type -> dcnetlab.v1.ListProfilesReply
+	69, // 94: dcnetlab.v1.DCNetLab.Healthz:output_type -> dcnetlab.v1.HealthzReply
+	71, // [71:95] is the sub-list for method output_type
+	47, // [47:71] is the sub-list for method input_type
+	47, // [47:47] is the sub-list for extension type_name
+	47, // [47:47] is the sub-list for extension extendee
+	0,  // [0:47] is the sub-list for field type_name
 }
 
 func init() { file_dcnetlab_v1_dcnetlab_proto_init() }
@@ -3551,7 +4787,7 @@ func file_dcnetlab_v1_dcnetlab_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dcnetlab_v1_dcnetlab_proto_rawDesc), len(file_dcnetlab_v1_dcnetlab_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   53,
+			NumMessages:   70,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

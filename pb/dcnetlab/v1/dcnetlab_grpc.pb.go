@@ -36,6 +36,11 @@ const (
 	DCNetLab_ListAllocations_FullMethodName = "/dcnetlab.v1.DCNetLab/ListAllocations"
 	DCNetLab_StartNode_FullMethodName       = "/dcnetlab.v1.DCNetLab/StartNode"
 	DCNetLab_StopNode_FullMethodName        = "/dcnetlab.v1.DCNetLab/StopNode"
+	DCNetLab_GetNodeRuntime_FullMethodName  = "/dcnetlab.v1.DCNetLab/GetNodeRuntime"
+	DCNetLab_GetNodeBGP_FullMethodName      = "/dcnetlab.v1.DCNetLab/GetNodeBGP"
+	DCNetLab_GetNodeRoutes_FullMethodName   = "/dcnetlab.v1.DCNetLab/GetNodeRoutes"
+	DCNetLab_GetNodeBGPTable_FullMethodName = "/dcnetlab.v1.DCNetLab/GetNodeBGPTable"
+	DCNetLab_GetNodeFIB_FullMethodName      = "/dcnetlab.v1.DCNetLab/GetNodeFIB"
 	DCNetLab_CreatePlan_FullMethodName      = "/dcnetlab.v1.DCNetLab/CreatePlan"
 	DCNetLab_GetPlan_FullMethodName         = "/dcnetlab.v1.DCNetLab/GetPlan"
 	DCNetLab_ApplyPlan_FullMethodName       = "/dcnetlab.v1.DCNetLab/ApplyPlan"
@@ -69,6 +74,28 @@ type DCNetLabClient interface {
 	// StartNode / StopNode power a single device on and off.
 	StartNode(ctx context.Context, in *StartNodeRequest, opts ...grpc.CallOption) (*Node, error)
 	StopNode(ctx context.Context, in *StopNodeRequest, opts ...grpc.CallOption) (*Node, error)
+	// GetNodeRuntime returns the management view of one deployed node:
+	// the underlying container state and every kernel interface inside
+	// it, including implementation plumbing (bridge, VRRP macvlan,
+	// management eth0) that the simulated topology does not model.
+	GetNodeRuntime(ctx context.Context, in *GetNodeRuntimeRequest, opts ...grpc.CallOption) (*NodeRuntime, error)
+	// GetNodeBGP returns the BGP configuration of one node as derived
+	// by the FRR compiler from the topology model: eBGP neighbors over
+	// fabric links, the MLAG iBGP session and the leaf's dynamic server
+	// peer-group. Empty for nodes that do not run BGP.
+	GetNodeBGP(ctx context.Context, in *GetNodeBGPRequest, opts ...grpc.CallOption) (*NodeBGP, error)
+	// GetNodeRoutes returns the live IPv4 routing table (FRR RIB) of
+	// one deployed node; routes are empty unless the container is
+	// running.
+	GetNodeRoutes(ctx context.Context, in *GetNodeRoutesRequest, opts ...grpc.CallOption) (*NodeRoutes, error)
+	// GetNodeBGPTable returns the live BGP Loc-RIB of one deployed
+	// node (`show ip bgp`): every candidate path per prefix, before
+	// best-path selection reduces them to the RIB entry.
+	GetNodeBGPTable(ctx context.Context, in *GetNodeBGPTableRequest, opts ...grpc.CallOption) (*NodeBGPTable, error)
+	// GetNodeFIB returns the live kernel forwarding table of one
+	// deployed node (`ip route`): what actually forwards packets, as
+	// installed by zebra from the RIB.
+	GetNodeFIB(ctx context.Context, in *GetNodeFIBRequest, opts ...grpc.CallOption) (*NodeFIB, error)
 	// --- Plans ---
 	CreatePlan(ctx context.Context, in *CreatePlanRequest, opts ...grpc.CallOption) (*Plan, error)
 	GetPlan(ctx context.Context, in *GetPlanRequest, opts ...grpc.CallOption) (*Plan, error)
@@ -200,6 +227,56 @@ func (c *dCNetLabClient) StopNode(ctx context.Context, in *StopNodeRequest, opts
 	return out, nil
 }
 
+func (c *dCNetLabClient) GetNodeRuntime(ctx context.Context, in *GetNodeRuntimeRequest, opts ...grpc.CallOption) (*NodeRuntime, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(NodeRuntime)
+	err := c.cc.Invoke(ctx, DCNetLab_GetNodeRuntime_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) GetNodeBGP(ctx context.Context, in *GetNodeBGPRequest, opts ...grpc.CallOption) (*NodeBGP, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(NodeBGP)
+	err := c.cc.Invoke(ctx, DCNetLab_GetNodeBGP_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) GetNodeRoutes(ctx context.Context, in *GetNodeRoutesRequest, opts ...grpc.CallOption) (*NodeRoutes, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(NodeRoutes)
+	err := c.cc.Invoke(ctx, DCNetLab_GetNodeRoutes_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) GetNodeBGPTable(ctx context.Context, in *GetNodeBGPTableRequest, opts ...grpc.CallOption) (*NodeBGPTable, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(NodeBGPTable)
+	err := c.cc.Invoke(ctx, DCNetLab_GetNodeBGPTable_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) GetNodeFIB(ctx context.Context, in *GetNodeFIBRequest, opts ...grpc.CallOption) (*NodeFIB, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(NodeFIB)
+	err := c.cc.Invoke(ctx, DCNetLab_GetNodeFIB_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *dCNetLabClient) CreatePlan(ctx context.Context, in *CreatePlanRequest, opts ...grpc.CallOption) (*Plan, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Plan)
@@ -303,6 +380,28 @@ type DCNetLabServer interface {
 	// StartNode / StopNode power a single device on and off.
 	StartNode(context.Context, *StartNodeRequest) (*Node, error)
 	StopNode(context.Context, *StopNodeRequest) (*Node, error)
+	// GetNodeRuntime returns the management view of one deployed node:
+	// the underlying container state and every kernel interface inside
+	// it, including implementation plumbing (bridge, VRRP macvlan,
+	// management eth0) that the simulated topology does not model.
+	GetNodeRuntime(context.Context, *GetNodeRuntimeRequest) (*NodeRuntime, error)
+	// GetNodeBGP returns the BGP configuration of one node as derived
+	// by the FRR compiler from the topology model: eBGP neighbors over
+	// fabric links, the MLAG iBGP session and the leaf's dynamic server
+	// peer-group. Empty for nodes that do not run BGP.
+	GetNodeBGP(context.Context, *GetNodeBGPRequest) (*NodeBGP, error)
+	// GetNodeRoutes returns the live IPv4 routing table (FRR RIB) of
+	// one deployed node; routes are empty unless the container is
+	// running.
+	GetNodeRoutes(context.Context, *GetNodeRoutesRequest) (*NodeRoutes, error)
+	// GetNodeBGPTable returns the live BGP Loc-RIB of one deployed
+	// node (`show ip bgp`): every candidate path per prefix, before
+	// best-path selection reduces them to the RIB entry.
+	GetNodeBGPTable(context.Context, *GetNodeBGPTableRequest) (*NodeBGPTable, error)
+	// GetNodeFIB returns the live kernel forwarding table of one
+	// deployed node (`ip route`): what actually forwards packets, as
+	// installed by zebra from the RIB.
+	GetNodeFIB(context.Context, *GetNodeFIBRequest) (*NodeFIB, error)
 	// --- Plans ---
 	CreatePlan(context.Context, *CreatePlanRequest) (*Plan, error)
 	GetPlan(context.Context, *GetPlanRequest) (*Plan, error)
@@ -356,6 +455,21 @@ func (UnimplementedDCNetLabServer) StartNode(context.Context, *StartNodeRequest)
 }
 func (UnimplementedDCNetLabServer) StopNode(context.Context, *StopNodeRequest) (*Node, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StopNode not implemented")
+}
+func (UnimplementedDCNetLabServer) GetNodeRuntime(context.Context, *GetNodeRuntimeRequest) (*NodeRuntime, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetNodeRuntime not implemented")
+}
+func (UnimplementedDCNetLabServer) GetNodeBGP(context.Context, *GetNodeBGPRequest) (*NodeBGP, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetNodeBGP not implemented")
+}
+func (UnimplementedDCNetLabServer) GetNodeRoutes(context.Context, *GetNodeRoutesRequest) (*NodeRoutes, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetNodeRoutes not implemented")
+}
+func (UnimplementedDCNetLabServer) GetNodeBGPTable(context.Context, *GetNodeBGPTableRequest) (*NodeBGPTable, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetNodeBGPTable not implemented")
+}
+func (UnimplementedDCNetLabServer) GetNodeFIB(context.Context, *GetNodeFIBRequest) (*NodeFIB, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetNodeFIB not implemented")
 }
 func (UnimplementedDCNetLabServer) CreatePlan(context.Context, *CreatePlanRequest) (*Plan, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreatePlan not implemented")
@@ -600,6 +714,96 @@ func _DCNetLab_StopNode_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DCNetLab_GetNodeRuntime_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetNodeRuntimeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).GetNodeRuntime(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_GetNodeRuntime_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).GetNodeRuntime(ctx, req.(*GetNodeRuntimeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_GetNodeBGP_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetNodeBGPRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).GetNodeBGP(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_GetNodeBGP_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).GetNodeBGP(ctx, req.(*GetNodeBGPRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_GetNodeRoutes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetNodeRoutesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).GetNodeRoutes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_GetNodeRoutes_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).GetNodeRoutes(ctx, req.(*GetNodeRoutesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_GetNodeBGPTable_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetNodeBGPTableRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).GetNodeBGPTable(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_GetNodeBGPTable_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).GetNodeBGPTable(ctx, req.(*GetNodeBGPTableRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_GetNodeFIB_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetNodeFIBRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).GetNodeFIB(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_GetNodeFIB_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).GetNodeFIB(ctx, req.(*GetNodeFIBRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DCNetLab_CreatePlan_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CreatePlanRequest)
 	if err := dec(in); err != nil {
@@ -794,6 +998,26 @@ var DCNetLab_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "StopNode",
 			Handler:    _DCNetLab_StopNode_Handler,
+		},
+		{
+			MethodName: "GetNodeRuntime",
+			Handler:    _DCNetLab_GetNodeRuntime_Handler,
+		},
+		{
+			MethodName: "GetNodeBGP",
+			Handler:    _DCNetLab_GetNodeBGP_Handler,
+		},
+		{
+			MethodName: "GetNodeRoutes",
+			Handler:    _DCNetLab_GetNodeRoutes_Handler,
+		},
+		{
+			MethodName: "GetNodeBGPTable",
+			Handler:    _DCNetLab_GetNodeBGPTable_Handler,
+		},
+		{
+			MethodName: "GetNodeFIB",
+			Handler:    _DCNetLab_GetNodeFIB_Handler,
 		},
 		{
 			MethodName: "CreatePlan",

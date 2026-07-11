@@ -19,17 +19,18 @@ import (
 type DCNetLabService struct {
 	v1.UnimplementedDCNetLabServer
 
-	labs  *biz.LabUsecase
-	topos *biz.TopologyUsecase
-	plans *biz.PlanUsecase
-	ops   *biz.OperationUsecase
-	power *biz.PowerUsecase
-	log   *slog.Logger
+	labs    *biz.LabUsecase
+	topos   *biz.TopologyUsecase
+	plans   *biz.PlanUsecase
+	ops     *biz.OperationUsecase
+	power   *biz.PowerUsecase
+	runtime *biz.RuntimeUsecase
+	log     *slog.Logger
 }
 
 // NewDCNetLabService wires the protobuf service.
-func NewDCNetLabService(labs *biz.LabUsecase, topos *biz.TopologyUsecase, plans *biz.PlanUsecase, ops *biz.OperationUsecase, power *biz.PowerUsecase, log *slog.Logger) *DCNetLabService {
-	return &DCNetLabService{labs: labs, topos: topos, plans: plans, ops: ops, power: power, log: log}
+func NewDCNetLabService(labs *biz.LabUsecase, topos *biz.TopologyUsecase, plans *biz.PlanUsecase, ops *biz.OperationUsecase, power *biz.PowerUsecase, rt *biz.RuntimeUsecase, log *slog.Logger) *DCNetLabService {
+	return &DCNetLabService{labs: labs, topos: topos, plans: plans, ops: ops, power: power, runtime: rt, log: log}
 }
 
 // asAPIError maps biz-layer errors onto Kratos errors so the HTTP
@@ -125,6 +126,53 @@ func (s *DCNetLabService) StopNode(ctx context.Context, req *v1.StopNodeRequest)
 	}
 
 	return nodeToPB(node), nil
+}
+
+func (s *DCNetLabService) GetNodeBGP(ctx context.Context, req *v1.GetNodeBGPRequest) (*v1.NodeBGP, error) {
+	cfg, err := s.topos.GetNodeBGP(req.LabId, req.NodeId)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return nodeBGPToPB(cfg), nil
+}
+
+func (s *DCNetLabService) GetNodeRuntime(ctx context.Context, req *v1.GetNodeRuntimeRequest) (*v1.NodeRuntime, error) {
+	rt, err := s.runtime.GetNodeRuntime(ctx, req.LabId, req.NodeId)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return nodeRuntimeToPB(rt), nil
+}
+
+func (s *DCNetLabService) GetNodeRoutes(ctx context.Context, req *v1.GetNodeRoutesRequest) (*v1.NodeRoutes, error) {
+	rt, err := s.runtime.GetNodeRoutes(ctx, req.LabId, req.NodeId)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return nodeRoutesToPB(rt), nil
+}
+
+func (s *DCNetLabService) GetNodeBGPTable(ctx context.Context, req *v1.GetNodeBGPTableRequest) (*v1.NodeBGPTable, error) {
+	table, err := s.runtime.GetNodeBGPTable(ctx, req.LabId, req.NodeId)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return nodeBGPTableToPB(table), nil
+}
+
+func (s *DCNetLabService) GetNodeFIB(ctx context.Context, req *v1.GetNodeFIBRequest) (*v1.NodeFIB, error) {
+	rt, err := s.runtime.GetNodeFIB(ctx, req.LabId, req.NodeId)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	fib := nodeRoutesToPB(rt)
+
+	return &v1.NodeFIB{ContainerState: fib.ContainerState, Routes: fib.Routes}, nil
 }
 
 // --- Topology ---

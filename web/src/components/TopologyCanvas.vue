@@ -10,6 +10,7 @@ const props = defineProps<{ nodes: Node[]; links: Link[] }>()
 const emit = defineEmits<{
   selectNode: [node: Node]
   selectLink: [link: Link]
+  selectNone: []
   openTerminal: [node: Node]
 }>()
 
@@ -379,6 +380,11 @@ onMounted(() => {
   cy.on('tap', 'edge', (ev) => {
     const l = props.links.find((x) => x.meta.id === ev.target.id())
     if (l) emit('selectLink', l)
+  })
+  // Tapping the canvas background clears the selection (and closes
+  // the detail drawer).
+  cy.on('tap', (ev) => {
+    if (ev.target === cy) emit('selectNone')
   })
   // Double-click a device (not a pod/rack frame) to open its terminal.
   cy.on('dbltap', 'node[icon]', (ev) => {

@@ -21,22 +21,25 @@ import (
 type Store interface {
 	ListLabs() ([]*model.Lab, error)
 	ListNodes(labID string) ([]*model.Node, error)
+	ListLinks(labID string) ([]*model.Link, error)
 	UpdateNode(n *model.Node) error
 	UpdateLab(lab *model.Lab) error
 }
 
 // Observation is one node's observed state, as pushed to subscribers.
 type Observation struct {
-	NodeID          string              `json:"nodeId"`
-	Name            string              `json:"name"`
-	Phase           model.ResourcePhase `json:"phase"`
-	RuntimeState    model.RuntimeState  `json:"runtimeState"`
-	BGPEstablished  int                 `json:"bgpEstablished"`
-	BGPConfigured   int                 `json:"bgpConfigured"`
-	RouteCount      int                 `json:"routeCount"`
-	InterfacesUp    int                 `json:"interfacesUp"`
-	InterfacesTotal int                 `json:"interfacesTotal"`
-	LastObserved    time.Time           `json:"lastObserved"`
+	NodeID          string                  `json:"nodeId"`
+	Name            string                  `json:"name"`
+	Phase           model.ResourcePhase     `json:"phase"`
+	RuntimeState    model.RuntimeState      `json:"runtimeState"`
+	BGPEstablished  int                     `json:"bgpEstablished"`
+	BGPConfigured   int                     `json:"bgpConfigured"`
+	RouteCount      int                     `json:"routeCount"`
+	InterfacesUp    int                     `json:"interfacesUp"`
+	InterfacesTotal int                     `json:"interfacesTotal"`
+	Interfaces      []model.InterfaceStatus `json:"interfaces"`
+	VRRPState       string                  `json:"vrrpState"`
+	LastObserved    time.Time               `json:"lastObserved"`
 }
 
 // Sweep cadence: container state is one cheap docker ps per tick;
@@ -66,7 +69,8 @@ type Observer struct {
 type deepMetrics struct {
 	bgpEstablished, bgpConfigured int
 	routeCount                    int
-	interfacesUp, interfacesTotal int
+	interfaces                    []model.InterfaceStatus
+	vrrpState                     string
 }
 
 // New wires the observer.
@@ -254,11 +258,12 @@ func (o *Observer) reconcile(lab *model.Lab, nodes []*model.Node, states map[str
 			next.BGPEstablished = m.bgpEstablished
 			next.BGPConfigured = m.bgpConfigured
 			next.RouteCount = m.routeCount
-			next.InterfacesUp = m.interfacesUp
-			next.InterfacesTotal = m.interfacesTotal
+			next.Interfaces = m.interfaces
+			next.InterfacesUp, next.InterfacesTotal = countUp(m.interfaces)
+			next.VRRPState = m.vrrpState
 		}
 
-		if n.Meta.Phase == phase && next == n.Status {
+		if n.Meta.Phase == phase && next.Equal(n.Status) {
 			continue
 		}
 
@@ -319,6 +324,8 @@ func (o *Observer) broadcast(labID string, nodes []*model.Node) {
 			RouteCount:      n.Status.RouteCount,
 			InterfacesUp:    n.Status.InterfacesUp,
 			InterfacesTotal: n.Status.InterfacesTotal,
+			Interfaces:      n.Status.Interfaces,
+			VRRPState:       n.Status.VRRPState,
 			LastObserved:    now,
 		})
 	}

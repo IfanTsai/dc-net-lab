@@ -72,8 +72,95 @@ export interface Node {
     bgpConfigured: number
     interfacesUp?: number
     interfacesTotal?: number
+    // Simulated interfaces only: topology link endpoints plus modeled
+    // logical interfaces (leaf vlanif, server bond0).
+    interfaces?: InterfaceStatus[]
+    // VRRP gateway role of a leaf: Master / Backup / '' (no VRRP).
+    vrrpState?: string
     lastObserved?: string
   }
+}
+
+export interface InterfaceStatus {
+  name: string
+  up: boolean
+}
+
+// RuntimeInterface is one kernel interface of a node's container, as
+// returned by the management view (GET .../nodes/{id}/runtime).
+export interface RuntimeInterface {
+  name: string
+  state: string
+  mac?: string
+  addresses?: string[]
+}
+
+export interface NodeRuntime {
+  containerState: string
+  interfaces?: RuntimeInterface[]
+}
+
+// NodeRoutes is the live FRR routing table of a deployed node
+// (GET .../nodes/{id}/routes); routes are empty unless running.
+export interface RouteNexthop {
+  via?: string
+  interface?: string
+  active?: boolean
+}
+
+export interface Route {
+  prefix: string
+  protocol: string
+  // FIB only: 'local' marks a host entry (traffic addressed to the
+  // device itself); empty means a forwarding (LPM) entry.
+  kind?: string
+  selected?: boolean
+  distance?: number
+  metric?: number
+  nexthops?: RouteNexthop[]
+}
+
+export interface NodeRoutes {
+  containerState: string
+  routes?: Route[]
+}
+
+// NodeBGPTable is the live BGP Loc-RIB (GET .../nodes/{id}/bgp-table):
+// every candidate path per prefix, before best-path selection.
+export interface BGPPath {
+  prefix: string
+  best?: boolean
+  multipath?: boolean
+  valid?: boolean
+  internal?: boolean
+  asPath?: string
+  origin?: string
+  localPref?: number
+  peer?: string
+  nexthop?: string
+  nexthopName?: string
+}
+
+export interface NodeBGPTable {
+  containerState: string
+  routerId?: string
+  localAs?: number
+  paths?: BGPPath[]
+}
+
+// NodeBGP is the node's BGP configuration as derived by the FRR
+// compiler (GET .../nodes/{id}/bgp); empty for nodes without BGP.
+export interface BGPNeighbor {
+  address: string
+  remoteAs: number
+  description?: string
+}
+
+export interface NodeBGP {
+  asn: number
+  routerId?: string
+  neighbors?: BGPNeighbor[]
+  serverGroup?: { remoteAs: number; listenRange: string } | null
 }
 
 // Observation is one node's observed state as pushed on the topology
@@ -88,6 +175,8 @@ export interface Observation {
   routeCount: number
   interfacesUp: number
   interfacesTotal: number
+  interfaces?: InterfaceStatus[]
+  vrrpState?: string
   lastObserved: string
 }
 

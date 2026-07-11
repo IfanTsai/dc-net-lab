@@ -1,8 +1,10 @@
 package biz
 
 import (
+	"fmt"
 	"log/slog"
 
+	"github.com/ifantsai/dcnetlab/internal/compiler/frr"
 	"github.com/ifantsai/dcnetlab/internal/model"
 )
 
@@ -38,4 +40,45 @@ func (uc *TopologyUsecase) ListLinks(labID string) ([]*model.Link, error) {
 // ListAllocations returns the resource allocations of a lab.
 func (uc *TopologyUsecase) ListAllocations(labID string) ([]model.Allocation, error) {
 	return uc.repo.ListAllocations(labID)
+}
+
+// GetNodeBGP returns one node's BGP configuration, derived by the
+// same compiler that renders frr.conf so the view can never drift
+// from the deployed config. Nodes that do not run BGP yield an empty
+// config.
+func (uc *TopologyUsecase) GetNodeBGP(labID, nodeID string) (*frr.RouterConfig, error) {
+	nodes, err := uc.repo.ListNodes(labID)
+	if err != nil {
+		return nil, fmt.Errorf("list nodes: %w", err)
+	}
+
+	links, err := uc.repo.ListLinks(labID)
+	if err != nil {
+		return nil, fmt.Errorf("list links: %w", err)
+	}
+
+	found := false
+	for _, n := range nodes {
+		if n.Meta.ID == nodeID {
+			found = true
+
+			break
+		}
+	}
+
+	if !found {
+		return nil, fmt.Errorf("node %q: %w", nodeID, ErrNotFound)
+	}
+
+	cfgs, err := frr.BuildRouterConfigs(nodes, links)
+	if err != nil {
+		return nil, fmt.Errorf("build router configs: %w", err)
+	}
+
+	cfg, ok := cfgs[nodeID]
+	if !ok {
+		return &frr.RouterConfig{}, nil
+	}
+
+	return &cfg, nil
 }

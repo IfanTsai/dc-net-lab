@@ -69,6 +69,38 @@ service DCNetLab {
       body: "*"
     };
   }
+  // GetNodeRuntime returns the management view of one deployed node:
+  // the underlying container state and every kernel interface inside
+  // it, including implementation plumbing (bridge, VRRP macvlan,
+  // management eth0) that the simulated topology does not model.
+  rpc GetNodeRuntime(GetNodeRuntimeRequest) returns (NodeRuntime) {
+    option (google.api.http) = {get: "/api/v1/labs/{lab_id}/nodes/{node_id}/runtime"};
+  }
+  // GetNodeBGP returns the BGP configuration of one node as derived
+  // by the FRR compiler from the topology model: eBGP neighbors over
+  // fabric links, the MLAG iBGP session and the leaf's dynamic server
+  // peer-group. Empty for nodes that do not run BGP.
+  rpc GetNodeBGP(GetNodeBGPRequest) returns (NodeBGP) {
+    option (google.api.http) = {get: "/api/v1/labs/{lab_id}/nodes/{node_id}/bgp"};
+  }
+  // GetNodeRoutes returns the live IPv4 routing table (FRR RIB) of
+  // one deployed node; routes are empty unless the container is
+  // running.
+  rpc GetNodeRoutes(GetNodeRoutesRequest) returns (NodeRoutes) {
+    option (google.api.http) = {get: "/api/v1/labs/{lab_id}/nodes/{node_id}/routes"};
+  }
+  // GetNodeBGPTable returns the live BGP Loc-RIB of one deployed
+  // node (`show ip bgp`): every candidate path per prefix, before
+  // best-path selection reduces them to the RIB entry.
+  rpc GetNodeBGPTable(GetNodeBGPTableRequest) returns (NodeBGPTable) {
+    option (google.api.http) = {get: "/api/v1/labs/{lab_id}/nodes/{node_id}/bgp-table"};
+  }
+  // GetNodeFIB returns the live kernel forwarding table of one
+  // deployed node (`ip route`): what actually forwards packets, as
+  // installed by zebra from the RIB.
+  rpc GetNodeFIB(GetNodeFIBRequest) returns (NodeFIB) {
+    option (google.api.http) = {get: "/api/v1/labs/{lab_id}/nodes/{node_id}/fib"};
+  }
 
   // --- Plans ---
   rpc CreatePlan(CreatePlanRequest) returns (Plan) {
@@ -213,7 +245,16 @@ message NodeSpec {
   repeated string bgp_peers = 18;
 }
 
+// InterfaceStatus is the observed state of one simulated interface.
+message InterfaceStatus {
+  string name = 1;
+  bool up = 2;
+}
+
 // NodeStatus is the observed state of a node, filled by the observer.
+// Interface counts and the interface list cover only the simulated
+// objects: topology link endpoints plus modeled logical interfaces
+// (the gateway vlanif on leaves, bond0 on servers).
 message NodeStatus {
   string runtime_state = 1;
   string container_id = 2;
@@ -223,6 +264,10 @@ message NodeStatus {
   int32 interfaces_up = 6;
   int32 interfaces_total = 7;
   google.protobuf.Timestamp last_observed = 8;
+  // vrrp_state is the VRRP gateway role of a leaf: Master, Backup or
+  // empty for nodes without VRRP.
+  string vrrp_state = 9;
+  repeated InterfaceStatus interfaces = 10;
 }
 
 // Node is one device in the fabric: router, switch or server.
@@ -385,6 +430,136 @@ message StartNodeRequest {
 message StopNodeRequest {
   string lab_id = 1;
   string node_id = 2;
+}
+
+message GetNodeRuntimeRequest {
+  string lab_id = 1;
+  string node_id = 2;
+}
+
+// RuntimeInterface is one kernel interface of a node's container.
+message RuntimeInterface {
+  string name = 1;
+  // state is the raw operational state from `ip -br link`:
+  // UP, DOWN, UNKNOWN, LOWERLAYERDOWN.
+  string state = 2;
+  string mac = 3;
+  repeated string addresses = 4;
+}
+
+// NodeRuntime is the management view of one deployed node.
+message NodeRuntime {
+  // container_state is the docker container state ("running",
+  // "paused", "exited", ... or "missing").
+  string container_state = 1;
+  // interfaces is empty unless the container is running.
+  repeated RuntimeInterface interfaces = 2;
+}
+
+message GetNodeBGPRequest {
+  string lab_id = 1;
+  string node_id = 2;
+}
+
+// BGPNeighbor is one statically configured BGP session.
+message BGPNeighbor {
+  string address = 1;
+  uint32 remote_as = 2;
+  // description names the peer device (as in frr.conf).
+  string description = 3;
+}
+
+// BGPServerGroup is the leaf's dynamic peer-group listening for the
+// rack's servers on the VLAN subnet.
+message BGPServerGroup {
+  uint32 remote_as = 1;
+  string listen_range = 2;
+}
+
+// NodeBGP is the compiled BGP configuration of one node.
+message NodeBGP {
+  uint32 asn = 1;
+  string router_id = 2;
+  repeated BGPNeighbor neighbors = 3;
+  BGPServerGroup server_group = 4;
+}
+
+message GetNodeRoutesRequest {
+  string lab_id = 1;
+  string node_id = 2;
+}
+
+// RouteNexthop is one next hop of a RIB entry; via is empty for
+// directly connected routes.
+message RouteNexthop {
+  string via = 1;
+  string interface = 2;
+  bool active = 3;
+}
+
+// Route is one IPv4 RIB entry as reported by FRR. The FIB view
+// reuses it: kind is "local" for host entries (traffic addressed to
+// the device itself, the ASIC host/punt table equivalent) and empty
+// for forwarding (LPM) entries.
+message Route {
+  string prefix = 1;
+  // protocol is the FRR origin: bgp, connected, static, kernel, ...
+  string protocol = 2;
+  bool selected = 3;
+  int32 distance = 4;
+  int32 metric = 5;
+  repeated RouteNexthop nexthops = 6;
+  string kind = 7;
+}
+
+// NodeRoutes is the live routing table of one deployed node.
+message NodeRoutes {
+  // container_state is the docker container state; routes are only
+  // collected from a running container.
+  string container_state = 1;
+  repeated Route routes = 2;
+}
+
+message GetNodeBGPTableRequest {
+  string lab_id = 1;
+  string node_id = 2;
+}
+
+// BGPPath is one candidate path of the BGP Loc-RIB.
+message BGPPath {
+  string prefix = 1;
+  bool best = 2;
+  bool multipath = 3;
+  bool valid = 4;
+  // internal marks an iBGP path (pathFrom internal).
+  bool internal = 5;
+  string as_path = 6;
+  string origin = 7;
+  uint32 local_pref = 8;
+  string peer = 9;
+  string nexthop = 10;
+  // nexthop_name is the advertising device's hostname when known.
+  string nexthop_name = 11;
+}
+
+// NodeBGPTable is the live BGP Loc-RIB of one deployed node.
+message NodeBGPTable {
+  string container_state = 1;
+  string router_id = 2;
+  uint32 local_as = 3;
+  repeated BGPPath paths = 4;
+}
+
+message GetNodeFIBRequest {
+  string lab_id = 1;
+  string node_id = 2;
+}
+
+// NodeFIB is the live kernel forwarding table of one deployed node;
+// entries reuse Route (distance/selected are not meaningful here).
+message NodeFIB {
+  string container_state = 1;
+  repeated Route routes = 2;
 }
 
 message ListNodesRequest {

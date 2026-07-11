@@ -90,6 +90,8 @@ export const useLabStore = defineStore('lab', {
             routeCount: o.routeCount,
             interfacesUp: o.interfacesUp,
             interfacesTotal: o.interfacesTotal,
+            interfaces: o.interfaces,
+            vrrpState: o.vrrpState,
             lastObserved: o.lastObserved,
           },
         }

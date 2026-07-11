@@ -6,6 +6,8 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/ifantsai/dcnetlab/internal/biz"
+	"github.com/ifantsai/dcnetlab/internal/compiler/frr"
 	"github.com/ifantsai/dcnetlab/internal/model"
 	v1 "github.com/ifantsai/dcnetlab/pb/dcnetlab/v1"
 )
@@ -171,20 +173,117 @@ func nodeToPB(n *model.Node) *v1.Node {
 		spec.BgpPeers = append(spec.BgpPeers, addrString(p))
 	}
 
-	return &v1.Node{
-		Meta: metaToPB(n.Meta),
-		Spec: spec,
-		Status: &v1.NodeStatus{
-			RuntimeState:    string(n.Status.RuntimeState),
-			ContainerId:     n.Status.ContainerID,
-			RouteCount:      int32(n.Status.RouteCount),
-			BgpEstablished:  int32(n.Status.BGPEstablished),
-			BgpConfigured:   int32(n.Status.BGPConfigured),
-			InterfacesUp:    int32(n.Status.InterfacesUp),
-			InterfacesTotal: int32(n.Status.InterfacesTotal),
-			LastObserved:    timePB(n.Status.LastObserved),
-		},
+	status := &v1.NodeStatus{
+		RuntimeState:    string(n.Status.RuntimeState),
+		ContainerId:     n.Status.ContainerID,
+		RouteCount:      int32(n.Status.RouteCount),
+		BgpEstablished:  int32(n.Status.BGPEstablished),
+		BgpConfigured:   int32(n.Status.BGPConfigured),
+		InterfacesUp:    int32(n.Status.InterfacesUp),
+		InterfacesTotal: int32(n.Status.InterfacesTotal),
+		VrrpState:       n.Status.VRRPState,
+		LastObserved:    timePB(n.Status.LastObserved),
 	}
+
+	for _, it := range n.Status.Interfaces {
+		status.Interfaces = append(status.Interfaces, &v1.InterfaceStatus{Name: it.Name, Up: it.Up})
+	}
+
+	return &v1.Node{
+		Meta:   metaToPB(n.Meta),
+		Spec:   spec,
+		Status: status,
+	}
+}
+
+func nodeBGPToPB(cfg *frr.RouterConfig) *v1.NodeBGP {
+	pb := &v1.NodeBGP{
+		Asn:      cfg.ASN,
+		RouterId: addrString(cfg.RouterID),
+	}
+
+	for _, nb := range cfg.Neighbors {
+		pb.Neighbors = append(pb.Neighbors, &v1.BGPNeighbor{
+			Address:     addrString(nb.Address),
+			RemoteAs:    nb.RemoteAS,
+			Description: nb.Name,
+		})
+	}
+
+	if cfg.ServerGroup != nil {
+		pb.ServerGroup = &v1.BGPServerGroup{
+			RemoteAs:    cfg.ServerGroup.ASN,
+			ListenRange: prefixString(cfg.ServerGroup.ListenRange),
+		}
+	}
+
+	return pb
+}
+
+func nodeRoutesToPB(rt *biz.NodeRoutes) *v1.NodeRoutes {
+	pb := &v1.NodeRoutes{ContainerState: rt.ContainerState}
+	for _, r := range rt.Routes {
+		route := &v1.Route{
+			Prefix:   r.Prefix,
+			Protocol: r.Protocol,
+			Kind:     r.Kind,
+			Selected: r.Selected,
+			Distance: int32(r.Distance),
+			Metric:   int32(r.Metric),
+		}
+
+		for _, nh := range r.Nexthops {
+			route.Nexthops = append(route.Nexthops, &v1.RouteNexthop{
+				Via:       nh.Via,
+				Interface: nh.Interface,
+				Active:    nh.Active,
+			})
+		}
+
+		pb.Routes = append(pb.Routes, route)
+	}
+
+	return pb
+}
+
+func nodeBGPTableToPB(table *biz.NodeBGPTable) *v1.NodeBGPTable {
+	pb := &v1.NodeBGPTable{
+		ContainerState: table.ContainerState,
+		RouterId:       table.RouterID,
+		LocalAs:        table.LocalAS,
+	}
+
+	for _, p := range table.Paths {
+		pb.Paths = append(pb.Paths, &v1.BGPPath{
+			Prefix:      p.Prefix,
+			Best:        p.Best,
+			Multipath:   p.Multipath,
+			Valid:       p.Valid,
+			Internal:    p.Internal,
+			AsPath:      p.ASPath,
+			Origin:      p.Origin,
+			LocalPref:   p.LocalPref,
+			Peer:        p.Peer,
+			Nexthop:     p.Nexthop,
+			NexthopName: p.NexthopName,
+		})
+	}
+
+	return pb
+}
+
+func nodeRuntimeToPB(rt *biz.NodeRuntime) *v1.NodeRuntime {
+	pb := &v1.NodeRuntime{ContainerState: rt.ContainerState}
+	for _, it := range rt.Interfaces {
+		pb.Interfaces = append(pb.Interfaces, &v1.RuntimeInterface{
+			Name:      it.Name,
+			State:     it.State,
+			Mac:       it.MAC,
+			Addresses: it.Addresses,
+		})
+	}
+
+	return pb
 }
 
 // --- Link ---
