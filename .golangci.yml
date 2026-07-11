@@ -1,0 +1,52 @@
+# golangci-lint v2 配置,执行 doc/golang-style.md 中机器可检查的部分。
+# 空行语义等判断性规则不适合用 wsl 之类的机械 linter 强制(规范明确
+# "不要为了满足规则破坏短函数的紧凑性"),由 code review 执行。
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  # standard 默认组:errcheck, govet, ineffassign, staticcheck, unused
+  default: standard
+  enable:
+    - errorlint   # 错误比较/包装必须走 errors.Is/As 与 %w
+    - revive      # 命名与常见风格问题(驼峰、下划线前缀等)
+    - misspell
+    - unconvert
+    - unparam
+    - whitespace  # 块首尾多余空行
+    - nolintlint
+  settings:
+    errcheck:
+      exclude-functions:
+        - (*database/sql.Rows).Close
+        - (*database/sql.Tx).Rollback
+        - (io.ReadCloser).Close
+    revive:
+      rules:
+        - name: var-naming
+        - name: error-strings
+        - name: error-naming
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: superfluous-else
+        - name: unreachable-code
+        - name: early-return
+  exclusions:
+    generated: lax
+    paths:
+      - pb
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/ifantsai/dcnetlab
+  exclusions:
+    generated: lax
+    paths:
+      - pb

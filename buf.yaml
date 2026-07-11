@@ -1,0 +1,8 @@
+# Buf module config: the protobuf API lives under api/, with the
+# google/api annotations pulled from the BSR instead of a vendored
+# third_party tree. Run `buf dep update` after changing deps.
+version: v2
+modules:
+  - path: api
+deps:
+  - buf.build/googleapis/googleapis

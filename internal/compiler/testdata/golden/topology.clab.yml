@@ -1,0 +1,89 @@
+name: golden
+topology:
+    nodes:
+        leaf-a:
+            kind: linux
+            image: quay.io/frrouting/frr:10.2.1
+            binds:
+                - configs/leaf-a/daemons:/etc/frr/daemons
+                - configs/leaf-a/frr.conf:/etc/frr/frr.conf
+                - configs/leaf-a/vtysh.conf:/etc/frr/vtysh.conf
+            exec:
+                - ip route del default dev eth0
+                - ip link add br0 type bridge
+                - ip link set br0 type bridge vlan_filtering 1
+                - ip link set br0 up
+                - ip link set eth3 master br0
+                - bridge vlan add dev eth3 vid 1000 pvid untagged
+                - ip link set eth2 master br0
+                - bridge vlan add dev eth2 vid 1000
+                - bridge vlan add dev br0 vid 1000 self
+                - ip link add link br0 name vlan1000 type vlan id 1000
+                - ip link set vlan1000 up
+                - ip link add vrrp4-1-1 link vlan1000 type macvlan mode bridge
+                - ip link set dev vrrp4-1-1 address 00:00:5e:00:01:01
+                - ip addr add 10.100.0.1/32 dev vrrp4-1-1
+                - ip link set dev vrrp4-1-1 up
+        leaf-b:
+            kind: linux
+            image: quay.io/frrouting/frr:10.2.1
+            binds:
+                - configs/leaf-b/daemons:/etc/frr/daemons
+                - configs/leaf-b/frr.conf:/etc/frr/frr.conf
+                - configs/leaf-b/vtysh.conf:/etc/frr/vtysh.conf
+            exec:
+                - ip route del default dev eth0
+                - ip link add br0 type bridge
+                - ip link set br0 type bridge vlan_filtering 1
+                - ip link set br0 up
+                - ip link set eth3 master br0
+                - bridge vlan add dev eth3 vid 1000 pvid untagged
+                - ip link set eth2 master br0
+                - bridge vlan add dev eth2 vid 1000
+                - bridge vlan add dev br0 vid 1000 self
+                - ip link add link br0 name vlan1000 type vlan id 1000
+                - ip link set vlan1000 up
+                - ip link add vrrp4-1-1 link vlan1000 type macvlan mode bridge
+                - ip link set dev vrrp4-1-1 address 00:00:5e:00:01:01
+                - ip addr add 10.100.0.1/32 dev vrrp4-1-1
+                - ip link set dev vrrp4-1-1 up
+        server-1:
+            kind: linux
+            image: quay.io/frrouting/frr:10.2.1
+            binds:
+                - configs/server-1/daemons:/etc/frr/daemons
+                - configs/server-1/frr.conf:/etc/frr/frr.conf
+                - configs/server-1/vtysh.conf:/etc/frr/vtysh.conf
+            exec:
+                - ip link add bond0 type bond mode active-backup miimon 100
+                - ip link set eth1 down
+                - ip link set eth1 master bond0
+                - ip link set eth2 down
+                - ip link set eth2 master bond0
+                - ip link set bond0 up
+                - ip route replace default via 10.100.0.1
+        spine-1:
+            kind: linux
+            image: quay.io/frrouting/frr:10.2.1
+            binds:
+                - configs/spine-1/daemons:/etc/frr/daemons
+                - configs/spine-1/frr.conf:/etc/frr/frr.conf
+                - configs/spine-1/vtysh.conf:/etc/frr/vtysh.conf
+            exec:
+                - ip route del default dev eth0
+    links:
+        - endpoints:
+            - leaf-a:eth2
+            - leaf-b:eth2
+        - endpoints:
+            - leaf-a:eth3
+            - server-1:eth1
+        - endpoints:
+            - leaf-b:eth3
+            - server-1:eth2
+        - endpoints:
+            - spine-1:eth1
+            - leaf-a:eth1
+        - endpoints:
+            - spine-1:eth2
+            - leaf-b:eth1

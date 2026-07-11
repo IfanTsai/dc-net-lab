@@ -1,0 +1,462 @@
+// DCNetLab controller API. The protobuf definition is the single
+// source of truth for the REST surface; HTTP bindings are declared
+// with google.api.http annotations and served by Kratos. JSON field
+// names follow the protojson camelCase mapping, which matches the
+// original hand-written REST API consumed by the web UI.
+syntax = "proto3";
+
+package dcnetlab.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/ifantsai/dcnetlab/pb/dcnetlab/v1;v1";
+
+// DCNetLab is the controller service: lab lifecycle, plan/apply,
+// topology queries and async operation tracking.
+service DCNetLab {
+  // --- Labs ---
+  rpc CreateLab(CreateLabRequest) returns (Lab) {
+    option (google.api.http) = {
+      post: "/api/v1/labs"
+      body: "*"
+    };
+  }
+  rpc ListLabs(ListLabsRequest) returns (ListLabsReply) {
+    option (google.api.http) = {get: "/api/v1/labs"};
+  }
+  rpc GetLab(GetLabRequest) returns (Lab) {
+    option (google.api.http) = {get: "/api/v1/labs/{id}"};
+  }
+  rpc DeleteLab(DeleteLabRequest) returns (OperationRef) {
+    option (google.api.http) = {delete: "/api/v1/labs/{id}"};
+  }
+  // StartLab / StopLab power the deployed containers of a lab on and
+  // off (docker start/stop) without touching the generation.
+  rpc StartLab(StartLabRequest) returns (OperationRef) {
+    option (google.api.http) = {
+      post: "/api/v1/labs/{id}/start"
+      body: "*"
+    };
+  }
+  rpc StopLab(StopLabRequest) returns (OperationRef) {
+    option (google.api.http) = {
+      post: "/api/v1/labs/{id}/stop"
+      body: "*"
+    };
+  }
+
+  // --- Topology ---
+  rpc ListNodes(ListNodesRequest) returns (ListNodesReply) {
+    option (google.api.http) = {get: "/api/v1/labs/{lab_id}/nodes"};
+  }
+  rpc ListLinks(ListLinksRequest) returns (ListLinksReply) {
+    option (google.api.http) = {get: "/api/v1/labs/{lab_id}/links"};
+  }
+  rpc ListAllocations(ListAllocationsRequest) returns (ListAllocationsReply) {
+    option (google.api.http) = {get: "/api/v1/labs/{lab_id}/allocations"};
+  }
+  // StartNode / StopNode power a single device on and off.
+  rpc StartNode(StartNodeRequest) returns (Node) {
+    option (google.api.http) = {
+      post: "/api/v1/labs/{lab_id}/nodes/{node_id}/start"
+      body: "*"
+    };
+  }
+  rpc StopNode(StopNodeRequest) returns (Node) {
+    option (google.api.http) = {
+      post: "/api/v1/labs/{lab_id}/nodes/{node_id}/stop"
+      body: "*"
+    };
+  }
+
+  // --- Plans ---
+  rpc CreatePlan(CreatePlanRequest) returns (Plan) {
+    option (google.api.http) = {
+      post: "/api/v1/labs/{lab_id}/plans"
+      body: "*"
+    };
+  }
+  rpc GetPlan(GetPlanRequest) returns (Plan) {
+    option (google.api.http) = {get: "/api/v1/plans/{id}"};
+  }
+  rpc ApplyPlan(ApplyPlanRequest) returns (OperationRef) {
+    option (google.api.http) = {
+      post: "/api/v1/plans/{id}/apply"
+      body: "*"
+    };
+  }
+
+  // --- Operations & Generations ---
+  rpc GetOperation(GetOperationRequest) returns (Operation) {
+    option (google.api.http) = {get: "/api/v1/operations/{id}"};
+  }
+  rpc ListOperations(ListOperationsRequest) returns (ListOperationsReply) {
+    option (google.api.http) = {get: "/api/v1/labs/{lab_id}/operations"};
+  }
+  rpc ListGenerations(ListGenerationsRequest) returns (ListGenerationsReply) {
+    option (google.api.http) = {get: "/api/v1/labs/{lab_id}/generations"};
+  }
+
+  // --- Profiles & health ---
+  rpc ListProfiles(ListProfilesRequest) returns (ListProfilesReply) {
+    option (google.api.http) = {get: "/api/v1/profiles"};
+  }
+  rpc Healthz(HealthzRequest) returns (HealthzReply) {
+    option (google.api.http) = {get: "/api/v1/healthz"};
+  }
+}
+
+// --- Common resource metadata ---
+
+// ResourceError is a structured error attached to a resource status.
+message ResourceError {
+  string code = 1;
+  string message = 2;
+  google.protobuf.Timestamp time = 3;
+}
+
+// ResourceMeta is the common metadata embedded in every resource.
+// Phase is the unified lifecycle: Pending, Planning, Applying,
+// Running, Degraded, Failed, Stopping, Stopped, Deleting, Deleted.
+message ResourceMeta {
+  string id = 1;
+  string name = 2;
+  int64 generation = 3;
+  int64 observed_generation = 4;
+  string phase = 5;
+  ResourceError last_error = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+}
+
+// --- Lab ---
+
+// AddressPool declares one CIDR pool managed by the IPAM allocator.
+message AddressPool {
+  string name = 1;
+  string cidr = 2;
+  int32 allocation_prefix = 3;
+}
+
+// ASNRange declares a contiguous ASN range for one device role.
+message ASNRange {
+  string role = 1;
+  uint32 start = 2;
+  uint32 end = 3;
+}
+
+// PodSpec describes one pod: leaves come in racks, each rack is one
+// MLAG pair of leaf switches plus its servers.
+message PodSpec {
+  string name = 1;
+  int32 spines = 2;
+  int32 racks = 3;
+  int32 servers_per_rack = 4;
+}
+
+// TopologySpec describes the desired fabric shape.
+message TopologySpec {
+  int32 external_routers = 1;
+  int32 dc_edges = 2;
+  int32 super_spines = 3;
+  repeated PodSpec pods = 4;
+}
+
+message LabSpec {
+  string profile = 1;
+  TopologySpec topology = 2;
+  repeated AddressPool pools = 3;
+  repeated ASNRange asns = 4;
+}
+
+message LabStatus {
+  int32 node_count = 1;
+  int32 link_count = 2;
+}
+
+// Lab is the top-level resource holding one simulated data center.
+message Lab {
+  ResourceMeta meta = 1;
+  LabSpec spec = 2;
+  LabStatus status = 3;
+}
+
+// --- Node ---
+
+// NodeSpec is the desired state of a node. Addresses are CIDR or IP
+// strings; empty means unset.
+message NodeSpec {
+  string lab_id = 1;
+  string role = 2;
+  string pod_id = 3;
+  string rack_id = 4;
+  uint32 asn = 5;
+  string loopback = 6;
+  string mgmt_ip = 7;
+  string runtime_type = 8;
+
+  // Leaf-only: MLAG pair member acting as the VRRP active-active
+  // gateway of the rack's server VLAN.
+  string mlag_peer = 9;
+  int32 vlan_id = 10;
+  string vlan_ip = 11;
+  string gateway_ip = 12;
+  string gateway_mac = 13;
+  int32 vrrp_group = 14;
+  int32 vrrp_priority = 15;
+
+  // Server-only: bond0 address, virtual gateway and the physical
+  // VlanIPs of the two MLAG leaves as BGP peers.
+  string address = 16;
+  string default_gateway = 17;
+  repeated string bgp_peers = 18;
+}
+
+// NodeStatus is the observed state of a node, filled by the observer.
+message NodeStatus {
+  string runtime_state = 1;
+  string container_id = 2;
+  int32 route_count = 3;
+  int32 bgp_established = 4;
+  int32 bgp_configured = 5;
+  int32 interfaces_up = 6;
+  int32 interfaces_total = 7;
+  google.protobuf.Timestamp last_observed = 8;
+}
+
+// Node is one device in the fabric: router, switch or server.
+message Node {
+  ResourceMeta meta = 1;
+  NodeSpec spec = 2;
+  NodeStatus status = 3;
+}
+
+// --- Link ---
+
+// LinkEndpoint is one side of a point-to-point link.
+message LinkEndpoint {
+  string node_id = 1;
+  string node_name = 2;
+  string interface = 3;
+  string address = 4;
+}
+
+// LinkSpec is the desired state of a link. Kind is fabric,
+// server-access or mlag-peer; L2 links carry no endpoint addresses.
+message LinkSpec {
+  string lab_id = 1;
+  string kind = 2;
+  int32 vlan_id = 3;
+  LinkEndpoint endpoint_a = 4;
+  LinkEndpoint endpoint_b = 5;
+  int32 mtu = 6;
+}
+
+message LinkStatus {
+  bool admin_up = 1;
+  bool oper_up = 2;
+}
+
+// Link is a point-to-point link between two nodes.
+message Link {
+  ResourceMeta meta = 1;
+  LinkSpec spec = 2;
+  LinkStatus status = 3;
+}
+
+// --- Plan ---
+
+// PlanOperation is one intended change with a human-readable summary.
+message PlanOperation {
+  string type = 1;
+  string target = 2;
+  string summary = 3;
+}
+
+// Allocation records one resource allocation the plan will consume.
+message Allocation {
+  string pool = 1;
+  string value = 2;
+  string owner = 3;
+}
+
+// PlanWarning is a non-fatal issue detected while planning.
+message PlanWarning {
+  string code = 1;
+  string message = 2;
+}
+
+// Plan is a previewable change set computed from desired state.
+// State is Pending, Applied or Expired.
+message Plan {
+  string id = 1;
+  string lab_id = 2;
+  int64 base_generation = 3;
+  int64 new_generation = 4;
+  string state = 5;
+  repeated PlanOperation operations = 6;
+  repeated Allocation allocations = 7;
+  repeated PlanWarning warnings = 8;
+  google.protobuf.Timestamp created_at = 9;
+}
+
+// --- Operation ---
+
+// OperationStep is one step in an operation's execution.
+message OperationStep {
+  string name = 1;
+  string state = 2;
+  string message = 3;
+  google.protobuf.Timestamp started_at = 4;
+  google.protobuf.Timestamp finished_at = 5;
+}
+
+// OperationError is a structured operation failure.
+message OperationError {
+  string code = 1;
+  string message = 2;
+}
+
+// ResourceRef points at the resource an operation acts on.
+message ResourceRef {
+  string type = 1;
+  string id = 2;
+}
+
+// Operation tracks one asynchronous change. Every write API returns
+// an operation reference; the UI follows progress via polling.
+// State is Queued, Running, Succeeded, Failed or Cancelled.
+message Operation {
+  string id = 1;
+  string lab_id = 2;
+  string type = 3;
+  ResourceRef resource = 4;
+  string state = 5;
+  int32 progress = 6;
+  repeated OperationStep steps = 7;
+  OperationError error = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+}
+
+// OperationRef is returned by async write APIs.
+message OperationRef {
+  string operation_id = 1;
+}
+
+// --- Requests / replies ---
+
+message CreateLabRequest {
+  string name = 1;
+  // Profile is micro, standard or custom; defaults to micro.
+  string profile = 2;
+  // Topology is required (and only used) with the custom profile.
+  TopologySpec topology = 3;
+}
+
+message ListLabsRequest {}
+
+message ListLabsReply {
+  repeated Lab labs = 1;
+}
+
+message GetLabRequest {
+  string id = 1;
+}
+
+message DeleteLabRequest {
+  string id = 1;
+}
+
+message StartLabRequest {
+  string id = 1;
+}
+
+message StopLabRequest {
+  string id = 1;
+}
+
+message StartNodeRequest {
+  string lab_id = 1;
+  string node_id = 2;
+}
+
+message StopNodeRequest {
+  string lab_id = 1;
+  string node_id = 2;
+}
+
+message ListNodesRequest {
+  string lab_id = 1;
+}
+
+message ListNodesReply {
+  repeated Node nodes = 1;
+}
+
+message ListLinksRequest {
+  string lab_id = 1;
+}
+
+message ListLinksReply {
+  repeated Link links = 1;
+}
+
+message ListAllocationsRequest {
+  string lab_id = 1;
+}
+
+message ListAllocationsReply {
+  repeated Allocation allocations = 1;
+}
+
+message CreatePlanRequest {
+  string lab_id = 1;
+}
+
+message GetPlanRequest {
+  string id = 1;
+}
+
+message ApplyPlanRequest {
+  string id = 1;
+}
+
+message GetOperationRequest {
+  string id = 1;
+}
+
+message ListOperationsRequest {
+  string lab_id = 1;
+}
+
+message ListOperationsReply {
+  repeated Operation operations = 1;
+}
+
+message ListGenerationsRequest {
+  string lab_id = 1;
+}
+
+message ListGenerationsReply {
+  repeated int64 generations = 1;
+}
+
+message ListProfilesRequest {}
+
+// ProfileInfo names one predefined topology profile.
+message ProfileInfo {
+  string name = 1;
+  TopologySpec topology = 2;
+}
+
+message ListProfilesReply {
+  repeated ProfileInfo profiles = 1;
+}
+
+message HealthzRequest {}
+
+message HealthzReply {
+  string status = 1;
+}
