@@ -4,9 +4,10 @@ import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useLabStore } from '../stores/lab'
 import { labApi } from '../api/lab'
-import type { Link, Node, NodeBGP, NodeBGPTable, NodeInventory, NodeRoutes, NodeRuntime } from '../types/models'
+import type { Link, MetricsPoint, Node, NodeBGP, NodeBGPTable, NodeInventory, NodeMetrics, NodeRoutes, NodeRuntime } from '../types/models'
 import TopologyCanvas from '../components/TopologyCanvas.vue'
 import TerminalPanel from '../components/TerminalPanel.vue'
+import MetricsChart, { type ChartSeries } from '../components/MetricsChart.vue'
 
 const store = useLabStore()
 const { t } = useI18n()
@@ -143,6 +144,8 @@ const nodeFIB = ref<NodeRoutes | null>(null)
 const fibLoading = ref(false)
 const nodeInventory = ref<NodeInventory | null>(null)
 const inventoryLoading = ref(false)
+const nodeMetrics = ref<NodeMetrics | null>(null)
+const metricsLoading = ref(false)
 
 // Opening the drawer for another node resets to the simulated view;
 // observation sweeps replace the node object with the same id and
@@ -155,6 +158,9 @@ watch(selectedNode, (node, prev) => {
     nodeBGPTable.value = null
     nodeFIB.value = null
     nodeInventory.value = null
+    nodeMetrics.value = null
+    historyPoints.value = []
+    historyIface.value = ''
     nodeBGP.value = null
     if (node) void loadBGP(node)
   }
@@ -166,7 +172,48 @@ watch(drawerTab, (tab) => {
   if (tab === 'bgp-table') void refreshBGPTable()
   if (tab === 'fib') void refreshFIB()
   if (tab === 'programs') void refreshInventory()
+  if (tab === 'metrics') {
+    void refreshMetrics()
+    void refreshHistory()
+  }
+
+  // Metrics are rates over a short sampling window: keep them fresh
+  // while the tab is visible instead of asking for manual refreshes.
+  if (tab === 'metrics') startMetricsPolling()
+  else stopMetricsPolling()
 })
+
+let metricsTimer: number | undefined
+
+function startMetricsPolling() {
+  stopMetricsPolling()
+  metricsTimer = window.setInterval(() => void refreshMetricsSilently(), 5000)
+}
+
+// The periodic refresh skips the spinner and swallows errors: a
+// missed sample keeps the last one on screen instead of toasting
+// every 5 seconds. History is collected every 15 s, so its curves
+// piggyback on the same timer at a slower cadence.
+async function refreshMetricsSilently() {
+  if (!selectedNode.value || !store.currentLabId || metricsLoading.value) return
+
+  try {
+    nodeMetrics.value = await labApi.nodeMetrics(store.currentLabId, selectedNode.value.meta.id)
+  } catch {
+    // keep the previous sample
+  }
+
+  if (Date.now() - lastHistoryFetch > 30_000) void refreshHistory(true)
+}
+
+function stopMetricsPolling() {
+  if (metricsTimer !== undefined) {
+    clearInterval(metricsTimer)
+    metricsTimer = undefined
+  }
+}
+
+onBeforeUnmount(stopMetricsPolling)
 
 // fetchView wraps the shared fetch-on-demand pattern of the drawer
 // tabs: guard, spinner, error toast.
@@ -192,6 +239,136 @@ const refreshRoutes = () => fetchView(nodeRoutes, routesLoading, labApi.nodeRout
 const refreshBGPTable = () => fetchView(nodeBGPTable, bgpTableLoading, labApi.nodeBGPTable)
 const refreshFIB = () => fetchView(nodeFIB, fibLoading, labApi.nodeFIB)
 const refreshInventory = () => fetchView(nodeInventory, inventoryLoading, labApi.nodeInventory)
+const refreshMetrics = () => fetchView(nodeMetrics, metricsLoading, labApi.nodeMetrics)
+
+// --- Metrics formatting: protobuf int64 fields arrive as strings ---
+
+function fmtBytes(v?: string | number): string {
+  let n = Number(v ?? 0)
+  if (!Number.isFinite(n) || n <= 0) return '0 B'
+
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB']
+  let i = 0
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024
+    i++
+  }
+  return `${n >= 100 || i === 0 ? Math.round(n) : n.toFixed(1)} ${units[i]}`
+}
+
+const fmtRate = (v?: number) => `${fmtBytes(v)}/s`
+
+function fmtUptime(seconds?: string): string {
+  const s = Number(seconds ?? 0)
+  if (s < 60) return `${Math.floor(s)}s`
+  const d = Math.floor(s / 86400)
+  const h = Math.floor((s % 86400) / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  if (d > 0) return `${d}d ${h}h`
+  if (h > 0) return `${h}h ${m}m`
+  return `${m}m`
+}
+
+// gaugeRows condenses CPU / memory / filesystem into one usage-bar
+// list; percentages clamp to [0, 100] for el-progress.
+const gaugeRows = computed(() => {
+  const m = nodeMetrics.value
+  if (!m) return []
+
+  const clamp = (v: number) => Math.min(100, Math.max(0, v))
+  const pct = (used: number, total: number) => (total > 0 ? clamp((used / total) * 100) : 0)
+
+  const cpu = clamp(m.cpu?.usagePercent ?? 0)
+  const memUsed = Number(m.memory?.usedBytes ?? 0)
+  const memLimit = Number(m.memory?.limitBytes ?? 0)
+  const fsUsed = Number(m.filesystem?.usedBytes ?? 0)
+  const fsSize = Number(m.filesystem?.sizeBytes ?? 0)
+
+  return [
+    {
+      name: 'CPU',
+      percent: cpu,
+      detail: `${(m.cpu?.usagePercent ?? 0).toFixed(1)}% · usr ${(m.cpu?.userPercent ?? 0).toFixed(1)}% / sys ${(m.cpu?.systemPercent ?? 0).toFixed(1)}% · ${m.cpu?.limitCores ?? 0} cores`,
+    },
+    {
+      name: t('topology.metricsMemory'),
+      percent: pct(memUsed, memLimit),
+      detail: `${fmtBytes(memUsed)} / ${fmtBytes(memLimit)} · cache ${fmtBytes(m.memory?.cacheBytes)}`,
+    },
+    {
+      name: t('topology.metricsFilesystem'),
+      percent: pct(fsUsed, fsSize),
+      detail: `${fmtBytes(fsUsed)} / ${fmtBytes(fsSize)}`,
+    },
+  ]
+})
+
+const gaugeStatus = (percent: number) => (percent >= 90 ? 'exception' : percent >= 75 ? 'warning' : undefined)
+
+// --- Metrics history: 15 s collector points drawn as line charts ---
+const historyRange = ref(1800) // seconds; 30m default
+const historyPoints = ref<MetricsPoint[]>([])
+const historyLoading = ref(false)
+const historyIface = ref('')
+let lastHistoryFetch = 0
+
+async function refreshHistory(silent = false) {
+  if (!selectedNode.value || !store.currentLabId) return
+
+  lastHistoryFetch = Date.now()
+  if (!silent) historyLoading.value = true
+  try {
+    const end = Math.floor(Date.now() / 1000)
+    historyPoints.value = await labApi.nodeMetricsHistory(
+      store.currentLabId, selectedNode.value.meta.id, end - historyRange.value, end,
+    )
+  } catch (e) {
+    if (!silent) ElMessage.error((e as Error).message)
+  } finally {
+    if (!silent) historyLoading.value = false
+  }
+}
+
+watch(historyRange, () => void refreshHistory())
+
+const toMs = (ts?: string) => Number(ts ?? 0) * 1000
+
+// The interface picker offers what the latest point saw; the
+// management interface eth0 exists everywhere, so the first data
+// interface is the more interesting default.
+const ifaceOptions = computed(() => {
+  const last = historyPoints.value[historyPoints.value.length - 1]
+  return (last?.interfaces ?? []).map((i) => i.name)
+})
+
+watch(ifaceOptions, (names) => {
+  if (names.length === 0 || names.includes(historyIface.value)) return
+  historyIface.value = names.find((n) => n !== 'lo' && n !== 'eth0') ?? names[0]
+})
+
+const cpuSeries = computed<ChartSeries[]>(() => [
+  { name: t('topology.metricsSeriesUsage'), points: historyPoints.value.map((p) => [toMs(p.ts), p.cpu?.usagePercent ?? 0]) },
+  { name: 'usr', points: historyPoints.value.map((p) => [toMs(p.ts), p.cpu?.userPercent ?? 0]) },
+  { name: 'sys', points: historyPoints.value.map((p) => [toMs(p.ts), p.cpu?.systemPercent ?? 0]) },
+])
+
+const memSeries = computed<ChartSeries[]>(() => [
+  { name: t('topology.metricsSeriesUsed'), points: historyPoints.value.map((p) => [toMs(p.ts), Number(p.memory?.usedBytes ?? 0)]) },
+  { name: t('topology.metricsSeriesLimit'), dashed: true, points: historyPoints.value.map((p) => [toMs(p.ts), Number(p.memory?.limitBytes ?? 0)]) },
+])
+
+const netSeries = computed<ChartSeries[]>(() => {
+  const of = (p: MetricsPoint) => (p.interfaces ?? []).find((i) => i.name === historyIface.value)
+  return [
+    { name: t('topology.metricsRx'), points: historyPoints.value.map((p) => [toMs(p.ts), of(p)?.rxBytesPerSec ?? 0]) },
+    { name: t('topology.metricsTx'), points: historyPoints.value.map((p) => [toMs(p.ts), of(p)?.txBytesPerSec ?? 0]) },
+  ]
+})
+
+const diskSeries = computed<ChartSeries[]>(() => [
+  { name: t('topology.metricsRead'), points: historyPoints.value.map((p) => [toMs(p.ts), p.disk?.readBytesPerSec ?? 0]) },
+  { name: t('topology.metricsWrite'), points: historyPoints.value.map((p) => [toMs(p.ts), p.disk?.writeBytesPerSec ?? 0]) },
+])
 
 // programStateTag mirrors the Programs page state colouring.
 function programStateTag(state: string): string {
@@ -322,7 +499,16 @@ function linkKindLabel(l: Link): string {
 
     <!-- Non-modal: a modal mask would swallow the second click of a
          double-click on the canvas, breaking terminal access. -->
-    <el-drawer :model-value="!!selectedNode" :title="selectedNode?.meta.name" size="420px" :modal="false" @close="selectedNode = null">
+    <!-- The metrics tab draws time-series charts and gets a wide
+         drawer (capped by CSS max-width); every other tab keeps the
+         compact width so the canvas stays usable. -->
+    <el-drawer
+      :model-value="!!selectedNode"
+      :title="selectedNode?.meta.name"
+      :size="drawerTab === 'metrics' ? '60%' : '420px'"
+      :modal="false"
+      @close="selectedNode = null"
+    >
       <template v-if="selectedNode">
         <el-button
           v-if="deployed"
@@ -335,7 +521,7 @@ function linkKindLabel(l: Link): string {
           {{ selectedNode.meta.phase === 'Stopped' ? t('topology.startNode') : t('topology.stopNode') }}
         </el-button>
         <el-tabs v-model="drawerTab">
-          <el-tab-pane :label="t('topology.simView')" name="sim">
+          <el-tab-pane :label="t('topology.overview')" name="sim">
             <el-descriptions :column="1" border size="small">
               <el-descriptions-item :label="t('topology.role')">{{ selectedNode.spec.role }}</el-descriptions-item>
               <el-descriptions-item :label="t('topology.phase')">{{ selectedNode.meta.phase }}</el-descriptions-item>
@@ -436,6 +622,168 @@ function linkKindLabel(l: Link): string {
                   </template>
                 </el-table-column>
                 <el-table-column prop="description" :label="t('topology.peer')" />
+              </el-table>
+            </template>
+          </el-tab-pane>
+
+          <el-tab-pane
+            v-if="selectedNode.spec.role === 'server'"
+            :label="t('topology.metricsView')"
+            name="metrics"
+          >
+            <div class="runtime-toolbar">
+              <span class="runtime-hint">{{ t('topology.metricsHint') }}</span>
+              <el-button size="small" :loading="metricsLoading" @click="refreshMetrics">
+                {{ t('topology.refresh') }}
+              </el-button>
+            </div>
+            <template v-if="nodeMetrics">
+              <div class="metrics-grid">
+                <div>
+                  <el-descriptions :column="2" border size="small">
+                    <el-descriptions-item :label="t('topology.metricsUptime')">
+                      {{ fmtUptime(nodeMetrics.uptimeSeconds) }}
+                    </el-descriptions-item>
+                    <el-descriptions-item :label="t('topology.metricsProcs')">
+                      {{ nodeMetrics.procs ?? 0 }}
+                    </el-descriptions-item>
+                    <el-descriptions-item :label="t('topology.metricsLoad')" :span="2">
+                      {{ (nodeMetrics.load?.load1 ?? 0).toFixed(2) }} /
+                      {{ (nodeMetrics.load?.load5 ?? 0).toFixed(2) }} /
+                      {{ (nodeMetrics.load?.load15 ?? 0).toFixed(2) }}
+                      <span class="sub">{{ t('topology.metricsLoadNote') }}</span>
+                    </el-descriptions-item>
+                  </el-descriptions>
+
+                  <h4>{{ t('topology.metricsUsage') }}</h4>
+                  <div v-for="g in gaugeRows" :key="g.name" class="gauge">
+                    <div class="gauge-head">
+                      <span>{{ g.name }}</span>
+                      <span class="sub">{{ g.detail }}</span>
+                    </div>
+                    <el-progress :percentage="g.percent" :status="gaugeStatus(g.percent)" :show-text="false" />
+                  </div>
+
+                  <h4>{{ t('topology.metricsDisk') }}</h4>
+                  <el-descriptions :column="2" border size="small">
+                    <el-descriptions-item :label="t('topology.metricsRead')">
+                      {{ fmtRate(nodeMetrics.disk?.readBytesPerSec) }}
+                      <span class="sub">{{ (nodeMetrics.disk?.readOpsPerSec ?? 0).toFixed(1) }} iops</span>
+                    </el-descriptions-item>
+                    <el-descriptions-item :label="t('topology.metricsWrite')">
+                      {{ fmtRate(nodeMetrics.disk?.writeBytesPerSec) }}
+                      <span class="sub">{{ (nodeMetrics.disk?.writeOpsPerSec ?? 0).toFixed(1) }} iops</span>
+                    </el-descriptions-item>
+                  </el-descriptions>
+                </div>
+
+                <div>
+                  <h4>{{ t('topology.metricsNet') }}</h4>
+                  <el-table :data="nodeMetrics.interfaces ?? []" size="small" v-loading="metricsLoading">
+                <el-table-column :label="t('topology.interface')" width="110">
+                  <template #default="{ row }">{{ row.name }}</template>
+                </el-table-column>
+                <el-table-column :label="t('topology.metricsRx')">
+                  <template #default="{ row }">
+                    <div>{{ fmtRate(row.rxBytesPerSec) }}</div>
+                    <div class="sub">{{ (row.rxPacketsPerSec ?? 0).toFixed(1) }} pps · Σ {{ fmtBytes(row.rxBytesTotal) }}</div>
+                  </template>
+                </el-table-column>
+                <el-table-column :label="t('topology.metricsTx')">
+                  <template #default="{ row }">
+                    <div>{{ fmtRate(row.txBytesPerSec) }}</div>
+                    <div class="sub">{{ (row.txPacketsPerSec ?? 0).toFixed(1) }} pps · Σ {{ fmtBytes(row.txBytesTotal) }}</div>
+                  </template>
+                </el-table-column>
+                <el-table-column :label="t('topology.metricsErrors')" width="110">
+                  <template #default="{ row }">
+                    <el-tag
+                      size="small"
+                      effect="plain"
+                      :type="Number(row.rxErrors ?? 0) + Number(row.txErrors ?? 0) + Number(row.rxDropped ?? 0) + Number(row.txDropped ?? 0) > 0 ? 'danger' : 'info'"
+                    >
+                      {{ Number(row.rxErrors ?? 0) + Number(row.txErrors ?? 0) }} err ·
+                      {{ Number(row.rxDropped ?? 0) + Number(row.txDropped ?? 0) }} drop
+                    </el-tag>
+                  </template>
+                </el-table-column>
+              </el-table>
+                </div>
+              </div>
+
+              <h4>{{ t('topology.metricsHistory') }}</h4>
+              <div class="runtime-toolbar">
+                <el-radio-group v-model="historyRange" size="small">
+                  <el-radio-button :value="1800">30m</el-radio-button>
+                  <el-radio-button :value="3600">1h</el-radio-button>
+                  <el-radio-button :value="7200">2h</el-radio-button>
+                  <el-radio-button :value="86400">24h</el-radio-button>
+                </el-radio-group>
+                <div class="toolbar-right">
+                  <el-select v-model="historyIface" size="small" style="width: 110px">
+                    <el-option v-for="name in ifaceOptions" :key="name" :label="name" :value="name" />
+                  </el-select>
+                  <el-button size="small" :loading="historyLoading" @click="refreshHistory()">
+                    {{ t('topology.refresh') }}
+                  </el-button>
+                </div>
+              </div>
+              <div v-if="historyPoints.length" class="metrics-grid">
+                <MetricsChart title="CPU" :series="cpuSeries" unit="percent" />
+                <MetricsChart :title="t('topology.metricsMemory')" :series="memSeries" unit="bytes" />
+                <MetricsChart :title="`${t('topology.metricsNet')} · ${historyIface}`" :series="netSeries" unit="bytesRate" />
+                <MetricsChart :title="t('topology.metricsDisk')" :series="diskSeries" unit="bytesRate" />
+              </div>
+              <div v-else-if="!historyLoading" class="runtime-hint">
+                {{ t('topology.metricsHistoryEmpty') }}
+              </div>
+            </template>
+          </el-tab-pane>
+
+          <el-tab-pane
+            v-if="selectedNode.spec.role === 'server'"
+            :label="t('topology.programsView')"
+            name="programs"
+          >
+            <div class="runtime-toolbar">
+              <span class="runtime-hint">{{ t('topology.programsHint') }}</span>
+              <el-button size="small" :loading="inventoryLoading" @click="refreshInventory">
+                {{ t('topology.refresh') }}
+              </el-button>
+            </div>
+            <template v-if="nodeInventory">
+              <h4>{{ t('programs.title') }}</h4>
+              <el-table :data="nodeInventory.programs ?? []" size="small" v-loading="inventoryLoading">
+                <el-table-column :label="t('common.name')" width="130">
+                  <template #default="{ row }">
+                    <div>{{ row.name }}</div>
+                    <el-tag v-if="!row.managed" size="small" type="warning">{{ t('topology.nodeLocal') }}</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column :label="t('programs.package')">
+                  <template #default="{ row }">
+                    <code>{{ row.packageName }}@{{ row.packageVersion }}</code>
+                    <div class="sub">
+                      {{ row.type === 'oneshot' ? t('programs.typeOneshot') : t('programs.typeSimple') }}
+                      <template v-if="row.autoStart"> · {{ t('programs.autoStart') }}</template>
+                    </div>
+                  </template>
+                </el-table-column>
+                <el-table-column :label="t('programs.state')" width="110">
+                  <template #default="{ row }">
+                    <el-tag size="small" :type="programStateTag(row.state)">{{ row.state }}</el-tag>
+                    <div class="sub" v-if="row.state === 'Running'">pid {{ row.pid }} · ↻{{ row.restarts ?? 0 }}</div>
+                  </template>
+                </el-table-column>
+              </el-table>
+
+              <h4>{{ t('menu.packages') }}</h4>
+              <el-table :data="nodeInventory.packages ?? []" size="small" v-loading="inventoryLoading">
+                <el-table-column prop="name" :label="t('common.name')" width="150" />
+                <el-table-column prop="version" :label="t('packages.version')" width="110" />
+                <el-table-column :label="t('packages.digest')">
+                  <template #default="{ row }"><code>{{ (row.sha256 ?? '').slice(0, 12) }}</code></template>
+                </el-table-column>
               </el-table>
             </template>
           </el-tab-pane>
@@ -558,53 +906,6 @@ function linkKindLabel(l: Link): string {
             </el-table>
           </el-tab-pane>
 
-          <el-tab-pane
-            v-if="selectedNode.spec.role === 'server'"
-            :label="t('topology.programsView')"
-            name="programs"
-          >
-            <div class="runtime-toolbar">
-              <span class="runtime-hint">{{ t('topology.programsHint') }}</span>
-              <el-button size="small" :loading="inventoryLoading" @click="refreshInventory">
-                {{ t('topology.refresh') }}
-              </el-button>
-            </div>
-            <template v-if="nodeInventory">
-              <h4>{{ t('programs.title') }}</h4>
-              <el-table :data="nodeInventory.programs ?? []" size="small" v-loading="inventoryLoading">
-                <el-table-column :label="t('common.name')" width="130">
-                  <template #default="{ row }">
-                    <div>{{ row.name }}</div>
-                    <el-tag v-if="!row.managed" size="small" type="warning">{{ t('topology.nodeLocal') }}</el-tag>
-                  </template>
-                </el-table-column>
-                <el-table-column :label="t('programs.package')">
-                  <template #default="{ row }">
-                    <code>{{ row.packageName }}@{{ row.packageVersion }}</code>
-                    <div class="sub">
-                      {{ row.type === 'oneshot' ? t('programs.typeOneshot') : t('programs.typeSimple') }}
-                      <template v-if="row.autoStart"> · {{ t('programs.autoStart') }}</template>
-                    </div>
-                  </template>
-                </el-table-column>
-                <el-table-column :label="t('programs.state')" width="110">
-                  <template #default="{ row }">
-                    <el-tag size="small" :type="programStateTag(row.state)">{{ row.state }}</el-tag>
-                    <div class="sub" v-if="row.state === 'Running'">pid {{ row.pid }} · ↻{{ row.restarts ?? 0 }}</div>
-                  </template>
-                </el-table-column>
-              </el-table>
-
-              <h4>{{ t('menu.packages') }}</h4>
-              <el-table :data="nodeInventory.packages ?? []" size="small" v-loading="inventoryLoading">
-                <el-table-column prop="name" :label="t('common.name')" width="150" />
-                <el-table-column prop="version" :label="t('packages.version')" width="110" />
-                <el-table-column :label="t('packages.digest')">
-                  <template #default="{ row }"><code>{{ (row.sha256 ?? '').slice(0, 12) }}</code></template>
-                </el-table-column>
-              </el-table>
-            </template>
-          </el-tab-pane>
           <el-tab-pane :label="t('topology.runtimeView')" name="runtime">
             <div class="runtime-toolbar">
               <span class="runtime-hint">{{ t('topology.runtimeHint') }}</span>
@@ -684,5 +985,13 @@ h4 { margin: 16px 0 8px; }
 .runtime-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; }
 .runtime-hint { font-size: 12px; color: var(--el-text-color-secondary); }
 .sub { font-size: 11px; color: var(--el-text-color-secondary); }
+.gauge { margin-bottom: 10px; }
+.gauge-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 2px; font-size: 13px; }
+.toolbar-right { display: flex; gap: 8px; align-items: center; }
+/* One column in the compact drawer, two side by side once the
+   metrics tab widens it; the drawer itself is capped so ultrawide
+   screens don't stretch the charts. */
+.metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); column-gap: 20px; align-items: start; }
+.page :deep(.el-drawer) { max-width: 900px; }
 .flags { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
 </style>

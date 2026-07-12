@@ -290,6 +290,71 @@ export interface NodeInventory {
   }[]
 }
 
+// NodeMetrics is one resource-usage sample of a server, live from its
+// agent (node-exporter style). CPU, memory, disk and process count
+// are container-scoped, network is netns-scoped; the load average is
+// the shared host kernel's. int64 fields are strings in protobuf
+// JSON; doubles stay numbers.
+export interface NodeMetrics {
+  sampledAt?: string
+  uptimeSeconds?: string
+  procs?: string
+  cpu?: {
+    usagePercent?: number
+    userPercent?: number
+    systemPercent?: number
+    limitCores?: number
+  }
+  memory?: {
+    usedBytes?: string
+    cacheBytes?: string
+    limitBytes?: string
+    swapUsedBytes?: string
+  }
+  load?: { load1?: number; load5?: number; load15?: number }
+  filesystem?: {
+    mount?: string
+    sizeBytes?: string
+    usedBytes?: string
+    availBytes?: string
+  }
+  disk?: {
+    readBytesPerSec?: number
+    writeBytesPerSec?: number
+    readOpsPerSec?: number
+    writeOpsPerSec?: number
+    readBytesTotal?: string
+    writeBytesTotal?: string
+  }
+  interfaces?: {
+    name: string
+    rxBytesPerSec?: number
+    txBytesPerSec?: number
+    rxPacketsPerSec?: number
+    txPacketsPerSec?: number
+    rxBytesTotal?: string
+    txBytesTotal?: string
+    rxErrors?: string
+    txErrors?: string
+    rxDropped?: string
+    txDropped?: string
+  }[]
+}
+
+// MetricsPoint is one collected sample of a server's resource series
+// (15 s collector sweeps); rates are averages over the sweep interval.
+// Shares the group shapes with NodeMetrics.
+export interface MetricsPoint {
+  ts?: string
+  procs?: string
+  cpu?: NodeMetrics['cpu']
+  memory?: NodeMetrics['memory']
+  load?: NodeMetrics['load']
+  filesystem?: NodeMetrics['filesystem']
+  disk?: NodeMetrics['disk']
+  interfaces?: NodeMetrics['interfaces']
+}
+
 // TrafficgenMode is a subcommand of the builtin trafficgen package; the UI
 // offers them as presets that become the first program argument.
 export type TrafficgenMode =
