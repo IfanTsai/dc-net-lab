@@ -25,30 +25,42 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	DCNetLab_CreateLab_FullMethodName       = "/dcnetlab.v1.DCNetLab/CreateLab"
-	DCNetLab_ListLabs_FullMethodName        = "/dcnetlab.v1.DCNetLab/ListLabs"
-	DCNetLab_GetLab_FullMethodName          = "/dcnetlab.v1.DCNetLab/GetLab"
-	DCNetLab_DeleteLab_FullMethodName       = "/dcnetlab.v1.DCNetLab/DeleteLab"
-	DCNetLab_StartLab_FullMethodName        = "/dcnetlab.v1.DCNetLab/StartLab"
-	DCNetLab_StopLab_FullMethodName         = "/dcnetlab.v1.DCNetLab/StopLab"
-	DCNetLab_ListNodes_FullMethodName       = "/dcnetlab.v1.DCNetLab/ListNodes"
-	DCNetLab_ListLinks_FullMethodName       = "/dcnetlab.v1.DCNetLab/ListLinks"
-	DCNetLab_ListAllocations_FullMethodName = "/dcnetlab.v1.DCNetLab/ListAllocations"
-	DCNetLab_StartNode_FullMethodName       = "/dcnetlab.v1.DCNetLab/StartNode"
-	DCNetLab_StopNode_FullMethodName        = "/dcnetlab.v1.DCNetLab/StopNode"
-	DCNetLab_GetNodeRuntime_FullMethodName  = "/dcnetlab.v1.DCNetLab/GetNodeRuntime"
-	DCNetLab_GetNodeBGP_FullMethodName      = "/dcnetlab.v1.DCNetLab/GetNodeBGP"
-	DCNetLab_GetNodeRoutes_FullMethodName   = "/dcnetlab.v1.DCNetLab/GetNodeRoutes"
-	DCNetLab_GetNodeBGPTable_FullMethodName = "/dcnetlab.v1.DCNetLab/GetNodeBGPTable"
-	DCNetLab_GetNodeFIB_FullMethodName      = "/dcnetlab.v1.DCNetLab/GetNodeFIB"
-	DCNetLab_CreatePlan_FullMethodName      = "/dcnetlab.v1.DCNetLab/CreatePlan"
-	DCNetLab_GetPlan_FullMethodName         = "/dcnetlab.v1.DCNetLab/GetPlan"
-	DCNetLab_ApplyPlan_FullMethodName       = "/dcnetlab.v1.DCNetLab/ApplyPlan"
-	DCNetLab_GetOperation_FullMethodName    = "/dcnetlab.v1.DCNetLab/GetOperation"
-	DCNetLab_ListOperations_FullMethodName  = "/dcnetlab.v1.DCNetLab/ListOperations"
-	DCNetLab_ListGenerations_FullMethodName = "/dcnetlab.v1.DCNetLab/ListGenerations"
-	DCNetLab_ListProfiles_FullMethodName    = "/dcnetlab.v1.DCNetLab/ListProfiles"
-	DCNetLab_Healthz_FullMethodName         = "/dcnetlab.v1.DCNetLab/Healthz"
+	DCNetLab_CreateLab_FullMethodName        = "/dcnetlab.v1.DCNetLab/CreateLab"
+	DCNetLab_ListLabs_FullMethodName         = "/dcnetlab.v1.DCNetLab/ListLabs"
+	DCNetLab_GetLab_FullMethodName           = "/dcnetlab.v1.DCNetLab/GetLab"
+	DCNetLab_DeleteLab_FullMethodName        = "/dcnetlab.v1.DCNetLab/DeleteLab"
+	DCNetLab_StartLab_FullMethodName         = "/dcnetlab.v1.DCNetLab/StartLab"
+	DCNetLab_StopLab_FullMethodName          = "/dcnetlab.v1.DCNetLab/StopLab"
+	DCNetLab_ListNodes_FullMethodName        = "/dcnetlab.v1.DCNetLab/ListNodes"
+	DCNetLab_ListLinks_FullMethodName        = "/dcnetlab.v1.DCNetLab/ListLinks"
+	DCNetLab_ListAllocations_FullMethodName  = "/dcnetlab.v1.DCNetLab/ListAllocations"
+	DCNetLab_StartNode_FullMethodName        = "/dcnetlab.v1.DCNetLab/StartNode"
+	DCNetLab_StopNode_FullMethodName         = "/dcnetlab.v1.DCNetLab/StopNode"
+	DCNetLab_GetNodeRuntime_FullMethodName   = "/dcnetlab.v1.DCNetLab/GetNodeRuntime"
+	DCNetLab_GetNodeBGP_FullMethodName       = "/dcnetlab.v1.DCNetLab/GetNodeBGP"
+	DCNetLab_GetNodeRoutes_FullMethodName    = "/dcnetlab.v1.DCNetLab/GetNodeRoutes"
+	DCNetLab_GetNodeBGPTable_FullMethodName  = "/dcnetlab.v1.DCNetLab/GetNodeBGPTable"
+	DCNetLab_GetNodeFIB_FullMethodName       = "/dcnetlab.v1.DCNetLab/GetNodeFIB"
+	DCNetLab_UploadPackage_FullMethodName    = "/dcnetlab.v1.DCNetLab/UploadPackage"
+	DCNetLab_ListPackages_FullMethodName     = "/dcnetlab.v1.DCNetLab/ListPackages"
+	DCNetLab_DeletePackage_FullMethodName    = "/dcnetlab.v1.DCNetLab/DeletePackage"
+	DCNetLab_GetNodeInventory_FullMethodName = "/dcnetlab.v1.DCNetLab/GetNodeInventory"
+	DCNetLab_InstallPackage_FullMethodName   = "/dcnetlab.v1.DCNetLab/InstallPackage"
+	DCNetLab_CreateProgram_FullMethodName    = "/dcnetlab.v1.DCNetLab/CreateProgram"
+	DCNetLab_ListPrograms_FullMethodName     = "/dcnetlab.v1.DCNetLab/ListPrograms"
+	DCNetLab_StartProgram_FullMethodName     = "/dcnetlab.v1.DCNetLab/StartProgram"
+	DCNetLab_StopProgram_FullMethodName      = "/dcnetlab.v1.DCNetLab/StopProgram"
+	DCNetLab_UpgradeProgram_FullMethodName   = "/dcnetlab.v1.DCNetLab/UpgradeProgram"
+	DCNetLab_DeleteProgram_FullMethodName    = "/dcnetlab.v1.DCNetLab/DeleteProgram"
+	DCNetLab_GetProgramLogs_FullMethodName   = "/dcnetlab.v1.DCNetLab/GetProgramLogs"
+	DCNetLab_CreatePlan_FullMethodName       = "/dcnetlab.v1.DCNetLab/CreatePlan"
+	DCNetLab_GetPlan_FullMethodName          = "/dcnetlab.v1.DCNetLab/GetPlan"
+	DCNetLab_ApplyPlan_FullMethodName        = "/dcnetlab.v1.DCNetLab/ApplyPlan"
+	DCNetLab_GetOperation_FullMethodName     = "/dcnetlab.v1.DCNetLab/GetOperation"
+	DCNetLab_ListOperations_FullMethodName   = "/dcnetlab.v1.DCNetLab/ListOperations"
+	DCNetLab_ListGenerations_FullMethodName  = "/dcnetlab.v1.DCNetLab/ListGenerations"
+	DCNetLab_ListProfiles_FullMethodName     = "/dcnetlab.v1.DCNetLab/ListProfiles"
+	DCNetLab_Healthz_FullMethodName          = "/dcnetlab.v1.DCNetLab/Healthz"
 )
 
 // DCNetLabClient is the client API for DCNetLab service.
@@ -96,6 +108,35 @@ type DCNetLabClient interface {
 	// deployed node (`ip route`): what actually forwards packets, as
 	// installed by zebra from the RIB.
 	GetNodeFIB(ctx context.Context, in *GetNodeFIBRequest, opts ...grpc.CallOption) (*NodeFIB, error)
+	// --- Packages ---
+	// Packages are versioned program artifacts (tar.gz with a
+	// manifest.json) in the controller's repository; lab servers
+	// install them through their agent. The bundled lab-app registers
+	// as the builtin package; uploads use the same pipeline.
+	UploadPackage(ctx context.Context, in *UploadPackageRequest, opts ...grpc.CallOption) (*Package, error)
+	ListPackages(ctx context.Context, in *ListPackagesRequest, opts ...grpc.CallOption) (*ListPackagesReply, error)
+	DeletePackage(ctx context.Context, in *DeletePackageRequest, opts ...grpc.CallOption) (*DeletePackageReply, error)
+	// GetNodeInventory reports what is actually on one server, live
+	// from its agent: installed package versions and every program
+	// (controller-managed or created node-locally via the in-container
+	// CLI).
+	GetNodeInventory(ctx context.Context, in *GetNodeInventoryRequest, opts ...grpc.CallOption) (*NodeInventory, error)
+	// InstallPackage delivers a package version onto lab servers
+	// without declaring a program — the "deploy a binary" path (apt
+	// install without a service unit). Idempotent per server: agents
+	// skip versions already present with the same digest.
+	InstallPackage(ctx context.Context, in *InstallPackageRequest, opts ...grpc.CallOption) (*InstallPackageReply, error)
+	// --- Programs ---
+	// Programs are supervised processes on lab servers, each running
+	// the entrypoint of an installed Package version, managed through
+	// the per-server dcnetlab-server-agent.
+	CreateProgram(ctx context.Context, in *CreateProgramRequest, opts ...grpc.CallOption) (*CreateProgramReply, error)
+	ListPrograms(ctx context.Context, in *ListProgramsRequest, opts ...grpc.CallOption) (*ListProgramsReply, error)
+	StartProgram(ctx context.Context, in *ProgramOpRequest, opts ...grpc.CallOption) (*Program, error)
+	StopProgram(ctx context.Context, in *ProgramOpRequest, opts ...grpc.CallOption) (*Program, error)
+	UpgradeProgram(ctx context.Context, in *UpgradeProgramRequest, opts ...grpc.CallOption) (*Program, error)
+	DeleteProgram(ctx context.Context, in *ProgramOpRequest, opts ...grpc.CallOption) (*DeleteProgramReply, error)
+	GetProgramLogs(ctx context.Context, in *GetProgramLogsRequest, opts ...grpc.CallOption) (*ProgramLogs, error)
 	// --- Plans ---
 	CreatePlan(ctx context.Context, in *CreatePlanRequest, opts ...grpc.CallOption) (*Plan, error)
 	GetPlan(ctx context.Context, in *GetPlanRequest, opts ...grpc.CallOption) (*Plan, error)
@@ -277,6 +318,126 @@ func (c *dCNetLabClient) GetNodeFIB(ctx context.Context, in *GetNodeFIBRequest, 
 	return out, nil
 }
 
+func (c *dCNetLabClient) UploadPackage(ctx context.Context, in *UploadPackageRequest, opts ...grpc.CallOption) (*Package, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Package)
+	err := c.cc.Invoke(ctx, DCNetLab_UploadPackage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) ListPackages(ctx context.Context, in *ListPackagesRequest, opts ...grpc.CallOption) (*ListPackagesReply, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPackagesReply)
+	err := c.cc.Invoke(ctx, DCNetLab_ListPackages_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) DeletePackage(ctx context.Context, in *DeletePackageRequest, opts ...grpc.CallOption) (*DeletePackageReply, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeletePackageReply)
+	err := c.cc.Invoke(ctx, DCNetLab_DeletePackage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) GetNodeInventory(ctx context.Context, in *GetNodeInventoryRequest, opts ...grpc.CallOption) (*NodeInventory, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(NodeInventory)
+	err := c.cc.Invoke(ctx, DCNetLab_GetNodeInventory_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) InstallPackage(ctx context.Context, in *InstallPackageRequest, opts ...grpc.CallOption) (*InstallPackageReply, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InstallPackageReply)
+	err := c.cc.Invoke(ctx, DCNetLab_InstallPackage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) CreateProgram(ctx context.Context, in *CreateProgramRequest, opts ...grpc.CallOption) (*CreateProgramReply, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateProgramReply)
+	err := c.cc.Invoke(ctx, DCNetLab_CreateProgram_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) ListPrograms(ctx context.Context, in *ListProgramsRequest, opts ...grpc.CallOption) (*ListProgramsReply, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListProgramsReply)
+	err := c.cc.Invoke(ctx, DCNetLab_ListPrograms_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) StartProgram(ctx context.Context, in *ProgramOpRequest, opts ...grpc.CallOption) (*Program, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Program)
+	err := c.cc.Invoke(ctx, DCNetLab_StartProgram_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) StopProgram(ctx context.Context, in *ProgramOpRequest, opts ...grpc.CallOption) (*Program, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Program)
+	err := c.cc.Invoke(ctx, DCNetLab_StopProgram_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) UpgradeProgram(ctx context.Context, in *UpgradeProgramRequest, opts ...grpc.CallOption) (*Program, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Program)
+	err := c.cc.Invoke(ctx, DCNetLab_UpgradeProgram_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) DeleteProgram(ctx context.Context, in *ProgramOpRequest, opts ...grpc.CallOption) (*DeleteProgramReply, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteProgramReply)
+	err := c.cc.Invoke(ctx, DCNetLab_DeleteProgram_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) GetProgramLogs(ctx context.Context, in *GetProgramLogsRequest, opts ...grpc.CallOption) (*ProgramLogs, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ProgramLogs)
+	err := c.cc.Invoke(ctx, DCNetLab_GetProgramLogs_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *dCNetLabClient) CreatePlan(ctx context.Context, in *CreatePlanRequest, opts ...grpc.CallOption) (*Plan, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Plan)
@@ -402,6 +563,35 @@ type DCNetLabServer interface {
 	// deployed node (`ip route`): what actually forwards packets, as
 	// installed by zebra from the RIB.
 	GetNodeFIB(context.Context, *GetNodeFIBRequest) (*NodeFIB, error)
+	// --- Packages ---
+	// Packages are versioned program artifacts (tar.gz with a
+	// manifest.json) in the controller's repository; lab servers
+	// install them through their agent. The bundled lab-app registers
+	// as the builtin package; uploads use the same pipeline.
+	UploadPackage(context.Context, *UploadPackageRequest) (*Package, error)
+	ListPackages(context.Context, *ListPackagesRequest) (*ListPackagesReply, error)
+	DeletePackage(context.Context, *DeletePackageRequest) (*DeletePackageReply, error)
+	// GetNodeInventory reports what is actually on one server, live
+	// from its agent: installed package versions and every program
+	// (controller-managed or created node-locally via the in-container
+	// CLI).
+	GetNodeInventory(context.Context, *GetNodeInventoryRequest) (*NodeInventory, error)
+	// InstallPackage delivers a package version onto lab servers
+	// without declaring a program — the "deploy a binary" path (apt
+	// install without a service unit). Idempotent per server: agents
+	// skip versions already present with the same digest.
+	InstallPackage(context.Context, *InstallPackageRequest) (*InstallPackageReply, error)
+	// --- Programs ---
+	// Programs are supervised processes on lab servers, each running
+	// the entrypoint of an installed Package version, managed through
+	// the per-server dcnetlab-server-agent.
+	CreateProgram(context.Context, *CreateProgramRequest) (*CreateProgramReply, error)
+	ListPrograms(context.Context, *ListProgramsRequest) (*ListProgramsReply, error)
+	StartProgram(context.Context, *ProgramOpRequest) (*Program, error)
+	StopProgram(context.Context, *ProgramOpRequest) (*Program, error)
+	UpgradeProgram(context.Context, *UpgradeProgramRequest) (*Program, error)
+	DeleteProgram(context.Context, *ProgramOpRequest) (*DeleteProgramReply, error)
+	GetProgramLogs(context.Context, *GetProgramLogsRequest) (*ProgramLogs, error)
 	// --- Plans ---
 	CreatePlan(context.Context, *CreatePlanRequest) (*Plan, error)
 	GetPlan(context.Context, *GetPlanRequest) (*Plan, error)
@@ -470,6 +660,42 @@ func (UnimplementedDCNetLabServer) GetNodeBGPTable(context.Context, *GetNodeBGPT
 }
 func (UnimplementedDCNetLabServer) GetNodeFIB(context.Context, *GetNodeFIBRequest) (*NodeFIB, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetNodeFIB not implemented")
+}
+func (UnimplementedDCNetLabServer) UploadPackage(context.Context, *UploadPackageRequest) (*Package, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UploadPackage not implemented")
+}
+func (UnimplementedDCNetLabServer) ListPackages(context.Context, *ListPackagesRequest) (*ListPackagesReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListPackages not implemented")
+}
+func (UnimplementedDCNetLabServer) DeletePackage(context.Context, *DeletePackageRequest) (*DeletePackageReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeletePackage not implemented")
+}
+func (UnimplementedDCNetLabServer) GetNodeInventory(context.Context, *GetNodeInventoryRequest) (*NodeInventory, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetNodeInventory not implemented")
+}
+func (UnimplementedDCNetLabServer) InstallPackage(context.Context, *InstallPackageRequest) (*InstallPackageReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method InstallPackage not implemented")
+}
+func (UnimplementedDCNetLabServer) CreateProgram(context.Context, *CreateProgramRequest) (*CreateProgramReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateProgram not implemented")
+}
+func (UnimplementedDCNetLabServer) ListPrograms(context.Context, *ListProgramsRequest) (*ListProgramsReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListPrograms not implemented")
+}
+func (UnimplementedDCNetLabServer) StartProgram(context.Context, *ProgramOpRequest) (*Program, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StartProgram not implemented")
+}
+func (UnimplementedDCNetLabServer) StopProgram(context.Context, *ProgramOpRequest) (*Program, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StopProgram not implemented")
+}
+func (UnimplementedDCNetLabServer) UpgradeProgram(context.Context, *UpgradeProgramRequest) (*Program, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpgradeProgram not implemented")
+}
+func (UnimplementedDCNetLabServer) DeleteProgram(context.Context, *ProgramOpRequest) (*DeleteProgramReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteProgram not implemented")
+}
+func (UnimplementedDCNetLabServer) GetProgramLogs(context.Context, *GetProgramLogsRequest) (*ProgramLogs, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetProgramLogs not implemented")
 }
 func (UnimplementedDCNetLabServer) CreatePlan(context.Context, *CreatePlanRequest) (*Plan, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreatePlan not implemented")
@@ -804,6 +1030,222 @@ func _DCNetLab_GetNodeFIB_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DCNetLab_UploadPackage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UploadPackageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).UploadPackage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_UploadPackage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).UploadPackage(ctx, req.(*UploadPackageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_ListPackages_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPackagesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).ListPackages(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_ListPackages_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).ListPackages(ctx, req.(*ListPackagesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_DeletePackage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeletePackageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).DeletePackage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_DeletePackage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).DeletePackage(ctx, req.(*DeletePackageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_GetNodeInventory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetNodeInventoryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).GetNodeInventory(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_GetNodeInventory_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).GetNodeInventory(ctx, req.(*GetNodeInventoryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_InstallPackage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InstallPackageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).InstallPackage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_InstallPackage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).InstallPackage(ctx, req.(*InstallPackageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_CreateProgram_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateProgramRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).CreateProgram(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_CreateProgram_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).CreateProgram(ctx, req.(*CreateProgramRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_ListPrograms_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListProgramsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).ListPrograms(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_ListPrograms_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).ListPrograms(ctx, req.(*ListProgramsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_StartProgram_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ProgramOpRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).StartProgram(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_StartProgram_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).StartProgram(ctx, req.(*ProgramOpRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_StopProgram_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ProgramOpRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).StopProgram(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_StopProgram_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).StopProgram(ctx, req.(*ProgramOpRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_UpgradeProgram_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpgradeProgramRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).UpgradeProgram(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_UpgradeProgram_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).UpgradeProgram(ctx, req.(*UpgradeProgramRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_DeleteProgram_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ProgramOpRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).DeleteProgram(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_DeleteProgram_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).DeleteProgram(ctx, req.(*ProgramOpRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_GetProgramLogs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetProgramLogsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).GetProgramLogs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_GetProgramLogs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).GetProgramLogs(ctx, req.(*GetProgramLogsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DCNetLab_CreatePlan_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CreatePlanRequest)
 	if err := dec(in); err != nil {
@@ -1018,6 +1460,54 @@ var DCNetLab_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetNodeFIB",
 			Handler:    _DCNetLab_GetNodeFIB_Handler,
+		},
+		{
+			MethodName: "UploadPackage",
+			Handler:    _DCNetLab_UploadPackage_Handler,
+		},
+		{
+			MethodName: "ListPackages",
+			Handler:    _DCNetLab_ListPackages_Handler,
+		},
+		{
+			MethodName: "DeletePackage",
+			Handler:    _DCNetLab_DeletePackage_Handler,
+		},
+		{
+			MethodName: "GetNodeInventory",
+			Handler:    _DCNetLab_GetNodeInventory_Handler,
+		},
+		{
+			MethodName: "InstallPackage",
+			Handler:    _DCNetLab_InstallPackage_Handler,
+		},
+		{
+			MethodName: "CreateProgram",
+			Handler:    _DCNetLab_CreateProgram_Handler,
+		},
+		{
+			MethodName: "ListPrograms",
+			Handler:    _DCNetLab_ListPrograms_Handler,
+		},
+		{
+			MethodName: "StartProgram",
+			Handler:    _DCNetLab_StartProgram_Handler,
+		},
+		{
+			MethodName: "StopProgram",
+			Handler:    _DCNetLab_StopProgram_Handler,
+		},
+		{
+			MethodName: "UpgradeProgram",
+			Handler:    _DCNetLab_UpgradeProgram_Handler,
+		},
+		{
+			MethodName: "DeleteProgram",
+			Handler:    _DCNetLab_DeleteProgram_Handler,
+		},
+		{
+			MethodName: "GetProgramLogs",
+			Handler:    _DCNetLab_GetProgramLogs_Handler,
 		},
 		{
 			MethodName: "CreatePlan",

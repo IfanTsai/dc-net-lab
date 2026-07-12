@@ -64,6 +64,7 @@ func (s *Data) DeleteLab(id string) error {
 			`DELETE FROM plans WHERE lab_id = ?`,
 			`DELETE FROM generations WHERE lab_id = ?`,
 			`DELETE FROM allocations WHERE lab_id = ?`,
+			`DELETE FROM programs WHERE lab_id = ?`,
 			`DELETE FROM labs WHERE id = ?`,
 		} {
 			if _, err := tx.Exec(q, id); err != nil {

@@ -39,19 +39,29 @@ func wireApp(confServer *conf.Server, confData *conf.Data, logger log.Logger, sl
 	topologyRepo := data.NewTopologyRepo(dataData)
 	topologyUsecase := biz.NewTopologyUsecase(topologyRepo, slogLogger)
 	planRepo := data.NewPlanRepo(dataData)
-	planUsecase := biz.NewPlanUsecase(planRepo, manager, driver, confData, slogLogger)
+	programRepo := data.NewProgramRepo(dataData)
+	programAgent := data.NewProgramAgent(slogLogger)
+	packageRepo := data.NewPackageRepo(dataData)
+	packageUsecase, err := biz.NewPackageUsecase(packageRepo, confData, slogLogger)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	programUsecase := biz.NewProgramUsecase(programRepo, programAgent, driver, packageUsecase, confServer, slogLogger)
+	planUsecase := biz.NewPlanUsecase(planRepo, manager, driver, programUsecase, confData, slogLogger)
 	operationRepo := data.NewOperationRepo(dataData)
 	operationUsecase := biz.NewOperationUsecase(operationRepo, slogLogger)
 	powerRepo := data.NewPowerRepo(dataData)
 	powerUsecase := biz.NewPowerUsecase(powerRepo, manager, driver, slogLogger)
 	runtimeUsecase := biz.NewRuntimeUsecase(labRepo, topologyRepo, driver, slogLogger)
-	dcNetLabService := service.NewDCNetLabService(labUsecase, topologyUsecase, planUsecase, operationUsecase, powerUsecase, runtimeUsecase, slogLogger)
+	dcNetLabService := service.NewDCNetLabService(labUsecase, topologyUsecase, planUsecase, operationUsecase, powerUsecase, runtimeUsecase, programUsecase, packageUsecase, slogLogger)
 	terminalUsecase := biz.NewTerminalUsecase(labRepo, topologyRepo, driver, slogLogger)
 	observerStore := data.NewObserverStore(dataData)
 	observerObserver := observer.New(observerStore, driver, slogLogger)
 	httpServer := server.NewHTTPServer(confServer, dcNetLabService, terminalUsecase, observerObserver, logger)
 	grpcServer := server.NewGRPCServer(confServer, dcNetLabService, logger)
-	app := newApp(confServer, logger, httpServer, grpcServer, observerObserver)
+	repoServer := server.NewRepoServer(confServer, packageUsecase, slogLogger)
+	app := newApp(confServer, logger, httpServer, grpcServer, repoServer, observerObserver)
 	return app, func() {
 		cleanup()
 	}, nil

@@ -5,10 +5,12 @@ package containerlab
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/ifantsai/dcnetlab/internal/agentapi"
 	"github.com/ifantsai/dcnetlab/internal/model"
 )
 
@@ -16,6 +18,11 @@ import (
 type Options struct {
 	FRRImage    string
 	ServerImage string
+	// HostBinDir is the host directory holding the static
+	// dcnetlab-node-agent binary. When set, server nodes bind-mount
+	// that single file read-only and start the agent at deploy time;
+	// empty disables the agent (e.g. golden fixtures that predate it).
+	HostBinDir string
 }
 
 // DefaultOptions returns the default runtime images. Servers run the
@@ -26,6 +33,25 @@ func DefaultOptions() Options {
 		ServerImage: "quay.io/frrouting/frr:10.2.1",
 	}
 }
+
+// Only the node tooling is bind-mounted into server containers
+// (conceptually it ships with the OS image): the supervisor daemon
+// and the operator CLI. The dcnetlab- prefix stays on the host
+// artifacts; inside the container they mount under their plain names
+// so the process list reads node-agent. Everything else — including
+// the builtin trafficgen — arrives as a package through the
+// controller's repository.
+const (
+	hostAgentBinary = "dcnetlab-node-agent"
+	hostCLIBinary   = "dcnetlab-node-cli"
+	agentMount      = agentapi.AgentMount
+	cliMount        = agentapi.CLIMount
+)
+
+// startServerAgent launches node-agent in the background at deploy
+// time. The script itself is shared with the observer's agent
+// self-heal so both boot paths stay identical.
+const startServerAgent = `sh -c '` + agentapi.StartAgentScript + `'`
 
 // removeMgmtDefaultRoute drops the default route Containerlab injects
 // via the management network (eth0) so exec-time provisioning (e.g.
@@ -103,6 +129,13 @@ func Compile(labName string, nodes []*model.Node, links []*model.Link, opts Opti
 		case n.Spec.Role == model.RoleServer:
 			def.Image = opts.ServerImage
 			def.Exec = serverExec(n, bondMembers[n.Meta.ID])
+			if opts.HostBinDir != "" {
+				def.Binds = append(def.Binds,
+					filepath.Join(opts.HostBinDir, hostAgentBinary)+":"+agentMount+":ro",
+					filepath.Join(opts.HostBinDir, hostCLIBinary)+":"+cliMount+":ro",
+				)
+				def.Exec = append(def.Exec, startServerAgent)
+			}
 		case n.Spec.VlanID != 0:
 			def.Exec = leafExec(n, accessPorts[n.Meta.ID], trunkPorts[n.Meta.ID])
 		default:
@@ -206,7 +239,11 @@ func serverExec(n *model.Node, members []string) []string {
 
 	cmds = append(cmds, "ip link set bond0 up")
 	if n.Spec.DefaultGateway.IsValid() {
-		cmds = append(cmds, fmt.Sprintf("ip route replace default via %s", n.Spec.DefaultGateway))
+		// onlink: at exec time zebra may not have addressed bond0 yet,
+		// so the nexthop is not resolvable and a plain route replace
+		// would race FRR startup and occasionally fail, leaving the
+		// management network as the silent default.
+		cmds = append(cmds, fmt.Sprintf("ip route replace default via %s dev bond0 onlink", n.Spec.DefaultGateway))
 	}
 
 	return cmds

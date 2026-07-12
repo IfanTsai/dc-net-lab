@@ -43,16 +43,18 @@ type PlanRepo interface {
 // PlanUsecase owns the declarative change flow: compute a previewable
 // plan, then apply it (compile artifacts, deploy, validate).
 type PlanUsecase struct {
-	repo    PlanRepo
-	ops     *operation.Manager
-	driver  runtime.Driver
-	dataDir string
-	log     *slog.Logger
+	repo     PlanRepo
+	ops      *operation.Manager
+	driver   runtime.Driver
+	programs *ProgramUsecase
+	dataDir  string
+	binDir   string
+	log      *slog.Logger
 }
 
 // NewPlanUsecase wires the plan usecase.
-func NewPlanUsecase(repo PlanRepo, ops *operation.Manager, driver runtime.Driver, c *conf.Data, log *slog.Logger) *PlanUsecase {
-	return &PlanUsecase{repo: repo, ops: ops, driver: driver, dataDir: c.Dir, log: log}
+func NewPlanUsecase(repo PlanRepo, ops *operation.Manager, driver runtime.Driver, programs *ProgramUsecase, c *conf.Data, log *slog.Logger) *PlanUsecase {
+	return &PlanUsecase{repo: repo, ops: ops, driver: driver, programs: programs, dataDir: c.Dir, binDir: c.BinDir, log: log}
 }
 
 // CreatePlan builds the desired topology for the lab, persists it as
@@ -183,7 +185,9 @@ func (uc *PlanUsecase) ApplyPlan(planID string) (*model.Operation, error) {
 
 	steps := []operation.Step{
 		{Name: "CompileArtifacts", Fn: func(ctx context.Context) error {
-			a, err := compiler.Compile(lab, nodes, links, containerlab.DefaultOptions())
+			opts := containerlab.DefaultOptions()
+			opts.HostBinDir = uc.binDir
+			a, err := compiler.Compile(lab, nodes, links, opts)
 			artifact = a
 
 			return err
@@ -203,6 +207,12 @@ func (uc *PlanUsecase) ApplyPlan(planID string) (*model.Operation, error) {
 		}},
 		{Name: "ValidateDataPlane", Fn: func(ctx context.Context) error {
 			return uc.validateDataPlane(ctx, lab, nodes)
+		}},
+		// Redeploying wipes the server containers and everything the
+		// agents were running; push the persisted program desired
+		// state back onto the fresh agents.
+		{Name: "RestorePrograms", Fn: func(ctx context.Context) error {
+			return uc.programs.RestorePrograms(ctx, lab, nodes)
 		}},
 	}
 

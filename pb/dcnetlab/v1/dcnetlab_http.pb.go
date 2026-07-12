@@ -22,27 +22,39 @@ const _ = http.SupportPackageIsVersion1
 const OperationDCNetLabApplyPlan = "/dcnetlab.v1.DCNetLab/ApplyPlan"
 const OperationDCNetLabCreateLab = "/dcnetlab.v1.DCNetLab/CreateLab"
 const OperationDCNetLabCreatePlan = "/dcnetlab.v1.DCNetLab/CreatePlan"
+const OperationDCNetLabCreateProgram = "/dcnetlab.v1.DCNetLab/CreateProgram"
 const OperationDCNetLabDeleteLab = "/dcnetlab.v1.DCNetLab/DeleteLab"
+const OperationDCNetLabDeletePackage = "/dcnetlab.v1.DCNetLab/DeletePackage"
+const OperationDCNetLabDeleteProgram = "/dcnetlab.v1.DCNetLab/DeleteProgram"
 const OperationDCNetLabGetLab = "/dcnetlab.v1.DCNetLab/GetLab"
 const OperationDCNetLabGetNodeBGP = "/dcnetlab.v1.DCNetLab/GetNodeBGP"
 const OperationDCNetLabGetNodeBGPTable = "/dcnetlab.v1.DCNetLab/GetNodeBGPTable"
 const OperationDCNetLabGetNodeFIB = "/dcnetlab.v1.DCNetLab/GetNodeFIB"
+const OperationDCNetLabGetNodeInventory = "/dcnetlab.v1.DCNetLab/GetNodeInventory"
 const OperationDCNetLabGetNodeRoutes = "/dcnetlab.v1.DCNetLab/GetNodeRoutes"
 const OperationDCNetLabGetNodeRuntime = "/dcnetlab.v1.DCNetLab/GetNodeRuntime"
 const OperationDCNetLabGetOperation = "/dcnetlab.v1.DCNetLab/GetOperation"
 const OperationDCNetLabGetPlan = "/dcnetlab.v1.DCNetLab/GetPlan"
+const OperationDCNetLabGetProgramLogs = "/dcnetlab.v1.DCNetLab/GetProgramLogs"
 const OperationDCNetLabHealthz = "/dcnetlab.v1.DCNetLab/Healthz"
+const OperationDCNetLabInstallPackage = "/dcnetlab.v1.DCNetLab/InstallPackage"
 const OperationDCNetLabListAllocations = "/dcnetlab.v1.DCNetLab/ListAllocations"
 const OperationDCNetLabListGenerations = "/dcnetlab.v1.DCNetLab/ListGenerations"
 const OperationDCNetLabListLabs = "/dcnetlab.v1.DCNetLab/ListLabs"
 const OperationDCNetLabListLinks = "/dcnetlab.v1.DCNetLab/ListLinks"
 const OperationDCNetLabListNodes = "/dcnetlab.v1.DCNetLab/ListNodes"
 const OperationDCNetLabListOperations = "/dcnetlab.v1.DCNetLab/ListOperations"
+const OperationDCNetLabListPackages = "/dcnetlab.v1.DCNetLab/ListPackages"
 const OperationDCNetLabListProfiles = "/dcnetlab.v1.DCNetLab/ListProfiles"
+const OperationDCNetLabListPrograms = "/dcnetlab.v1.DCNetLab/ListPrograms"
 const OperationDCNetLabStartLab = "/dcnetlab.v1.DCNetLab/StartLab"
 const OperationDCNetLabStartNode = "/dcnetlab.v1.DCNetLab/StartNode"
+const OperationDCNetLabStartProgram = "/dcnetlab.v1.DCNetLab/StartProgram"
 const OperationDCNetLabStopLab = "/dcnetlab.v1.DCNetLab/StopLab"
 const OperationDCNetLabStopNode = "/dcnetlab.v1.DCNetLab/StopNode"
+const OperationDCNetLabStopProgram = "/dcnetlab.v1.DCNetLab/StopProgram"
+const OperationDCNetLabUpgradeProgram = "/dcnetlab.v1.DCNetLab/UpgradeProgram"
+const OperationDCNetLabUploadPackage = "/dcnetlab.v1.DCNetLab/UploadPackage"
 
 type DCNetLabHTTPServer interface {
 	ApplyPlan(context.Context, *ApplyPlanRequest) (*OperationRef, error)
@@ -50,7 +62,14 @@ type DCNetLabHTTPServer interface {
 	CreateLab(context.Context, *CreateLabRequest) (*Lab, error)
 	// CreatePlan --- Plans ---
 	CreatePlan(context.Context, *CreatePlanRequest) (*Plan, error)
+	// CreateProgram --- Programs ---
+	// Programs are supervised processes on lab servers, each running
+	// the entrypoint of an installed Package version, managed through
+	// the per-server dcnetlab-server-agent.
+	CreateProgram(context.Context, *CreateProgramRequest) (*CreateProgramReply, error)
 	DeleteLab(context.Context, *DeleteLabRequest) (*OperationRef, error)
+	DeletePackage(context.Context, *DeletePackageRequest) (*DeletePackageReply, error)
+	DeleteProgram(context.Context, *ProgramOpRequest) (*DeleteProgramReply, error)
 	GetLab(context.Context, *GetLabRequest) (*Lab, error)
 	// GetNodeBGP GetNodeBGP returns the BGP configuration of one node as derived
 	// by the FRR compiler from the topology model: eBGP neighbors over
@@ -65,6 +84,11 @@ type DCNetLabHTTPServer interface {
 	// deployed node (`ip route`): what actually forwards packets, as
 	// installed by zebra from the RIB.
 	GetNodeFIB(context.Context, *GetNodeFIBRequest) (*NodeFIB, error)
+	// GetNodeInventory GetNodeInventory reports what is actually on one server, live
+	// from its agent: installed package versions and every program
+	// (controller-managed or created node-locally via the in-container
+	// CLI).
+	GetNodeInventory(context.Context, *GetNodeInventoryRequest) (*NodeInventory, error)
 	// GetNodeRoutes GetNodeRoutes returns the live IPv4 routing table (FRR RIB) of
 	// one deployed node; routes are empty unless the container is
 	// running.
@@ -77,7 +101,13 @@ type DCNetLabHTTPServer interface {
 	// GetOperation --- Operations & Generations ---
 	GetOperation(context.Context, *GetOperationRequest) (*Operation, error)
 	GetPlan(context.Context, *GetPlanRequest) (*Plan, error)
+	GetProgramLogs(context.Context, *GetProgramLogsRequest) (*ProgramLogs, error)
 	Healthz(context.Context, *HealthzRequest) (*HealthzReply, error)
+	// InstallPackage InstallPackage delivers a package version onto lab servers
+	// without declaring a program — the "deploy a binary" path (apt
+	// install without a service unit). Idempotent per server: agents
+	// skip versions already present with the same digest.
+	InstallPackage(context.Context, *InstallPackageRequest) (*InstallPackageReply, error)
 	ListAllocations(context.Context, *ListAllocationsRequest) (*ListAllocationsReply, error)
 	ListGenerations(context.Context, *ListGenerationsRequest) (*ListGenerationsReply, error)
 	ListLabs(context.Context, *ListLabsRequest) (*ListLabsReply, error)
@@ -85,15 +115,26 @@ type DCNetLabHTTPServer interface {
 	// ListNodes --- Topology ---
 	ListNodes(context.Context, *ListNodesRequest) (*ListNodesReply, error)
 	ListOperations(context.Context, *ListOperationsRequest) (*ListOperationsReply, error)
+	ListPackages(context.Context, *ListPackagesRequest) (*ListPackagesReply, error)
 	// ListProfiles --- Profiles & health ---
 	ListProfiles(context.Context, *ListProfilesRequest) (*ListProfilesReply, error)
+	ListPrograms(context.Context, *ListProgramsRequest) (*ListProgramsReply, error)
 	// StartLab StartLab / StopLab power the deployed containers of a lab on and
 	// off (docker start/stop) without touching the generation.
 	StartLab(context.Context, *StartLabRequest) (*OperationRef, error)
 	// StartNode StartNode / StopNode power a single device on and off.
 	StartNode(context.Context, *StartNodeRequest) (*Node, error)
+	StartProgram(context.Context, *ProgramOpRequest) (*Program, error)
 	StopLab(context.Context, *StopLabRequest) (*OperationRef, error)
 	StopNode(context.Context, *StopNodeRequest) (*Node, error)
+	StopProgram(context.Context, *ProgramOpRequest) (*Program, error)
+	UpgradeProgram(context.Context, *UpgradeProgramRequest) (*Program, error)
+	// UploadPackage --- Packages ---
+	// Packages are versioned program artifacts (tar.gz with a
+	// manifest.json) in the controller's repository; lab servers
+	// install them through their agent. The bundled lab-app registers
+	// as the builtin package; uploads use the same pipeline.
+	UploadPackage(context.Context, *UploadPackageRequest) (*Package, error)
 }
 
 func RegisterDCNetLabHTTPServer(s *http.Server, srv DCNetLabHTTPServer) {
@@ -114,6 +155,18 @@ func RegisterDCNetLabHTTPServer(s *http.Server, srv DCNetLabHTTPServer) {
 	r.GET("/api/v1/labs/{lab_id}/nodes/{node_id}/routes", _DCNetLab_GetNodeRoutes0_HTTP_Handler(srv))
 	r.GET("/api/v1/labs/{lab_id}/nodes/{node_id}/bgp-table", _DCNetLab_GetNodeBGPTable0_HTTP_Handler(srv))
 	r.GET("/api/v1/labs/{lab_id}/nodes/{node_id}/fib", _DCNetLab_GetNodeFIB0_HTTP_Handler(srv))
+	r.POST("/api/v1/packages", _DCNetLab_UploadPackage0_HTTP_Handler(srv))
+	r.GET("/api/v1/packages", _DCNetLab_ListPackages0_HTTP_Handler(srv))
+	r.DELETE("/api/v1/packages/{name}/{version}", _DCNetLab_DeletePackage0_HTTP_Handler(srv))
+	r.GET("/api/v1/labs/{lab_id}/nodes/{node_id}/inventory", _DCNetLab_GetNodeInventory0_HTTP_Handler(srv))
+	r.POST("/api/v1/labs/{lab_id}/packages/{name}/{version}/install", _DCNetLab_InstallPackage0_HTTP_Handler(srv))
+	r.POST("/api/v1/labs/{lab_id}/programs", _DCNetLab_CreateProgram0_HTTP_Handler(srv))
+	r.GET("/api/v1/labs/{lab_id}/programs", _DCNetLab_ListPrograms0_HTTP_Handler(srv))
+	r.POST("/api/v1/labs/{lab_id}/programs/{id}/start", _DCNetLab_StartProgram0_HTTP_Handler(srv))
+	r.POST("/api/v1/labs/{lab_id}/programs/{id}/stop", _DCNetLab_StopProgram0_HTTP_Handler(srv))
+	r.POST("/api/v1/labs/{lab_id}/programs/{id}/upgrade", _DCNetLab_UpgradeProgram0_HTTP_Handler(srv))
+	r.DELETE("/api/v1/labs/{lab_id}/programs/{id}", _DCNetLab_DeleteProgram0_HTTP_Handler(srv))
+	r.GET("/api/v1/labs/{lab_id}/programs/{id}/logs", _DCNetLab_GetProgramLogs0_HTTP_Handler(srv))
 	r.POST("/api/v1/labs/{lab_id}/plans", _DCNetLab_CreatePlan0_HTTP_Handler(srv))
 	r.GET("/api/v1/plans/{id}", _DCNetLab_GetPlan0_HTTP_Handler(srv))
 	r.POST("/api/v1/plans/{id}/apply", _DCNetLab_ApplyPlan0_HTTP_Handler(srv))
@@ -485,6 +538,282 @@ func _DCNetLab_GetNodeFIB0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Co
 	}
 }
 
+func _DCNetLab_UploadPackage0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in UploadPackageRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabUploadPackage)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.UploadPackage(ctx, req.(*UploadPackageRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*Package)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_ListPackages0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in ListPackagesRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabListPackages)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.ListPackages(ctx, req.(*ListPackagesRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*ListPackagesReply)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_DeletePackage0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in DeletePackageRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabDeletePackage)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.DeletePackage(ctx, req.(*DeletePackageRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*DeletePackageReply)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_GetNodeInventory0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in GetNodeInventoryRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabGetNodeInventory)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.GetNodeInventory(ctx, req.(*GetNodeInventoryRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*NodeInventory)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_InstallPackage0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in InstallPackageRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabInstallPackage)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.InstallPackage(ctx, req.(*InstallPackageRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*InstallPackageReply)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_CreateProgram0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in CreateProgramRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabCreateProgram)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.CreateProgram(ctx, req.(*CreateProgramRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*CreateProgramReply)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_ListPrograms0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in ListProgramsRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabListPrograms)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.ListPrograms(ctx, req.(*ListProgramsRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*ListProgramsReply)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_StartProgram0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in ProgramOpRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabStartProgram)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.StartProgram(ctx, req.(*ProgramOpRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*Program)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_StopProgram0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in ProgramOpRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabStopProgram)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.StopProgram(ctx, req.(*ProgramOpRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*Program)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_UpgradeProgram0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in UpgradeProgramRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabUpgradeProgram)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.UpgradeProgram(ctx, req.(*UpgradeProgramRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*Program)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_DeleteProgram0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in ProgramOpRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabDeleteProgram)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.DeleteProgram(ctx, req.(*ProgramOpRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*DeleteProgramReply)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_GetProgramLogs0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in GetProgramLogsRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabGetProgramLogs)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.GetProgramLogs(ctx, req.(*GetProgramLogsRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*ProgramLogs)
+		return ctx.Result(200, reply)
+	}
+}
+
 func _DCNetLab_CreatePlan0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
 	return func(ctx http.Context) error {
 		var in CreatePlanRequest
@@ -667,7 +996,14 @@ type DCNetLabHTTPClient interface {
 	CreateLab(ctx context.Context, req *CreateLabRequest, opts ...http.CallOption) (rsp *Lab, err error)
 	// CreatePlan --- Plans ---
 	CreatePlan(ctx context.Context, req *CreatePlanRequest, opts ...http.CallOption) (rsp *Plan, err error)
+	// CreateProgram --- Programs ---
+	// Programs are supervised processes on lab servers, each running
+	// the entrypoint of an installed Package version, managed through
+	// the per-server dcnetlab-server-agent.
+	CreateProgram(ctx context.Context, req *CreateProgramRequest, opts ...http.CallOption) (rsp *CreateProgramReply, err error)
 	DeleteLab(ctx context.Context, req *DeleteLabRequest, opts ...http.CallOption) (rsp *OperationRef, err error)
+	DeletePackage(ctx context.Context, req *DeletePackageRequest, opts ...http.CallOption) (rsp *DeletePackageReply, err error)
+	DeleteProgram(ctx context.Context, req *ProgramOpRequest, opts ...http.CallOption) (rsp *DeleteProgramReply, err error)
 	GetLab(ctx context.Context, req *GetLabRequest, opts ...http.CallOption) (rsp *Lab, err error)
 	// GetNodeBGP GetNodeBGP returns the BGP configuration of one node as derived
 	// by the FRR compiler from the topology model: eBGP neighbors over
@@ -682,6 +1018,11 @@ type DCNetLabHTTPClient interface {
 	// deployed node (`ip route`): what actually forwards packets, as
 	// installed by zebra from the RIB.
 	GetNodeFIB(ctx context.Context, req *GetNodeFIBRequest, opts ...http.CallOption) (rsp *NodeFIB, err error)
+	// GetNodeInventory GetNodeInventory reports what is actually on one server, live
+	// from its agent: installed package versions and every program
+	// (controller-managed or created node-locally via the in-container
+	// CLI).
+	GetNodeInventory(ctx context.Context, req *GetNodeInventoryRequest, opts ...http.CallOption) (rsp *NodeInventory, err error)
 	// GetNodeRoutes GetNodeRoutes returns the live IPv4 routing table (FRR RIB) of
 	// one deployed node; routes are empty unless the container is
 	// running.
@@ -694,7 +1035,13 @@ type DCNetLabHTTPClient interface {
 	// GetOperation --- Operations & Generations ---
 	GetOperation(ctx context.Context, req *GetOperationRequest, opts ...http.CallOption) (rsp *Operation, err error)
 	GetPlan(ctx context.Context, req *GetPlanRequest, opts ...http.CallOption) (rsp *Plan, err error)
+	GetProgramLogs(ctx context.Context, req *GetProgramLogsRequest, opts ...http.CallOption) (rsp *ProgramLogs, err error)
 	Healthz(ctx context.Context, req *HealthzRequest, opts ...http.CallOption) (rsp *HealthzReply, err error)
+	// InstallPackage InstallPackage delivers a package version onto lab servers
+	// without declaring a program — the "deploy a binary" path (apt
+	// install without a service unit). Idempotent per server: agents
+	// skip versions already present with the same digest.
+	InstallPackage(ctx context.Context, req *InstallPackageRequest, opts ...http.CallOption) (rsp *InstallPackageReply, err error)
 	ListAllocations(ctx context.Context, req *ListAllocationsRequest, opts ...http.CallOption) (rsp *ListAllocationsReply, err error)
 	ListGenerations(ctx context.Context, req *ListGenerationsRequest, opts ...http.CallOption) (rsp *ListGenerationsReply, err error)
 	ListLabs(ctx context.Context, req *ListLabsRequest, opts ...http.CallOption) (rsp *ListLabsReply, err error)
@@ -702,15 +1049,26 @@ type DCNetLabHTTPClient interface {
 	// ListNodes --- Topology ---
 	ListNodes(ctx context.Context, req *ListNodesRequest, opts ...http.CallOption) (rsp *ListNodesReply, err error)
 	ListOperations(ctx context.Context, req *ListOperationsRequest, opts ...http.CallOption) (rsp *ListOperationsReply, err error)
+	ListPackages(ctx context.Context, req *ListPackagesRequest, opts ...http.CallOption) (rsp *ListPackagesReply, err error)
 	// ListProfiles --- Profiles & health ---
 	ListProfiles(ctx context.Context, req *ListProfilesRequest, opts ...http.CallOption) (rsp *ListProfilesReply, err error)
+	ListPrograms(ctx context.Context, req *ListProgramsRequest, opts ...http.CallOption) (rsp *ListProgramsReply, err error)
 	// StartLab StartLab / StopLab power the deployed containers of a lab on and
 	// off (docker start/stop) without touching the generation.
 	StartLab(ctx context.Context, req *StartLabRequest, opts ...http.CallOption) (rsp *OperationRef, err error)
 	// StartNode StartNode / StopNode power a single device on and off.
 	StartNode(ctx context.Context, req *StartNodeRequest, opts ...http.CallOption) (rsp *Node, err error)
+	StartProgram(ctx context.Context, req *ProgramOpRequest, opts ...http.CallOption) (rsp *Program, err error)
 	StopLab(ctx context.Context, req *StopLabRequest, opts ...http.CallOption) (rsp *OperationRef, err error)
 	StopNode(ctx context.Context, req *StopNodeRequest, opts ...http.CallOption) (rsp *Node, err error)
+	StopProgram(ctx context.Context, req *ProgramOpRequest, opts ...http.CallOption) (rsp *Program, err error)
+	UpgradeProgram(ctx context.Context, req *UpgradeProgramRequest, opts ...http.CallOption) (rsp *Program, err error)
+	// UploadPackage --- Packages ---
+	// Packages are versioned program artifacts (tar.gz with a
+	// manifest.json) in the controller's repository; lab servers
+	// install them through their agent. The bundled lab-app registers
+	// as the builtin package; uploads use the same pipeline.
+	UploadPackage(ctx context.Context, req *UploadPackageRequest, opts ...http.CallOption) (rsp *Package, err error)
 }
 
 type DCNetLabHTTPClientImpl struct {
@@ -762,11 +1120,54 @@ func (c *DCNetLabHTTPClientImpl) CreatePlan(ctx context.Context, in *CreatePlanR
 	return &out, nil
 }
 
+// CreateProgram --- Programs ---
+// Programs are supervised processes on lab servers, each running
+// the entrypoint of an installed Package version, managed through
+// the per-server dcnetlab-server-agent.
+func (c *DCNetLabHTTPClientImpl) CreateProgram(ctx context.Context, in *CreateProgramRequest, opts ...http.CallOption) (*CreateProgramReply, error) {
+	var out CreateProgramReply
+	pattern := "/api/v1/labs/{lab_id}/programs"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationDCNetLabCreateProgram))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (c *DCNetLabHTTPClientImpl) DeleteLab(ctx context.Context, in *DeleteLabRequest, opts ...http.CallOption) (*OperationRef, error) {
 	var out OperationRef
 	pattern := "/api/v1/labs/{id}"
 	path := binding.EncodeURL(pattern, in, true)
 	opts = append(opts, http.Operation(OperationDCNetLabDeleteLab))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "DELETE", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *DCNetLabHTTPClientImpl) DeletePackage(ctx context.Context, in *DeletePackageRequest, opts ...http.CallOption) (*DeletePackageReply, error) {
+	var out DeletePackageReply
+	pattern := "/api/v1/packages/{name}/{version}"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationDCNetLabDeletePackage))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "DELETE", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *DCNetLabHTTPClientImpl) DeleteProgram(ctx context.Context, in *ProgramOpRequest, opts ...http.CallOption) (*DeleteProgramReply, error) {
+	var out DeleteProgramReply
+	pattern := "/api/v1/labs/{lab_id}/programs/{id}"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationDCNetLabDeleteProgram))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "DELETE", path, nil, &out, opts...)
 	if err != nil {
@@ -837,6 +1238,23 @@ func (c *DCNetLabHTTPClientImpl) GetNodeFIB(ctx context.Context, in *GetNodeFIBR
 	return &out, nil
 }
 
+// GetNodeInventory GetNodeInventory reports what is actually on one server, live
+// from its agent: installed package versions and every program
+// (controller-managed or created node-locally via the in-container
+// CLI).
+func (c *DCNetLabHTTPClientImpl) GetNodeInventory(ctx context.Context, in *GetNodeInventoryRequest, opts ...http.CallOption) (*NodeInventory, error) {
+	var out NodeInventory
+	pattern := "/api/v1/labs/{lab_id}/nodes/{node_id}/inventory"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationDCNetLabGetNodeInventory))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // GetNodeRoutes GetNodeRoutes returns the live IPv4 routing table (FRR RIB) of
 // one deployed node; routes are empty unless the container is
 // running.
@@ -897,6 +1315,19 @@ func (c *DCNetLabHTTPClientImpl) GetPlan(ctx context.Context, in *GetPlanRequest
 	return &out, nil
 }
 
+func (c *DCNetLabHTTPClientImpl) GetProgramLogs(ctx context.Context, in *GetProgramLogsRequest, opts ...http.CallOption) (*ProgramLogs, error) {
+	var out ProgramLogs
+	pattern := "/api/v1/labs/{lab_id}/programs/{id}/logs"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationDCNetLabGetProgramLogs))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (c *DCNetLabHTTPClientImpl) Healthz(ctx context.Context, in *HealthzRequest, opts ...http.CallOption) (*HealthzReply, error) {
 	var out HealthzReply
 	pattern := "/api/v1/healthz"
@@ -904,6 +1335,23 @@ func (c *DCNetLabHTTPClientImpl) Healthz(ctx context.Context, in *HealthzRequest
 	opts = append(opts, http.Operation(OperationDCNetLabHealthz))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// InstallPackage InstallPackage delivers a package version onto lab servers
+// without declaring a program — the "deploy a binary" path (apt
+// install without a service unit). Idempotent per server: agents
+// skip versions already present with the same digest.
+func (c *DCNetLabHTTPClientImpl) InstallPackage(ctx context.Context, in *InstallPackageRequest, opts ...http.CallOption) (*InstallPackageReply, error) {
+	var out InstallPackageReply
+	pattern := "/api/v1/labs/{lab_id}/packages/{name}/{version}/install"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationDCNetLabInstallPackage))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -989,12 +1437,38 @@ func (c *DCNetLabHTTPClientImpl) ListOperations(ctx context.Context, in *ListOpe
 	return &out, nil
 }
 
+func (c *DCNetLabHTTPClientImpl) ListPackages(ctx context.Context, in *ListPackagesRequest, opts ...http.CallOption) (*ListPackagesReply, error) {
+	var out ListPackagesReply
+	pattern := "/api/v1/packages"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationDCNetLabListPackages))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // ListProfiles --- Profiles & health ---
 func (c *DCNetLabHTTPClientImpl) ListProfiles(ctx context.Context, in *ListProfilesRequest, opts ...http.CallOption) (*ListProfilesReply, error) {
 	var out ListProfilesReply
 	pattern := "/api/v1/profiles"
 	path := binding.EncodeURL(pattern, in, true)
 	opts = append(opts, http.Operation(OperationDCNetLabListProfiles))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *DCNetLabHTTPClientImpl) ListPrograms(ctx context.Context, in *ListProgramsRequest, opts ...http.CallOption) (*ListProgramsReply, error) {
+	var out ListProgramsReply
+	pattern := "/api/v1/labs/{lab_id}/programs"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationDCNetLabListPrograms))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
 	if err != nil {
@@ -1032,6 +1506,19 @@ func (c *DCNetLabHTTPClientImpl) StartNode(ctx context.Context, in *StartNodeReq
 	return &out, nil
 }
 
+func (c *DCNetLabHTTPClientImpl) StartProgram(ctx context.Context, in *ProgramOpRequest, opts ...http.CallOption) (*Program, error) {
+	var out Program
+	pattern := "/api/v1/labs/{lab_id}/programs/{id}/start"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationDCNetLabStartProgram))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (c *DCNetLabHTTPClientImpl) StopLab(ctx context.Context, in *StopLabRequest, opts ...http.CallOption) (*OperationRef, error) {
 	var out OperationRef
 	pattern := "/api/v1/labs/{id}/stop"
@@ -1050,6 +1537,50 @@ func (c *DCNetLabHTTPClientImpl) StopNode(ctx context.Context, in *StopNodeReque
 	pattern := "/api/v1/labs/{lab_id}/nodes/{node_id}/stop"
 	path := binding.EncodeURL(pattern, in, false)
 	opts = append(opts, http.Operation(OperationDCNetLabStopNode))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *DCNetLabHTTPClientImpl) StopProgram(ctx context.Context, in *ProgramOpRequest, opts ...http.CallOption) (*Program, error) {
+	var out Program
+	pattern := "/api/v1/labs/{lab_id}/programs/{id}/stop"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationDCNetLabStopProgram))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *DCNetLabHTTPClientImpl) UpgradeProgram(ctx context.Context, in *UpgradeProgramRequest, opts ...http.CallOption) (*Program, error) {
+	var out Program
+	pattern := "/api/v1/labs/{lab_id}/programs/{id}/upgrade"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationDCNetLabUpgradeProgram))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UploadPackage --- Packages ---
+// Packages are versioned program artifacts (tar.gz with a
+// manifest.json) in the controller's repository; lab servers
+// install them through their agent. The bundled lab-app registers
+// as the builtin package; uploads use the same pipeline.
+func (c *DCNetLabHTTPClientImpl) UploadPackage(ctx context.Context, in *UploadPackageRequest, opts ...http.CallOption) (*Package, error) {
+	var out Package
+	pattern := "/api/v1/packages"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationDCNetLabUploadPackage))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
 	if err != nil {

@@ -102,6 +102,79 @@ service DCNetLab {
     option (google.api.http) = {get: "/api/v1/labs/{lab_id}/nodes/{node_id}/fib"};
   }
 
+  // --- Packages ---
+  // Packages are versioned program artifacts (tar.gz with a
+  // manifest.json) in the controller's repository; lab servers
+  // install them through their agent. The bundled lab-app registers
+  // as the builtin package; uploads use the same pipeline.
+  rpc UploadPackage(UploadPackageRequest) returns (Package) {
+    option (google.api.http) = {
+      post: "/api/v1/packages"
+      body: "*"
+    };
+  }
+  rpc ListPackages(ListPackagesRequest) returns (ListPackagesReply) {
+    option (google.api.http) = {get: "/api/v1/packages"};
+  }
+  rpc DeletePackage(DeletePackageRequest) returns (DeletePackageReply) {
+    option (google.api.http) = {delete: "/api/v1/packages/{name}/{version}"};
+  }
+  // GetNodeInventory reports what is actually on one server, live
+  // from its agent: installed package versions and every program
+  // (controller-managed or created node-locally via the in-container
+  // CLI).
+  rpc GetNodeInventory(GetNodeInventoryRequest) returns (NodeInventory) {
+    option (google.api.http) = {get: "/api/v1/labs/{lab_id}/nodes/{node_id}/inventory"};
+  }
+  // InstallPackage delivers a package version onto lab servers
+  // without declaring a program — the "deploy a binary" path (apt
+  // install without a service unit). Idempotent per server: agents
+  // skip versions already present with the same digest.
+  rpc InstallPackage(InstallPackageRequest) returns (InstallPackageReply) {
+    option (google.api.http) = {
+      post: "/api/v1/labs/{lab_id}/packages/{name}/{version}/install"
+      body: "*"
+    };
+  }
+
+  // --- Programs ---
+  // Programs are supervised processes on lab servers, each running
+  // the entrypoint of an installed Package version, managed through
+  // the per-server dcnetlab-server-agent.
+  rpc CreateProgram(CreateProgramRequest) returns (CreateProgramReply) {
+    option (google.api.http) = {
+      post: "/api/v1/labs/{lab_id}/programs"
+      body: "*"
+    };
+  }
+  rpc ListPrograms(ListProgramsRequest) returns (ListProgramsReply) {
+    option (google.api.http) = {get: "/api/v1/labs/{lab_id}/programs"};
+  }
+  rpc StartProgram(ProgramOpRequest) returns (Program) {
+    option (google.api.http) = {
+      post: "/api/v1/labs/{lab_id}/programs/{id}/start"
+      body: "*"
+    };
+  }
+  rpc StopProgram(ProgramOpRequest) returns (Program) {
+    option (google.api.http) = {
+      post: "/api/v1/labs/{lab_id}/programs/{id}/stop"
+      body: "*"
+    };
+  }
+  rpc UpgradeProgram(UpgradeProgramRequest) returns (Program) {
+    option (google.api.http) = {
+      post: "/api/v1/labs/{lab_id}/programs/{id}/upgrade"
+      body: "*"
+    };
+  }
+  rpc DeleteProgram(ProgramOpRequest) returns (DeleteProgramReply) {
+    option (google.api.http) = {delete: "/api/v1/labs/{lab_id}/programs/{id}"};
+  }
+  rpc GetProgramLogs(GetProgramLogsRequest) returns (ProgramLogs) {
+    option (google.api.http) = {get: "/api/v1/labs/{lab_id}/programs/{id}/logs"};
+  }
+
   // --- Plans ---
   rpc CreatePlan(CreatePlanRequest) returns (Plan) {
     option (google.api.http) = {
@@ -308,6 +381,206 @@ message Link {
   ResourceMeta meta = 1;
   LinkSpec spec = 2;
   LinkStatus status = 3;
+}
+
+// --- Package ---
+
+// Package is one versioned program artifact in the controller's
+// repository.
+message Package {
+  ResourceMeta meta = 1;
+  string version = 2;
+  // format is targz (the only supported format for now).
+  string format = 3;
+  // entrypoint is the executable inside the archive, relative to its
+  // root.
+  string entrypoint = 4;
+  string description = 5;
+  string sha256 = 6;
+  int64 size_bytes = 7;
+  // builtin packages ship with the controller and cannot be deleted.
+  bool builtin = 8;
+}
+
+message UploadPackageRequest {
+  // payload is the tar.gz archive; identity comes from its embedded
+  // manifest.json (name, version, entrypoint, description).
+  bytes payload = 1;
+}
+
+message ListPackagesRequest {}
+
+message ListPackagesReply {
+  repeated Package packages = 1;
+}
+
+message DeletePackageRequest {
+  string name = 1;
+  string version = 2;
+}
+
+message DeletePackageReply {}
+
+message InstallPackageRequest {
+  string lab_id = 1;
+  string name = 2;
+  string version = 3;
+  // server_ids narrows the delivery; empty installs on every server
+  // of the lab.
+  repeated string server_ids = 4;
+}
+
+// ServerInstallResult is the per-server outcome of a package
+// delivery; error is empty on success.
+message ServerInstallResult {
+  string server_id = 1;
+  string server_name = 2;
+  string error = 3;
+}
+
+message InstallPackageReply {
+  repeated ServerInstallResult results = 1;
+}
+
+message GetNodeInventoryRequest {
+  string lab_id = 1;
+  string node_id = 2;
+}
+
+// InstalledPackage is one package version present in a server's
+// local store.
+message InstalledPackage {
+  string name = 1;
+  string version = 2;
+  string sha256 = 3;
+}
+
+// NodeProgram is the agent-reported live view of one program on a
+// server. managed marks programs the controller knows about; the
+// rest were created node-locally (in-container CLI).
+message NodeProgram {
+  string name = 1;
+  string package_name = 2;
+  string package_version = 3;
+  string entrypoint = 4;
+  repeated string args = 5;
+  string restart_policy = 6;
+  string type = 7;
+  bool auto_start = 8;
+  string state = 9;
+  int32 pid = 10;
+  int32 restarts = 11;
+  string last_error = 12;
+  bool managed = 13;
+}
+
+message NodeInventory {
+  repeated InstalledPackage packages = 1;
+  repeated NodeProgram programs = 2;
+}
+
+// --- Program ---
+
+// ProgramSpec is the desired state of a program: the entrypoint of a
+// package version plus arguments; desired_state is Running or
+// Stopped.
+message ProgramSpec {
+  string lab_id = 1;
+  string server_id = 2;
+  string server_name = 3;
+  string package_name = 4;
+  string package_version = 5;
+  // entrypoint is denormalised from the referenced package version.
+  string entrypoint = 6;
+  repeated string args = 7;
+  // restart_policy is Never, OnFailure or Always; oneshot programs
+  // reject Always (systemd semantics).
+  string restart_policy = 8;
+  string desired_state = 9;
+  // type is simple (long-running daemon, the default) or oneshot
+  // (runs to completion), mirroring systemd service types.
+  string type = 10;
+  // auto_start marks the program enabled (systemd: systemctl
+  // enable): it starts on every server boot and every redeploy,
+  // regardless of whether it was running before.
+  bool auto_start = 11;
+}
+
+// ProgramStatus is the agent-observed state of a program: Configured,
+// Running, Stopped, Failed, Exited (oneshot ran to completion) or
+// Unknown.
+message ProgramStatus {
+  string state = 1;
+  int32 pid = 2;
+  int32 restarts = 3;
+  string last_error = 4;
+  google.protobuf.Timestamp started_at = 5;
+  google.protobuf.Timestamp last_observed = 6;
+}
+
+// Program is a supervised process on one lab server.
+message Program {
+  ResourceMeta meta = 1;
+  ProgramSpec spec = 2;
+  ProgramStatus status = 3;
+}
+
+message CreateProgramRequest {
+  string lab_id = 1;
+  string name = 2;
+  // server_ids deploys the same program onto several servers at once
+  // (one Program resource per server, like a daemonset over the
+  // selection).
+  repeated string server_ids = 3;
+  string package_name = 4;
+  string package_version = 5;
+  repeated string args = 6;
+  string restart_policy = 7;
+  // type is simple (default) or oneshot.
+  string type = 8;
+  bool auto_start = 9;
+}
+
+message CreateProgramReply {
+  repeated Program programs = 1;
+  // failures lists servers the program could not be created for
+  // (e.g. a program of the same name already exists there); creation
+  // proceeds on the remaining servers.
+  repeated ServerInstallResult failures = 2;
+}
+
+message UpgradeProgramRequest {
+  string lab_id = 1;
+  string id = 2;
+  // version is the target package version (upgrade or rollback).
+  string version = 3;
+}
+
+message ListProgramsRequest {
+  string lab_id = 1;
+}
+
+message ListProgramsReply {
+  repeated Program programs = 1;
+}
+
+message ProgramOpRequest {
+  string lab_id = 1;
+  string id = 2;
+}
+
+message DeleteProgramReply {}
+
+message GetProgramLogsRequest {
+  string lab_id = 1;
+  string id = 2;
+  // tail caps the returned lines (default and upper bound applied by
+  // the agent).
+  int32 tail = 3;
+}
+
+message ProgramLogs {
+  string content = 1;
 }
 
 // --- Plan ---

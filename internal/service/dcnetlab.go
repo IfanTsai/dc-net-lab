@@ -19,18 +19,20 @@ import (
 type DCNetLabService struct {
 	v1.UnimplementedDCNetLabServer
 
-	labs    *biz.LabUsecase
-	topos   *biz.TopologyUsecase
-	plans   *biz.PlanUsecase
-	ops     *biz.OperationUsecase
-	power   *biz.PowerUsecase
-	runtime *biz.RuntimeUsecase
-	log     *slog.Logger
+	labs     *biz.LabUsecase
+	topos    *biz.TopologyUsecase
+	plans    *biz.PlanUsecase
+	ops      *biz.OperationUsecase
+	power    *biz.PowerUsecase
+	runtime  *biz.RuntimeUsecase
+	programs *biz.ProgramUsecase
+	packages *biz.PackageUsecase
+	log      *slog.Logger
 }
 
 // NewDCNetLabService wires the protobuf service.
-func NewDCNetLabService(labs *biz.LabUsecase, topos *biz.TopologyUsecase, plans *biz.PlanUsecase, ops *biz.OperationUsecase, power *biz.PowerUsecase, rt *biz.RuntimeUsecase, log *slog.Logger) *DCNetLabService {
-	return &DCNetLabService{labs: labs, topos: topos, plans: plans, ops: ops, power: power, runtime: rt, log: log}
+func NewDCNetLabService(labs *biz.LabUsecase, topos *biz.TopologyUsecase, plans *biz.PlanUsecase, ops *biz.OperationUsecase, power *biz.PowerUsecase, rt *biz.RuntimeUsecase, programs *biz.ProgramUsecase, packages *biz.PackageUsecase, log *slog.Logger) *DCNetLabService {
+	return &DCNetLabService{labs: labs, topos: topos, plans: plans, ops: ops, power: power, runtime: rt, programs: programs, packages: packages, log: log}
 }
 
 // asAPIError maps biz-layer errors onto Kratos errors so the HTTP
@@ -217,6 +219,142 @@ func (s *DCNetLabService) ListAllocations(ctx context.Context, req *v1.ListAlloc
 	}
 
 	return reply, nil
+}
+
+// --- Packages ---
+
+func (s *DCNetLabService) UploadPackage(ctx context.Context, req *v1.UploadPackageRequest) (*v1.Package, error) {
+	p, err := s.packages.UploadPackage(req.Payload)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return packageToPB(p), nil
+}
+
+func (s *DCNetLabService) ListPackages(ctx context.Context, _ *v1.ListPackagesRequest) (*v1.ListPackagesReply, error) {
+	packages, err := s.packages.ListPackages()
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	reply := &v1.ListPackagesReply{Packages: make([]*v1.Package, 0, len(packages))}
+	for _, p := range packages {
+		reply.Packages = append(reply.Packages, packageToPB(p))
+	}
+
+	return reply, nil
+}
+
+func (s *DCNetLabService) DeletePackage(ctx context.Context, req *v1.DeletePackageRequest) (*v1.DeletePackageReply, error) {
+	if err := s.packages.DeletePackage(req.Name, req.Version); err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return &v1.DeletePackageReply{}, nil
+}
+
+func (s *DCNetLabService) InstallPackage(ctx context.Context, req *v1.InstallPackageRequest) (*v1.InstallPackageReply, error) {
+	results, err := s.programs.InstallPackageOnServers(ctx, req.LabId, req.Name, req.Version, req.ServerIds)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return &v1.InstallPackageReply{Results: serverInstallsToPB(results)}, nil
+}
+
+// --- Programs ---
+
+func (s *DCNetLabService) CreateProgram(ctx context.Context, req *v1.CreateProgramRequest) (*v1.CreateProgramReply, error) {
+	spec := model.ProgramSpec{
+		PackageName:    req.PackageName,
+		PackageVersion: req.PackageVersion,
+		Args:           req.Args,
+		RestartPolicy:  req.RestartPolicy,
+		Type:           req.Type,
+		AutoStart:      req.AutoStart,
+	}
+
+	programs, failures, err := s.programs.CreateProgram(req.LabId, req.Name, spec, req.ServerIds)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	reply := &v1.CreateProgramReply{}
+	for _, p := range programs {
+		reply.Programs = append(reply.Programs, programToPB(p))
+	}
+
+	reply.Failures = serverInstallsToPB(failures)
+
+	return reply, nil
+}
+
+func (s *DCNetLabService) GetNodeInventory(ctx context.Context, req *v1.GetNodeInventoryRequest) (*v1.NodeInventory, error) {
+	inv, err := s.programs.NodeInventory(ctx, req.LabId, req.NodeId)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return inventoryToPB(inv), nil
+}
+
+func (s *DCNetLabService) ListPrograms(ctx context.Context, req *v1.ListProgramsRequest) (*v1.ListProgramsReply, error) {
+	programs, err := s.programs.ListPrograms(ctx, req.LabId)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	reply := &v1.ListProgramsReply{Programs: make([]*v1.Program, 0, len(programs))}
+	for _, p := range programs {
+		reply.Programs = append(reply.Programs, programToPB(p))
+	}
+
+	return reply, nil
+}
+
+func (s *DCNetLabService) StartProgram(ctx context.Context, req *v1.ProgramOpRequest) (*v1.Program, error) {
+	p, err := s.programs.StartProgram(ctx, req.LabId, req.Id)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return programToPB(p), nil
+}
+
+func (s *DCNetLabService) StopProgram(ctx context.Context, req *v1.ProgramOpRequest) (*v1.Program, error) {
+	p, err := s.programs.StopProgram(ctx, req.LabId, req.Id)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return programToPB(p), nil
+}
+
+func (s *DCNetLabService) UpgradeProgram(ctx context.Context, req *v1.UpgradeProgramRequest) (*v1.Program, error) {
+	p, err := s.programs.UpgradeProgram(ctx, req.LabId, req.Id, req.Version)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return programToPB(p), nil
+}
+
+func (s *DCNetLabService) DeleteProgram(ctx context.Context, req *v1.ProgramOpRequest) (*v1.DeleteProgramReply, error) {
+	if err := s.programs.DeleteProgram(ctx, req.LabId, req.Id); err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return &v1.DeleteProgramReply{}, nil
+}
+
+func (s *DCNetLabService) GetProgramLogs(ctx context.Context, req *v1.GetProgramLogsRequest) (*v1.ProgramLogs, error) {
+	content, err := s.programs.GetProgramLogs(ctx, req.LabId, req.Id, int(req.Tail))
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return &v1.ProgramLogs{Content: content}, nil
 }
 
 // --- Plans ---

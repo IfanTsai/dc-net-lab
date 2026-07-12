@@ -40,6 +40,13 @@ type Driver interface {
 	// NodeStates reports the live container state ("running",
 	// "paused", "exited", ... or "missing") of each named node.
 	NodeStates(ctx context.Context, labName string, nodeNames []string) (map[string]string, error)
+	// NodeAddress returns the management-network IP of a deployed
+	// node's container, used to reach in-container agents.
+	NodeAddress(ctx context.Context, labName, nodeName string) (string, error)
+	// NodeGateway returns the host-side gateway IP of a deployed
+	// node's management network — the address under which the node
+	// reaches services on the host (the package repository).
+	NodeGateway(ctx context.Context, labName, nodeName string) (string, error)
 	// StartNodes resumes previously stopped (frozen) nodes.
 	StartNodes(ctx context.Context, labName string, nodeNames []string) error
 	// StopNodes freezes the named nodes in place. Freezing (not
@@ -224,6 +231,37 @@ func (d *ContainerlabDriver) NodeStates(ctx context.Context, labName string, nod
 	return states, nil
 }
 
+// NodeAddress reads the container's management IP via docker inspect
+// (containerlab attaches exactly one network, its management bridge).
+func (d *ContainerlabDriver) NodeAddress(ctx context.Context, labName, nodeName string) (string, error) {
+	return d.inspectNetwork(ctx, labName, nodeName, "IPAddress", "management address")
+}
+
+// NodeGateway reads the host-side gateway IP of the container's
+// management network via docker inspect.
+func (d *ContainerlabDriver) NodeGateway(ctx context.Context, labName, nodeName string) (string, error) {
+	return d.inspectNetwork(ctx, labName, nodeName, "Gateway", "management gateway")
+}
+
+// inspectNetwork extracts one field of the container's single
+// attached network.
+func (d *ContainerlabDriver) inspectNetwork(ctx context.Context, labName, nodeName, field, what string) (string, error) {
+	container := fmt.Sprintf("clab-%s-%s", labName, nodeName)
+
+	out, err := exec.CommandContext(ctx, "docker", "inspect", "-f",
+		fmt.Sprintf(`{{range .NetworkSettings.Networks}}{{.%s}}{{end}}`, field), container).Output()
+	if err != nil {
+		return "", fmt.Errorf("docker inspect %s: %w", container, err)
+	}
+
+	addr := strings.TrimSpace(string(out))
+	if addr == "" {
+		return "", fmt.Errorf("container %s has no %s", container, what)
+	}
+
+	return addr, nil
+}
+
 // containersWithStatus returns the names of containers currently in
 // the given docker status ("running", "paused", ...).
 func (d *ContainerlabDriver) containersWithStatus(ctx context.Context, status string) (map[string]bool, error) {
@@ -314,6 +352,14 @@ func (NoopDriver) OpenTerminal(ctx context.Context, labName, nodeName string, cm
 
 func (NoopDriver) NodeStates(ctx context.Context, labName string, nodeNames []string) (map[string]string, error) {
 	return nil, ErrNotSupported
+}
+
+func (NoopDriver) NodeAddress(ctx context.Context, labName, nodeName string) (string, error) {
+	return "", ErrNotSupported
+}
+
+func (NoopDriver) NodeGateway(ctx context.Context, labName, nodeName string) (string, error) {
+	return "", ErrNotSupported
 }
 
 func (NoopDriver) StartNodes(ctx context.Context, labName string, nodeNames []string) error {

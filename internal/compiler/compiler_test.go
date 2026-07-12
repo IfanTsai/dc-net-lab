@@ -109,7 +109,13 @@ func fixture() (*model.Lab, []*model.Node, []*model.Link) {
 
 func TestCompileGolden(t *testing.T) {
 	lab, nodes, links := fixture()
-	art, err := Compile(lab, nodes, links, containerlab.DefaultOptions())
+
+	// A fixed host bin dir keeps the golden deterministic while
+	// covering the node-agent bind mount and startup exec.
+	opts := containerlab.DefaultOptions()
+	opts.HostBinDir = "/opt/dcnetlab/host-bin"
+
+	art, err := Compile(lab, nodes, links, opts)
 	if err != nil {
 		t.Fatal(err)
 	}

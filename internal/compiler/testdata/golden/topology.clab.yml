@@ -54,6 +54,8 @@ topology:
                 - configs/server-1/daemons:/etc/frr/daemons
                 - configs/server-1/frr.conf:/etc/frr/frr.conf
                 - configs/server-1/vtysh.conf:/etc/frr/vtysh.conf
+                - /opt/dcnetlab/host-bin/dcnetlab-node-agent:/opt/dcnetlab/bin/node-agent:ro
+                - /opt/dcnetlab/host-bin/dcnetlab-node-cli:/opt/dcnetlab/bin/node-cli:ro
             exec:
                 - ip link add bond0 type bond mode active-backup miimon 100
                 - ip link set eth1 down
@@ -61,7 +63,8 @@ topology:
                 - ip link set eth2 down
                 - ip link set eth2 master bond0
                 - ip link set bond0 up
-                - ip route replace default via 10.100.0.1
+                - ip route replace default via 10.100.0.1 dev bond0 onlink
+                - sh -c 'mkdir -p /opt/dcnetlab/run && ln -sf /opt/dcnetlab/bin/node-agent /usr/local/bin/node-agent && ln -sf /opt/dcnetlab/bin/node-cli /usr/local/bin/node-cli && ln -sf /opt/dcnetlab/bin/node-cli /usr/local/bin/pkg && ln -sf /opt/dcnetlab/bin/node-cli /usr/local/bin/program && nohup /opt/dcnetlab/bin/node-agent >>/opt/dcnetlab/run/agent.log 2>&1 &'
         spine-1:
             kind: linux
             image: quay.io/frrouting/frr:10.2.1

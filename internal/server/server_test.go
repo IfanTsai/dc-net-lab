@@ -70,16 +70,23 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 	ops := operation.NewManager(d, log, time.Minute)
 	labs := biz.NewLabUsecase(d, ops, runtime.NoopDriver{}, dc, log)
 	topos := biz.NewTopologyUsecase(d, log)
-	plans := biz.NewPlanUsecase(d, ops, runtime.NoopDriver{}, dc, log)
+	sc := &conf.Server{HTTPAddr: "127.0.0.1:0", RepoAddr: "127.0.0.1:0"}
+	packages, err := biz.NewPackageUsecase(d, dc, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	programs := biz.NewProgramUsecase(d, data.NewProgramAgent(log), runtime.NoopDriver{}, packages, sc, log)
+	plans := biz.NewPlanUsecase(d, ops, runtime.NoopDriver{}, programs, dc, log)
 	opsUC := biz.NewOperationUsecase(d, log)
 	power := biz.NewPowerUsecase(d, ops, runtime.NoopDriver{}, log)
 	rt := biz.NewRuntimeUsecase(d, d, runtime.NoopDriver{}, log)
-	svc := service.NewDCNetLabService(labs, topos, plans, opsUC, power, rt, log)
+	svc := service.NewDCNetLabService(labs, topos, plans, opsUC, power, rt, programs, packages, log)
 	term := biz.NewTerminalUsecase(d, d, runtime.NoopDriver{}, log)
 	obs := observer.New(d, runtime.NoopDriver{}, log)
 	// The Kratos HTTP server implements http.Handler, so the full
 	// transport stack (routing, codecs, error encoding) is under test.
-	srv := httptest.NewServer(NewHTTPServer(&conf.Server{HTTPAddr: "127.0.0.1:0"}, svc, term, obs, SlogLogger{S: log}))
+	srv := httptest.NewServer(NewHTTPServer(sc, svc, term, obs, SlogLogger{S: log}))
 	t.Cleanup(srv.Close)
 
 	return srv, dataDir

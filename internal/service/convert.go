@@ -315,6 +315,95 @@ func linkToPB(l *model.Link) *v1.Link {
 	}
 }
 
+// --- Package ---
+
+func packageToPB(p *model.Package) *v1.Package {
+	return &v1.Package{
+		Meta:        metaToPB(p.Meta),
+		Version:     p.Spec.Version,
+		Format:      p.Spec.Format,
+		Entrypoint:  p.Spec.Entrypoint,
+		Description: p.Spec.Description,
+		Sha256:      p.Status.SHA256,
+		SizeBytes:   p.Status.SizeBytes,
+		Builtin:     p.Status.Builtin,
+	}
+}
+
+// --- Program ---
+
+func programToPB(p *model.Program) *v1.Program {
+	status := &v1.ProgramStatus{
+		State:        p.Status.State,
+		Pid:          int32(p.Status.PID),
+		Restarts:     int32(p.Status.Restarts),
+		LastError:    p.Status.LastError,
+		StartedAt:    timePB(p.Status.StartedAt),
+		LastObserved: timePB(p.Status.LastObserved),
+	}
+
+	return &v1.Program{
+		Meta: metaToPB(p.Meta),
+		Spec: &v1.ProgramSpec{
+			LabId:          p.Spec.LabID,
+			ServerId:       p.Spec.ServerID,
+			ServerName:     p.Spec.ServerName,
+			PackageName:    p.Spec.PackageName,
+			PackageVersion: p.Spec.PackageVersion,
+			Entrypoint:     p.Spec.Entrypoint,
+			Args:           p.Spec.Args,
+			RestartPolicy:  p.Spec.RestartPolicy,
+			Type:           p.Spec.Type,
+			AutoStart:      p.Spec.AutoStart,
+			DesiredState:   p.Spec.DesiredState,
+		},
+		Status: status,
+	}
+}
+
+func serverInstallsToPB(results []biz.ServerInstall) []*v1.ServerInstallResult {
+	pbs := make([]*v1.ServerInstallResult, 0, len(results))
+	for _, r := range results {
+		pb := &v1.ServerInstallResult{ServerId: r.ServerID, ServerName: r.ServerName}
+		if r.Err != nil {
+			pb.Error = r.Err.Error()
+		}
+
+		pbs = append(pbs, pb)
+	}
+
+	return pbs
+}
+
+func inventoryToPB(inv *model.NodeInventory) *v1.NodeInventory {
+	pb := &v1.NodeInventory{}
+	for _, p := range inv.Packages {
+		pb.Packages = append(pb.Packages, &v1.InstalledPackage{
+			Name: p.Name, Version: p.Version, Sha256: p.SHA256,
+		})
+	}
+
+	for _, p := range inv.Programs {
+		pb.Programs = append(pb.Programs, &v1.NodeProgram{
+			Name:           p.Name,
+			PackageName:    p.PackageName,
+			PackageVersion: p.PackageVersion,
+			Entrypoint:     p.Entrypoint,
+			Args:           p.Args,
+			RestartPolicy:  p.RestartPolicy,
+			Type:           p.Type,
+			AutoStart:      p.AutoStart,
+			State:          p.State,
+			Pid:            int32(p.PID),
+			Restarts:       int32(p.Restarts),
+			LastError:      p.LastError,
+			Managed:        p.Managed,
+		})
+	}
+
+	return pb
+}
+
 // --- Plan ---
 
 func allocationToPB(a model.Allocation) *v1.Allocation {

@@ -9,6 +9,7 @@ import (
 	"flag"
 	"log/slog"
 	"os"
+	"path/filepath"
 
 	"github.com/go-kratos/kratos/v2"
 	klog "github.com/go-kratos/kratos/v2/log"
@@ -30,11 +31,17 @@ func main() {
 	flag.StringVar(&sc.HTTPAddr, "listen", "127.0.0.1:8080", "HTTP address to listen on")
 	flag.StringVar(&sc.GRPCAddr, "grpc-listen", "127.0.0.1:9090", "gRPC address to listen on (empty to disable)")
 	flag.StringVar(&sc.WebDir, "web-dir", "", "serve the built web UI from this directory (optional)")
+	// The package repository must be reachable from lab containers, so
+	// unlike the API it binds all interfaces (read-only content).
+	flag.StringVar(&sc.RepoAddr, "repo-listen", "0.0.0.0:50062", "package repository address for lab servers (empty to disable)")
 	flag.StringVar(&dc.Dir, "data-dir", "data", "directory for the database and artifacts")
 	flag.StringVar(&dc.Runtime, "runtime", "auto", "runtime driver: containerlab, noop or auto")
+	flag.StringVar(&dc.BinDir, "bin-dir", "",
+		"host directory with the dcnetlab-node-agent and dcnetlab-node-cli binaries (default: the controller binary's directory)")
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	dc.BinDir = resolveBinDir(dc.BinDir, log)
 	app, cleanup, err := wireApp(&sc, &dc, server.SlogLogger{S: log}, log)
 	if err != nil {
 		log.Error("controller init failed", "error", err)
@@ -50,12 +57,38 @@ func main() {
 	}
 }
 
+// resolveBinDir turns the --bin-dir flag into the absolute host path
+// server containers bind-mount for the agent binaries; it defaults
+// to the controller binary's own directory (make build puts all
+// three binaries side by side).
+func resolveBinDir(dir string, log *slog.Logger) string {
+	if dir == "" {
+		exe, err := os.Executable()
+		if err != nil {
+			log.Warn("cannot locate controller binary; server agent disabled", "error", err)
+
+			return ""
+		}
+
+		dir = filepath.Dir(exe)
+	}
+
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		log.Warn("cannot resolve bin dir; server agent disabled", "dir", dir, "error", err)
+
+		return ""
+	}
+
+	return abs
+}
+
 // newApp registers the transport servers with the Kratos application.
 // The gRPC server is always constructed but only started when a gRPC
 // listen address is configured. The observer runs as a transport
 // server too, so its poll loop follows the app lifecycle.
-func newApp(c *conf.Server, logger klog.Logger, hs *khttp.Server, gs *kgrpc.Server, obs *observer.Observer) *kratos.App {
-	servers := []transport.Server{hs, obs}
+func newApp(c *conf.Server, logger klog.Logger, hs *khttp.Server, gs *kgrpc.Server, rs *server.RepoServer, obs *observer.Observer) *kratos.App {
+	servers := []transport.Server{hs, rs, obs}
 	if c.GRPCAddr != "" {
 		servers = append(servers, gs)
 	}

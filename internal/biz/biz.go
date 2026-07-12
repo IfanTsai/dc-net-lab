@@ -34,6 +34,8 @@ var ProviderSet = wire.NewSet(
 	NewTerminalUsecase,
 	NewPowerUsecase,
 	NewRuntimeUsecase,
+	NewProgramUsecase,
+	NewPackageUsecase,
 )
 
 // NewOperationManager wires the async operation executor.

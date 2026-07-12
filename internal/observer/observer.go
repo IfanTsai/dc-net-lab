@@ -9,9 +9,12 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
+	"strconv"
 	"sync"
 	"time"
 
+	"github.com/ifantsai/dcnetlab/internal/agentapi"
 	"github.com/ifantsai/dcnetlab/internal/model"
 	"github.com/ifantsai/dcnetlab/internal/runtime"
 )
@@ -47,6 +50,10 @@ type Observation struct {
 const (
 	tickInterval      = 2 * time.Second
 	deepSweepInterval = 6 * time.Second
+
+	// agentDialTimeout bounds the liveness probe of a server's
+	// node-agent port during the deep sweep.
+	agentDialTimeout = 500 * time.Millisecond
 )
 
 // Observer polls deployed labs and reconciles observed state.
@@ -220,6 +227,7 @@ func (o *Observer) sweepLab(ctx context.Context, lab *model.Lab) error {
 
 	if time.Since(o.lastDeepAt(lab.Meta.ID)) >= deepSweepInterval {
 		o.collectDeep(ctx, lab, deployed, states)
+		o.healAgents(ctx, lab, deployed, states)
 	}
 
 	o.reconcile(lab, deployed, states)
@@ -292,6 +300,38 @@ func (o *Observer) reconcile(lab *model.Lab, nodes []*model.Node, states map[str
 			if err := o.store.UpdateLab(lab); err != nil {
 				o.log.Error("observer: update lab", "lab", lab.Meta.Name, "error", err)
 			}
+		}
+	}
+}
+
+// healAgents revives dead node-agents: a running server container
+// whose agent port stopped accepting connections (agent crash, OOM
+// kill, container restart losing the deploy-time exec) gets the boot
+// script re-executed. The revived agent restores its auto-start and
+// previously running programs from local state, so this sweep is the
+// platform's "server boot" path; it shares the script with the
+// deploy-time exec so the two cannot drift.
+func (o *Observer) healAgents(ctx context.Context, lab *model.Lab, nodes []*model.Node, states map[string]string) {
+	for _, n := range nodes {
+		if n.Spec.Role != model.RoleServer || states[n.Meta.Name] != "running" {
+			continue
+		}
+
+		addr, err := o.driver.NodeAddress(ctx, lab.Meta.Name, n.Meta.Name)
+		if err != nil {
+			continue
+		}
+
+		conn, err := net.DialTimeout("tcp", net.JoinHostPort(addr, strconv.Itoa(agentapi.DefaultPort)), agentDialTimeout)
+		if err == nil {
+			_ = conn.Close()
+
+			continue
+		}
+
+		o.log.Info("observer: reviving node-agent", "lab", lab.Meta.Name, "server", n.Meta.Name)
+		if _, err := o.driver.Exec(ctx, lab.Meta.Name, n.Meta.Name, []string{"sh", "-c", agentapi.StartAgentScript}); err != nil {
+			o.log.Warn("observer: revive node-agent", "server", n.Meta.Name, "error", err)
 		}
 	}
 }

@@ -8,4 +8,4 @@ import "github.com/google/wire"
 
 // ProviderSet is the server-layer providers. The TerminalOpener
 // binding lives in cmd/controller/wire.go next to its provider.
-var ProviderSet = wire.NewSet(NewHTTPServer, NewGRPCServer)
+var ProviderSet = wire.NewSet(NewHTTPServer, NewGRPCServer, NewRepoServer)
