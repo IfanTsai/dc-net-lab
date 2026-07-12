@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ifantsai/dcnetlab/internal/biz"
+	"github.com/ifantsai/dcnetlab/internal/metrics"
 	"github.com/ifantsai/dcnetlab/internal/model"
 	"github.com/ifantsai/dcnetlab/internal/observer"
 )
@@ -18,6 +19,9 @@ func NewPowerRepo(d *Data) biz.PowerRepo { return d }
 
 // NewObserverStore exposes the persistence the observer needs.
 func NewObserverStore(d *Data) observer.Store { return d }
+
+// NewMetricsStore exposes the persistence the metrics collector needs.
+func NewMetricsStore(d *Data) metrics.Store { return d }
 
 func (s *Data) CreateLab(lab *model.Lab) error {
 	doc, err := marshal(lab)

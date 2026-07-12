@@ -35,6 +35,8 @@ var ProviderSet = wire.NewSet(
 	NewProgramAgent,
 	NewPackageRepo,
 	NewObserverStore,
+	NewMetricsStore,
+	NewMetricsAgent,
 	NewOperationStore,
 	NewRuntimeDriver,
 )

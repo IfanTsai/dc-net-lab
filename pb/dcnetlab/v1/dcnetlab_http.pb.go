@@ -31,6 +31,8 @@ const OperationDCNetLabGetNodeBGP = "/dcnetlab.v1.DCNetLab/GetNodeBGP"
 const OperationDCNetLabGetNodeBGPTable = "/dcnetlab.v1.DCNetLab/GetNodeBGPTable"
 const OperationDCNetLabGetNodeFIB = "/dcnetlab.v1.DCNetLab/GetNodeFIB"
 const OperationDCNetLabGetNodeInventory = "/dcnetlab.v1.DCNetLab/GetNodeInventory"
+const OperationDCNetLabGetNodeMetrics = "/dcnetlab.v1.DCNetLab/GetNodeMetrics"
+const OperationDCNetLabGetNodeMetricsHistory = "/dcnetlab.v1.DCNetLab/GetNodeMetricsHistory"
 const OperationDCNetLabGetNodeRoutes = "/dcnetlab.v1.DCNetLab/GetNodeRoutes"
 const OperationDCNetLabGetNodeRuntime = "/dcnetlab.v1.DCNetLab/GetNodeRuntime"
 const OperationDCNetLabGetOperation = "/dcnetlab.v1.DCNetLab/GetOperation"
@@ -89,6 +91,14 @@ type DCNetLabHTTPServer interface {
 	// (controller-managed or created node-locally via the in-container
 	// CLI).
 	GetNodeInventory(context.Context, *GetNodeInventoryRequest) (*NodeInventory, error)
+	// GetNodeMetrics GetNodeMetrics samples resource usage of one server live from
+	// its agent, node-exporter style: CPU, memory, load, filesystem,
+	// disk I/O and per-interface network.
+	GetNodeMetrics(context.Context, *GetNodeMetricsRequest) (*NodeMetrics, error)
+	// GetNodeMetricsHistory GetNodeMetricsHistory returns the collected resource-usage time
+	// series of one server: 15 s points from the controller's metrics
+	// collector, kept 2 h in memory and 24 h on disk.
+	GetNodeMetricsHistory(context.Context, *GetNodeMetricsHistoryRequest) (*NodeMetricsHistory, error)
 	// GetNodeRoutes GetNodeRoutes returns the live IPv4 routing table (FRR RIB) of
 	// one deployed node; routes are empty unless the container is
 	// running.
@@ -155,6 +165,8 @@ func RegisterDCNetLabHTTPServer(s *http.Server, srv DCNetLabHTTPServer) {
 	r.GET("/api/v1/labs/{lab_id}/nodes/{node_id}/routes", _DCNetLab_GetNodeRoutes0_HTTP_Handler(srv))
 	r.GET("/api/v1/labs/{lab_id}/nodes/{node_id}/bgp-table", _DCNetLab_GetNodeBGPTable0_HTTP_Handler(srv))
 	r.GET("/api/v1/labs/{lab_id}/nodes/{node_id}/fib", _DCNetLab_GetNodeFIB0_HTTP_Handler(srv))
+	r.GET("/api/v1/labs/{lab_id}/nodes/{node_id}/metrics", _DCNetLab_GetNodeMetrics0_HTTP_Handler(srv))
+	r.GET("/api/v1/labs/{lab_id}/nodes/{node_id}/metrics/history", _DCNetLab_GetNodeMetricsHistory0_HTTP_Handler(srv))
 	r.POST("/api/v1/packages", _DCNetLab_UploadPackage0_HTTP_Handler(srv))
 	r.GET("/api/v1/packages", _DCNetLab_ListPackages0_HTTP_Handler(srv))
 	r.DELETE("/api/v1/packages/{name}/{version}", _DCNetLab_DeletePackage0_HTTP_Handler(srv))
@@ -534,6 +546,50 @@ func _DCNetLab_GetNodeFIB0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Co
 			return err
 		}
 		reply := out.(*NodeFIB)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_GetNodeMetrics0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in GetNodeMetricsRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabGetNodeMetrics)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.GetNodeMetrics(ctx, req.(*GetNodeMetricsRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*NodeMetrics)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_GetNodeMetricsHistory0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in GetNodeMetricsHistoryRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabGetNodeMetricsHistory)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.GetNodeMetricsHistory(ctx, req.(*GetNodeMetricsHistoryRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*NodeMetricsHistory)
 		return ctx.Result(200, reply)
 	}
 }
@@ -1023,6 +1079,14 @@ type DCNetLabHTTPClient interface {
 	// (controller-managed or created node-locally via the in-container
 	// CLI).
 	GetNodeInventory(ctx context.Context, req *GetNodeInventoryRequest, opts ...http.CallOption) (rsp *NodeInventory, err error)
+	// GetNodeMetrics GetNodeMetrics samples resource usage of one server live from
+	// its agent, node-exporter style: CPU, memory, load, filesystem,
+	// disk I/O and per-interface network.
+	GetNodeMetrics(ctx context.Context, req *GetNodeMetricsRequest, opts ...http.CallOption) (rsp *NodeMetrics, err error)
+	// GetNodeMetricsHistory GetNodeMetricsHistory returns the collected resource-usage time
+	// series of one server: 15 s points from the controller's metrics
+	// collector, kept 2 h in memory and 24 h on disk.
+	GetNodeMetricsHistory(ctx context.Context, req *GetNodeMetricsHistoryRequest, opts ...http.CallOption) (rsp *NodeMetricsHistory, err error)
 	// GetNodeRoutes GetNodeRoutes returns the live IPv4 routing table (FRR RIB) of
 	// one deployed node; routes are empty unless the container is
 	// running.
@@ -1247,6 +1311,38 @@ func (c *DCNetLabHTTPClientImpl) GetNodeInventory(ctx context.Context, in *GetNo
 	pattern := "/api/v1/labs/{lab_id}/nodes/{node_id}/inventory"
 	path := binding.EncodeURL(pattern, in, true)
 	opts = append(opts, http.Operation(OperationDCNetLabGetNodeInventory))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetNodeMetrics GetNodeMetrics samples resource usage of one server live from
+// its agent, node-exporter style: CPU, memory, load, filesystem,
+// disk I/O and per-interface network.
+func (c *DCNetLabHTTPClientImpl) GetNodeMetrics(ctx context.Context, in *GetNodeMetricsRequest, opts ...http.CallOption) (*NodeMetrics, error) {
+	var out NodeMetrics
+	pattern := "/api/v1/labs/{lab_id}/nodes/{node_id}/metrics"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationDCNetLabGetNodeMetrics))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetNodeMetricsHistory GetNodeMetricsHistory returns the collected resource-usage time
+// series of one server: 15 s points from the controller's metrics
+// collector, kept 2 h in memory and 24 h on disk.
+func (c *DCNetLabHTTPClientImpl) GetNodeMetricsHistory(ctx context.Context, in *GetNodeMetricsHistoryRequest, opts ...http.CallOption) (*NodeMetricsHistory, error) {
+	var out NodeMetricsHistory
+	pattern := "/api/v1/labs/{lab_id}/nodes/{node_id}/metrics/history"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationDCNetLabGetNodeMetricsHistory))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
 	if err != nil {

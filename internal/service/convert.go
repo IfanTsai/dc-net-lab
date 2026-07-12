@@ -404,6 +404,103 @@ func inventoryToPB(inv *model.NodeInventory) *v1.NodeInventory {
 	return pb
 }
 
+func nodeMetricsToPB(m *model.NodeMetrics) *v1.NodeMetrics {
+	return &v1.NodeMetrics{
+		SampledAt:     m.SampledAt.Unix(),
+		UptimeSeconds: int64(m.Uptime.Seconds()),
+		Procs:         int64(m.Procs),
+		Cpu:           metricsCPUToPB(m.CPU),
+		Memory:        metricsMemoryToPB(m.Memory),
+		Load:          metricsLoadToPB(m.Load),
+		Filesystem:    metricsFilesystemToPB(m.Filesystem),
+		Disk:          metricsDiskToPB(m.Disk),
+		Interfaces:    metricsInterfacesToPB(m.Interfaces),
+	}
+}
+
+func metricsPointToPB(p model.MetricsPoint) *v1.MetricsPoint {
+	return &v1.MetricsPoint{
+		Ts:         p.Ts.Unix(),
+		Procs:      int64(p.Procs),
+		Cpu:        metricsCPUToPB(p.CPU),
+		Memory:     metricsMemoryToPB(p.Memory),
+		Load:       metricsLoadToPB(p.Load),
+		Filesystem: metricsFilesystemToPB(p.Filesystem),
+		Disk:       metricsDiskToPB(p.Disk),
+		Interfaces: metricsInterfacesToPB(p.Interfaces),
+	}
+}
+
+func metricsCPUToPB(c model.MetricsCPU) *v1.MetricsCPU {
+	return &v1.MetricsCPU{
+		UsagePercent:       c.UsagePercent,
+		UserPercent:        c.UserPercent,
+		SystemPercent:      c.SystemPercent,
+		LimitCores:         c.LimitCores,
+		UsageSecondsTotal:  c.UsageSecondsTotal,
+		UserSecondsTotal:   c.UserSecondsTotal,
+		SystemSecondsTotal: c.SystemSecondsTotal,
+	}
+}
+
+func metricsMemoryToPB(m model.MetricsMemory) *v1.MetricsMemory {
+	return &v1.MetricsMemory{
+		UsedBytes:     m.UsedBytes,
+		CacheBytes:    m.CacheBytes,
+		LimitBytes:    m.LimitBytes,
+		SwapUsedBytes: m.SwapUsedBytes,
+	}
+}
+
+func metricsLoadToPB(l model.MetricsLoad) *v1.MetricsLoad {
+	return &v1.MetricsLoad{Load1: l.Load1, Load5: l.Load5, Load15: l.Load15}
+}
+
+func metricsFilesystemToPB(fs model.MetricsFilesystem) *v1.MetricsFilesystem {
+	return &v1.MetricsFilesystem{
+		Mount:      fs.Mount,
+		SizeBytes:  fs.SizeBytes,
+		UsedBytes:  fs.UsedBytes,
+		AvailBytes: fs.AvailBytes,
+	}
+}
+
+func metricsDiskToPB(d model.MetricsDisk) *v1.MetricsDisk {
+	return &v1.MetricsDisk{
+		ReadBytesPerSec:  d.ReadBytesPerSec,
+		WriteBytesPerSec: d.WriteBytesPerSec,
+		ReadOpsPerSec:    d.ReadOpsPerSec,
+		WriteOpsPerSec:   d.WriteOpsPerSec,
+		ReadBytesTotal:   d.ReadBytesTotal,
+		WriteBytesTotal:  d.WriteBytesTotal,
+		ReadOpsTotal:     d.ReadOpsTotal,
+		WriteOpsTotal:    d.WriteOpsTotal,
+	}
+}
+
+func metricsInterfacesToPB(ifaces []model.MetricsInterface) []*v1.MetricsInterface {
+	pbs := make([]*v1.MetricsInterface, 0, len(ifaces))
+	for _, iface := range ifaces {
+		pbs = append(pbs, &v1.MetricsInterface{
+			Name:            iface.Name,
+			RxBytesPerSec:   iface.RxBytesPerSec,
+			TxBytesPerSec:   iface.TxBytesPerSec,
+			RxPacketsPerSec: iface.RxPacketsPerSec,
+			TxPacketsPerSec: iface.TxPacketsPerSec,
+			RxBytesTotal:    iface.RxBytesTotal,
+			TxBytesTotal:    iface.TxBytesTotal,
+			RxPacketsTotal:  iface.RxPacketsTotal,
+			TxPacketsTotal:  iface.TxPacketsTotal,
+			RxErrors:        iface.RxErrors,
+			TxErrors:        iface.TxErrors,
+			RxDropped:       iface.RxDropped,
+			TxDropped:       iface.TxDropped,
+		})
+	}
+
+	return pbs
+}
+
 // --- Plan ---
 
 func allocationToPB(a model.Allocation) *v1.Allocation {

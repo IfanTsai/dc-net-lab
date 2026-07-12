@@ -66,6 +66,40 @@ func (a *fakeAgent) InstallPackage(_ context.Context, addr string, pkg AgentPack
 
 func (a *fakeAgent) Install(_ context.Context, _ string, _ *model.Program) error { return nil }
 
+func (a *fakeAgent) Metrics(_ context.Context, addr string) (*model.NodeMetrics, error) {
+	if a.failFor[addr] {
+		return nil, fmt.Errorf("agent unreachable")
+	}
+
+	return &model.NodeMetrics{
+		SampledAt: time.Now().UTC(),
+		Procs:     3,
+		CPU:       model.MetricsCPU{LimitCores: 2, UsageSecondsTotal: 100},
+	}, nil
+}
+
+// fakeHistory serves one canned series regardless of range and an
+// optional diff baseline.
+type fakeHistory struct {
+	points   []model.MetricsPoint
+	baseline *model.MetricsPoint
+	calls    []string // "labID/server"
+}
+
+func (h *fakeHistory) Query(labID, server string, _, _ time.Time) []model.MetricsPoint {
+	h.calls = append(h.calls, labID+"/"+server)
+
+	return h.points
+}
+
+func (h *fakeHistory) Last(string, string) (model.MetricsPoint, bool) {
+	if h.baseline == nil {
+		return model.MetricsPoint{}, false
+	}
+
+	return *h.baseline, true
+}
+
 // fakeDriver resolves node addresses as "<node>-addr".
 type fakeDriver struct {
 	runtime.Driver
@@ -105,7 +139,7 @@ func testProgramUsecase(t *testing.T, lab *model.Lab, nodes []*model.Node) (*Pro
 	agent := &fakeAgent{failFor: make(map[string]bool)}
 	repo := &fakeProgramRepo{lab: lab, nodes: nodes}
 	sc := &conf.Server{RepoAddr: "0.0.0.0:50062"}
-	uc := NewProgramUsecase(repo, agent, fakeDriver{}, packages, sc, log)
+	uc := NewProgramUsecase(repo, agent, fakeDriver{}, packages, &fakeHistory{}, sc, log)
 
 	return uc, agent
 }
@@ -239,4 +273,116 @@ func TestInstallPackageOnServers(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNodeMetrics(t *testing.T) {
+	nodes := []*model.Node{
+		serverNodeNamed("n-1", "server-1"),
+		{Meta: model.ResourceMeta{ID: "n-2", Name: "leaf-1"}, Spec: model.NodeSpec{Role: model.RoleLeaf}},
+	}
+
+	t.Run("no baseline: gauges only, zero rates", func(t *testing.T) {
+		uc, _ := testProgramUsecase(t, deployedLab(), nodes)
+
+		m, err := uc.NodeMetrics(context.Background(), "lab-1", "n-1")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if m.Procs != 3 || m.CPU.UsagePercent != 0 {
+			t.Errorf("metrics = %+v", m)
+		}
+	})
+
+	t.Run("rates diffed against collector baseline", func(t *testing.T) {
+		uc, _ := testProgramUsecase(t, deployedLab(), nodes)
+		// Baseline 10 s ago with 99 CPU seconds; the fake scrape
+		// reports 100 on 2 cores: (100-99)/10s/2 = 5 %.
+		uc.history = &fakeHistory{baseline: &model.MetricsPoint{
+			Ts:  time.Now().UTC().Add(-10 * time.Second),
+			CPU: model.MetricsCPU{UsageSecondsTotal: 99},
+		}}
+
+		m, err := uc.NodeMetrics(context.Background(), "lab-1", "n-1")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if m.CPU.UsagePercent < 4.9 || m.CPU.UsagePercent > 5.1 {
+			t.Errorf("usage = %v, want ~5%%", m.CPU.UsagePercent)
+		}
+	})
+
+	tests := []struct {
+		name   string
+		nodeID string
+		lab    *model.Lab
+	}{
+		{name: "non-server node", nodeID: "n-2", lab: deployedLab()},
+		{name: "unknown node", nodeID: "n-9", lab: deployedLab()},
+		{name: "undeployed lab", nodeID: "n-1",
+			lab: &model.Lab{Meta: model.ResourceMeta{ID: "lab-1", Name: "dc1"}}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			uc, _ := testProgramUsecase(t, tt.lab, nodes)
+
+			if _, err := uc.NodeMetrics(context.Background(), "lab-1", tt.nodeID); err == nil {
+				t.Fatal("expected error")
+			}
+		})
+	}
+
+	t.Run("agent unreachable", func(t *testing.T) {
+		uc, agent := testProgramUsecase(t, deployedLab(), nodes)
+		agent.failFor["server-1-addr"] = true
+
+		if _, err := uc.NodeMetrics(context.Background(), "lab-1", "n-1"); err == nil {
+			t.Fatal("expected error")
+		}
+	})
+}
+
+func TestNodeMetricsHistory(t *testing.T) {
+	nodes := []*model.Node{
+		serverNodeNamed("n-1", "server-1"),
+		{Meta: model.ResourceMeta{ID: "n-2", Name: "leaf-1"}, Spec: model.NodeSpec{Role: model.RoleLeaf}},
+	}
+
+	t.Run("server", func(t *testing.T) {
+		uc, _ := testProgramUsecase(t, deployedLab(), nodes)
+		history := &fakeHistory{points: []model.MetricsPoint{{Procs: 3}}}
+		uc.history = history
+
+		points, err := uc.NodeMetricsHistory("lab-1", "n-1", time.Time{}, time.Time{})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(points) != 1 || points[0].Procs != 3 {
+			t.Errorf("points = %+v", points)
+		}
+
+		if len(history.calls) != 1 || history.calls[0] != "lab-1/server-1" {
+			t.Errorf("queried %v, want lab-1/server-1", history.calls)
+		}
+	})
+
+	t.Run("non-server node", func(t *testing.T) {
+		uc, _ := testProgramUsecase(t, deployedLab(), nodes)
+
+		if _, err := uc.NodeMetricsHistory("lab-1", "n-2", time.Time{}, time.Time{}); err == nil {
+			t.Fatal("expected error")
+		}
+	})
+
+	t.Run("inverted range", func(t *testing.T) {
+		uc, _ := testProgramUsecase(t, deployedLab(), nodes)
+		now := time.Now()
+
+		if _, err := uc.NodeMetricsHistory("lab-1", "n-1", now, now.Add(-time.Hour)); err == nil {
+			t.Fatal("expected error")
+		}
+	})
 }

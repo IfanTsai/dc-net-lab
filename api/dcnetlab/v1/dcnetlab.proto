@@ -101,6 +101,18 @@ service DCNetLab {
   rpc GetNodeFIB(GetNodeFIBRequest) returns (NodeFIB) {
     option (google.api.http) = {get: "/api/v1/labs/{lab_id}/nodes/{node_id}/fib"};
   }
+  // GetNodeMetrics samples resource usage of one server live from
+  // its agent, node-exporter style: CPU, memory, load, filesystem,
+  // disk I/O and per-interface network.
+  rpc GetNodeMetrics(GetNodeMetricsRequest) returns (NodeMetrics) {
+    option (google.api.http) = {get: "/api/v1/labs/{lab_id}/nodes/{node_id}/metrics"};
+  }
+  // GetNodeMetricsHistory returns the collected resource-usage time
+  // series of one server: 15 s points from the controller's metrics
+  // collector, kept 2 h in memory and 24 h on disk.
+  rpc GetNodeMetricsHistory(GetNodeMetricsHistoryRequest) returns (NodeMetricsHistory) {
+    option (google.api.http) = {get: "/api/v1/labs/{lab_id}/nodes/{node_id}/metrics/history"};
+  }
 
   // --- Packages ---
   // Packages are versioned program artifacts (tar.gz with a
@@ -477,6 +489,135 @@ message NodeProgram {
 message NodeInventory {
   repeated InstalledPackage packages = 1;
   repeated NodeProgram programs = 2;
+}
+
+message GetNodeMetricsRequest {
+  string lab_id = 1;
+  string node_id = 2;
+}
+
+// NodeMetrics is one resource-usage sample of a server, live from
+// its agent. It mirrors the node-exporter collectors that stay
+// meaningful inside a shared-kernel container: CPU, memory, disk I/O
+// and process count are scoped to the container's cgroup / PID
+// namespace, network to its netns; the load average is the host
+// kernel's and thus identical on every server.
+message NodeMetrics {
+  // sampled_at is the unix time of the sample.
+  int64 sampled_at = 1;
+  // uptime_seconds is the container uptime (age of PID 1).
+  int64 uptime_seconds = 2;
+  // procs is the number of processes in the container.
+  int64 procs = 3;
+  MetricsCPU cpu = 4;
+  MetricsMemory memory = 5;
+  MetricsLoad load = 6;
+  MetricsFilesystem filesystem = 7;
+  MetricsDisk disk = 8;
+  repeated MetricsInterface interfaces = 9;
+}
+
+// MetricsCPU is CPU usage normalised against the container's CPU
+// limit: usage_percent is 0-100 of limit_cores, split into user and
+// system time.
+message MetricsCPU {
+  double usage_percent = 1;
+  double user_percent = 2;
+  double system_percent = 3;
+  // limit_cores is the cgroup CPU quota in cores; the host core
+  // count when unlimited.
+  double limit_cores = 4;
+  // Cumulative CPU time in seconds since boot (counter semantics).
+  double usage_seconds_total = 5;
+  double user_seconds_total = 6;
+  double system_seconds_total = 7;
+}
+
+// MetricsMemory reports container memory: used excludes the
+// reclaimable page cache (node-exporter's MemAvailable convention),
+// cache is the page cache, limit is memory.max or the host total
+// when unlimited.
+message MetricsMemory {
+  int64 used_bytes = 1;
+  int64 cache_bytes = 2;
+  int64 limit_bytes = 3;
+  int64 swap_used_bytes = 4;
+}
+
+// MetricsLoad is the host load average (shared kernel).
+message MetricsLoad {
+  double load1 = 1;
+  double load5 = 2;
+  double load15 = 3;
+}
+
+// MetricsFilesystem is the usage of the container root filesystem.
+message MetricsFilesystem {
+  string mount = 1;
+  int64 size_bytes = 2;
+  int64 used_bytes = 3;
+  int64 avail_bytes = 4;
+}
+
+// MetricsDisk is block I/O attributed to the container by the io
+// cgroup, aggregated over all devices.
+message MetricsDisk {
+  double read_bytes_per_sec = 1;
+  double write_bytes_per_sec = 2;
+  double read_ops_per_sec = 3;
+  double write_ops_per_sec = 4;
+  int64 read_bytes_total = 5;
+  int64 write_bytes_total = 6;
+  int64 read_ops_total = 7;
+  int64 write_ops_total = 8;
+}
+
+// MetricsInterface is the traffic of one interface of the
+// container's network namespace; error and drop counts are totals.
+message MetricsInterface {
+  string name = 1;
+  double rx_bytes_per_sec = 2;
+  double tx_bytes_per_sec = 3;
+  double rx_packets_per_sec = 4;
+  double tx_packets_per_sec = 5;
+  int64 rx_bytes_total = 6;
+  int64 tx_bytes_total = 7;
+  int64 rx_errors = 8;
+  int64 tx_errors = 9;
+  int64 rx_dropped = 10;
+  int64 tx_dropped = 11;
+  int64 rx_packets_total = 12;
+  int64 tx_packets_total = 13;
+}
+
+message GetNodeMetricsHistoryRequest {
+  string lab_id = 1;
+  string node_id = 2;
+  // start and end bound the series in unix seconds; end defaults to
+  // now, start to end minus 30 minutes.
+  int64 start = 3;
+  int64 end = 4;
+  // step is reserved for server-side downsampling; 0 returns every
+  // collected point.
+  int32 step = 5;
+}
+
+// MetricsPoint is one collected sample of the series: the sweep time
+// plus the same gauge groups as NodeMetrics. Rate values are averages
+// over the collector's sweep interval (counter diffs).
+message MetricsPoint {
+  int64 ts = 1;
+  int64 procs = 2;
+  MetricsCPU cpu = 3;
+  MetricsMemory memory = 4;
+  MetricsLoad load = 5;
+  MetricsFilesystem filesystem = 6;
+  MetricsDisk disk = 7;
+  repeated MetricsInterface interfaces = 8;
+}
+
+message NodeMetricsHistory {
+  repeated MetricsPoint points = 1;
 }
 
 // --- Program ---

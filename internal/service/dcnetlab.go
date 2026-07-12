@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	kerrors "github.com/go-kratos/kratos/v2/errors"
 
@@ -297,6 +298,38 @@ func (s *DCNetLabService) GetNodeInventory(ctx context.Context, req *v1.GetNodeI
 	}
 
 	return inventoryToPB(inv), nil
+}
+
+func (s *DCNetLabService) GetNodeMetrics(ctx context.Context, req *v1.GetNodeMetricsRequest) (*v1.NodeMetrics, error) {
+	metrics, err := s.programs.NodeMetrics(ctx, req.LabId, req.NodeId)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return nodeMetricsToPB(metrics), nil
+}
+
+func (s *DCNetLabService) GetNodeMetricsHistory(ctx context.Context, req *v1.GetNodeMetricsHistoryRequest) (*v1.NodeMetricsHistory, error) {
+	var start, end time.Time
+	if req.Start > 0 {
+		start = time.Unix(req.Start, 0).UTC()
+	}
+
+	if req.End > 0 {
+		end = time.Unix(req.End, 0).UTC()
+	}
+
+	points, err := s.programs.NodeMetricsHistory(req.LabId, req.NodeId, start, end)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	reply := &v1.NodeMetricsHistory{Points: make([]*v1.MetricsPoint, 0, len(points))}
+	for _, p := range points {
+		reply.Points = append(reply.Points, metricsPointToPB(p))
+	}
+
+	return reply, nil
 }
 
 func (s *DCNetLabService) ListPrograms(ctx context.Context, req *v1.ListProgramsRequest) (*v1.ListProgramsReply, error) {

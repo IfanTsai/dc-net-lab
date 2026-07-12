@@ -138,6 +138,27 @@ Create Lab（Micro/Standard Profile）→ Plan（资源分配预览）→ Apply�
 - **接线**：`pkg install` 的"索引解析 + 幂等安装"抽成 `resolveEntry/installEntry` 供 pkg 与 program 共用；启动脚本软链增加 `program`（golden 基线随之更新）。
 - **文档**：新增 [node-agent.md](node-agent.md)——agent 的定位/状态目录/gRPC API/程序模型（systemd 语义映射）/运行逻辑（boot 恢复、监督循环、优雅退出、自愈、托管 vs 非托管），以及 `pkg`/`program` 两组容器内命令的完整参考。
 
+### Server 监控（node-exporter 风格资源采样）
+
+参考 node-exporter 的采集项，为 server 节点补上资源监控，走 node-agent 通道（与节点库存同路径），不经 docker exec。
+
+- **采集语义**（共享内核容器的适配）：CPU/内存/磁盘 I/O 取自容器自身 cgroup v2 子树（`cpu.stat`/`memory.current`/`io.stat`），进程数取自容器 PID namespace（`/proc` 数字目录计数），网卡流量取自容器 netns（`/proc/net/dev`），运行时长为 PID 1 年龄；负载为共享宿主内核值（各 server 相同，UI 已标注）。cgroup 控制器不可用时 CPU/内存回退到宿主 `/proc/stat`、`/proc/meminfo`。
+- **口径**：CPU 使用率按 `cpu.max` 配额归一（0–100%，无配额时用宿主核数）；内存 used 采用 working set 口径（`memory.current - inactive_file`，对齐 node-exporter 的 MemAvailable 惯例）。
+- **暴露方式**（重构后）：agent 在管理网暴露标准 Prometheus text format 端点 `GET :9100/metrics`（node-exporter 惯例端口，`dcnetlab_node_*` 前缀，详见 [node-agent.md](node-agent.md)），只导出累计 counter 与瞬时 gauge——速率由抓取方差分，agent 完全无状态；gRPC 面回归纯进程管理。
+- **链路**：Controller data 层 HTTP 抓取 + text format 解析（未知指标族忽略、坏行跳过）→ `GET /labs/{id}/nodes/{nodeId}/metrics`（`ProgramUsecase.NodeMetrics`，实时速率 = 本次抓取对历史采集器最新点的差分，≤15 s 区间均值）→ 拓扑图 server 抽屉"监控"标签页：资源用量进度条（CPU/内存/根文件系统，75%/90% 变色）、负载与磁盘 I/O 描述表、逐网卡收发速率表，打开时每 5 s 静默自刷新（失败保留上一采样，不弹错）。
+- **测试**：采集器解析函数为纯函数表驱动测试；`Collect` 与 text format 编码器走假 `/proc` + cgroup 目录树；controller 侧解析器覆盖标签/转义/坏行/未知指标族；biz 层覆盖非 server/未部署/agent 不可达/基线差分路径。
+
+### Server 监控历史数据与 Prometheus 出口
+
+在实时采样之上补历史时序，速率口径从"瞬时抽样"升级为 counter 差分（Prometheus rate 语义）。
+
+- **counter 差分**：agent 的 `/metrics` 端点导出累计计数器（CPU 秒、磁盘字节/操作数、网卡字节/包/错误/丢包）；controller 侧 `internal/metrics.Collector`（Kratos transport server，生命周期同 observer）每 15 s 并发抓取全部 deployed server，相邻 sweep 差分得区间平均速率，回绕钳零、单台失败记 gap（counter 累计性保证 gap 后差分依然正确）；首个样本只做基线不出点，基线超 1 h 弃用。
+- **存储**（`internal/metrics.History`）：内存环形窗口（15 s × 2 h，存差分后 gauge）+ JSONL 按小时分片 `data/labs/<id>/metrics/<UTC 小时>.jsonl`（行内同时存 gauge 与 counter，后者供重启恢复差分基线）；单写者 O_APPEND、每 sweep flush 不 fsync（崩溃最多丢 15 s）；翻转/首次触达时删超 24 h 分片；启动回放最近 2 h 重建窗口，撕裂行跳过；lab 删除随目录消失，内存态由 Retain 清理。
+- **历史 API**：`GET /labs/{id}/nodes/{nodeId}/metrics/history?start=&end=`（缺省最近 30 分钟，`step` 参数预留）；≤2 h 走内存，更早扫分片。历史不要求 deployed generation——停机的 lab 也能回看。
+- **Prometheus 出口**：controller `GET /metrics`（text format 0.0.4,手写编码器不引依赖），命名贴 node-exporter（`dcnetlab_server_cpu_seconds_total{mode=…}`、`dcnetlab_server_network_receive_bytes_total{iface=…}` 等,标签 lab/server），只导出 1 分钟内的新鲜点,counter 原样透出由外部 Prometheus 自行算 rate。
+- **UI**：监控标签页下方新增"历史曲线"区——时间范围切换（30m/1h/2h/24h）+ 四块 ECharts 折线（CPU 三系列、内存 used/limit、网卡按接口筛选 rx/tx、磁盘读写）；ECharts 按需引入（LineChart + Grid/Legend/Tooltip + Canvas）,采集 gap 断线不插值（`connectNulls: false`）,配色用经 CVD 校验的分类调色板前三槽位；随实时区静默轮询（历史 30 s 一刷）。监控 tab 激活时抽屉动态加宽（60%,CSS 上限 900px,其余 tab 保持 420px）,实时区与四图用 `auto-fit` 网格——窄单列/宽双列自适应,图表随 ResizeObserver 重排。
+- **测试**：History 覆盖追加/窗口裁剪/跨小时翻转/过期清理/撕裂行回放/盘上查询/Retain；Collector 覆盖首点基线、双 sweep 差分、agent 失联 gap、counter 回绕钳零、基线超龄；/metrics endpoint 覆盖格式/标签/陈旧点过滤。
+
 ### 代码规范与工程化
 
 - [golang-style.md](golang-style.md) 为 Go 代码基线；golangci-lint（`.golangci.yml`，版本固定）+ 自研 `scripts/check-style.py`（空行语义）挂在 `make lint`，零告警纳入提交门禁。

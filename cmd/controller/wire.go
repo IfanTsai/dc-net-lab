@@ -15,6 +15,7 @@ import (
 	"github.com/ifantsai/dcnetlab/internal/biz"
 	"github.com/ifantsai/dcnetlab/internal/conf"
 	"github.com/ifantsai/dcnetlab/internal/data"
+	"github.com/ifantsai/dcnetlab/internal/metrics"
 	"github.com/ifantsai/dcnetlab/internal/observer"
 	"github.com/ifantsai/dcnetlab/internal/server"
 	"github.com/ifantsai/dcnetlab/internal/service"
@@ -26,8 +27,12 @@ func wireApp(*conf.Server, *conf.Data, klog.Logger, *slog.Logger) (*kratos.App, 
 	panic(wire.Build(
 		data.ProviderSet, biz.ProviderSet, service.ProviderSet, server.ProviderSet,
 		observer.New,
+		metrics.NewHistory,
+		metrics.NewCollector,
 		wire.Bind(new(server.TerminalOpener), new(*biz.TerminalUsecase)),
 		wire.Bind(new(server.TopologyWatcher), new(*observer.Observer)),
+		wire.Bind(new(server.MetricsSource), new(*metrics.History)),
+		wire.Bind(new(biz.MetricsHistory), new(*metrics.History)),
 		newApp,
 	))
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/ifantsai/dcnetlab/internal/agentapi"
 	"github.com/ifantsai/dcnetlab/internal/conf"
+	"github.com/ifantsai/dcnetlab/internal/metrics"
 	"github.com/ifantsai/dcnetlab/internal/model"
 	"github.com/ifantsai/dcnetlab/internal/runtime"
 )
@@ -56,7 +57,23 @@ type ProgramAgent interface {
 	ListPrograms(ctx context.Context, addr string) ([]model.NodeProgram, error)
 	ListPackages(ctx context.Context, addr string) ([]model.InstalledPackage, error)
 	TailLogs(ctx context.Context, addr, name string, lines int) (string, error)
+	// Metrics scrapes a server's Prometheus endpoint: cumulative
+	// counters and instantaneous gauges, no rates (callers diff
+	// against their own baselines).
+	Metrics(ctx context.Context, addr string) (*model.NodeMetrics, error)
 }
+
+// MetricsHistory is the collected resource-usage time series the
+// usecase queries; internal/metrics implements it. Last serves as the
+// diff baseline for the realtime view.
+type MetricsHistory interface {
+	Query(labID, server string, start, end time.Time) []model.MetricsPoint
+	Last(labID, server string) (model.MetricsPoint, bool)
+}
+
+// historyDefaultRange is the window served when the request does not
+// bound the series.
+const historyDefaultRange = 30 * time.Minute
 
 // ProgramUsecase manages Programs: supervised processes on lab
 // servers, each running the entrypoint of a Package version.
@@ -69,6 +86,7 @@ type ProgramUsecase struct {
 	agent    ProgramAgent
 	driver   runtime.Driver
 	packages *PackageUsecase
+	history  MetricsHistory
 	repoPort int
 	log      *slog.Logger
 }
@@ -77,10 +95,10 @@ type ProgramUsecase struct {
 // comes from the configured listen address; lab servers reach it via
 // their management gateway.
 func NewProgramUsecase(repo ProgramRepo, agent ProgramAgent, driver runtime.Driver,
-	packages *PackageUsecase, c *conf.Server, log *slog.Logger,
+	packages *PackageUsecase, history MetricsHistory, c *conf.Server, log *slog.Logger,
 ) *ProgramUsecase {
 	return &ProgramUsecase{
-		repo: repo, agent: agent, driver: driver, packages: packages,
+		repo: repo, agent: agent, driver: driver, packages: packages, history: history,
 		repoPort: repoPortOf(c.RepoAddr, log), log: log,
 	}
 }
@@ -308,6 +326,77 @@ func (uc *ProgramUsecase) NodeInventory(ctx context.Context, labID, nodeID strin
 	}
 
 	return &model.NodeInventory{Packages: packages, Programs: programs}, nil
+}
+
+// NodeMetrics samples resource usage of one server live from its
+// agent's Prometheus endpoint. The scrape returns counters and
+// gauges; rates are diffed against the history collector's latest
+// point, so they average over up to one sweep interval. Before the
+// collector's first sweep rates stay zero.
+func (uc *ProgramUsecase) NodeMetrics(ctx context.Context, labID, nodeID string) (*model.NodeMetrics, error) {
+	server, err := uc.serverNode(labID, nodeID)
+	if err != nil {
+		return nil, err
+	}
+
+	lab, err := uc.repo.GetLab(labID)
+	if err != nil {
+		return nil, fmt.Errorf("get lab: %w", err)
+	}
+
+	if lab.Meta.Generation == 0 {
+		return nil, fmt.Errorf("lab %q has no deployed generation; apply a plan first", lab.Meta.Name)
+	}
+
+	addr, err := uc.driver.NodeAddress(ctx, lab.Meta.Name, server.Meta.Name)
+	if err != nil {
+		return nil, fmt.Errorf("resolve agent address: %w", err)
+	}
+
+	m, err := uc.agent.Metrics(ctx, addr)
+	if err != nil {
+		return nil, fmt.Errorf("agent: %w", err)
+	}
+
+	prev, ok := uc.history.Last(labID, server.Meta.Name)
+	if ok && m.SampledAt.Sub(prev.Ts) <= metrics.BaselineMaxAge {
+		point := model.MetricsPoint{
+			Ts:         m.SampledAt,
+			CPU:        m.CPU,
+			Disk:       m.Disk,
+			Interfaces: m.Interfaces,
+		}
+
+		metrics.Diff(&point, prev)
+		m.CPU, m.Disk, m.Interfaces = point.CPU, point.Disk, point.Interfaces
+	}
+
+	return m, nil
+}
+
+// NodeMetricsHistory returns the collected resource-usage series of
+// one server within [start, end]; a zero end defaults to now, a zero
+// start to end minus 30 minutes. Unlike the live views this needs no
+// deployed generation: history survives stops and redeploys.
+func (uc *ProgramUsecase) NodeMetricsHistory(labID, nodeID string, start, end time.Time) ([]model.MetricsPoint, error) {
+	server, err := uc.serverNode(labID, nodeID)
+	if err != nil {
+		return nil, err
+	}
+
+	if end.IsZero() {
+		end = time.Now().UTC()
+	}
+
+	if start.IsZero() {
+		start = end.Add(-historyDefaultRange)
+	}
+
+	if !start.Before(end) {
+		return nil, fmt.Errorf("invalid range: start %s is not before end %s", start, end)
+	}
+
+	return uc.history.Query(labID, server.Meta.Name, start, end), nil
 }
 
 // StartProgram launches a program on its server's agent.

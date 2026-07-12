@@ -25,42 +25,44 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	DCNetLab_CreateLab_FullMethodName        = "/dcnetlab.v1.DCNetLab/CreateLab"
-	DCNetLab_ListLabs_FullMethodName         = "/dcnetlab.v1.DCNetLab/ListLabs"
-	DCNetLab_GetLab_FullMethodName           = "/dcnetlab.v1.DCNetLab/GetLab"
-	DCNetLab_DeleteLab_FullMethodName        = "/dcnetlab.v1.DCNetLab/DeleteLab"
-	DCNetLab_StartLab_FullMethodName         = "/dcnetlab.v1.DCNetLab/StartLab"
-	DCNetLab_StopLab_FullMethodName          = "/dcnetlab.v1.DCNetLab/StopLab"
-	DCNetLab_ListNodes_FullMethodName        = "/dcnetlab.v1.DCNetLab/ListNodes"
-	DCNetLab_ListLinks_FullMethodName        = "/dcnetlab.v1.DCNetLab/ListLinks"
-	DCNetLab_ListAllocations_FullMethodName  = "/dcnetlab.v1.DCNetLab/ListAllocations"
-	DCNetLab_StartNode_FullMethodName        = "/dcnetlab.v1.DCNetLab/StartNode"
-	DCNetLab_StopNode_FullMethodName         = "/dcnetlab.v1.DCNetLab/StopNode"
-	DCNetLab_GetNodeRuntime_FullMethodName   = "/dcnetlab.v1.DCNetLab/GetNodeRuntime"
-	DCNetLab_GetNodeBGP_FullMethodName       = "/dcnetlab.v1.DCNetLab/GetNodeBGP"
-	DCNetLab_GetNodeRoutes_FullMethodName    = "/dcnetlab.v1.DCNetLab/GetNodeRoutes"
-	DCNetLab_GetNodeBGPTable_FullMethodName  = "/dcnetlab.v1.DCNetLab/GetNodeBGPTable"
-	DCNetLab_GetNodeFIB_FullMethodName       = "/dcnetlab.v1.DCNetLab/GetNodeFIB"
-	DCNetLab_UploadPackage_FullMethodName    = "/dcnetlab.v1.DCNetLab/UploadPackage"
-	DCNetLab_ListPackages_FullMethodName     = "/dcnetlab.v1.DCNetLab/ListPackages"
-	DCNetLab_DeletePackage_FullMethodName    = "/dcnetlab.v1.DCNetLab/DeletePackage"
-	DCNetLab_GetNodeInventory_FullMethodName = "/dcnetlab.v1.DCNetLab/GetNodeInventory"
-	DCNetLab_InstallPackage_FullMethodName   = "/dcnetlab.v1.DCNetLab/InstallPackage"
-	DCNetLab_CreateProgram_FullMethodName    = "/dcnetlab.v1.DCNetLab/CreateProgram"
-	DCNetLab_ListPrograms_FullMethodName     = "/dcnetlab.v1.DCNetLab/ListPrograms"
-	DCNetLab_StartProgram_FullMethodName     = "/dcnetlab.v1.DCNetLab/StartProgram"
-	DCNetLab_StopProgram_FullMethodName      = "/dcnetlab.v1.DCNetLab/StopProgram"
-	DCNetLab_UpgradeProgram_FullMethodName   = "/dcnetlab.v1.DCNetLab/UpgradeProgram"
-	DCNetLab_DeleteProgram_FullMethodName    = "/dcnetlab.v1.DCNetLab/DeleteProgram"
-	DCNetLab_GetProgramLogs_FullMethodName   = "/dcnetlab.v1.DCNetLab/GetProgramLogs"
-	DCNetLab_CreatePlan_FullMethodName       = "/dcnetlab.v1.DCNetLab/CreatePlan"
-	DCNetLab_GetPlan_FullMethodName          = "/dcnetlab.v1.DCNetLab/GetPlan"
-	DCNetLab_ApplyPlan_FullMethodName        = "/dcnetlab.v1.DCNetLab/ApplyPlan"
-	DCNetLab_GetOperation_FullMethodName     = "/dcnetlab.v1.DCNetLab/GetOperation"
-	DCNetLab_ListOperations_FullMethodName   = "/dcnetlab.v1.DCNetLab/ListOperations"
-	DCNetLab_ListGenerations_FullMethodName  = "/dcnetlab.v1.DCNetLab/ListGenerations"
-	DCNetLab_ListProfiles_FullMethodName     = "/dcnetlab.v1.DCNetLab/ListProfiles"
-	DCNetLab_Healthz_FullMethodName          = "/dcnetlab.v1.DCNetLab/Healthz"
+	DCNetLab_CreateLab_FullMethodName             = "/dcnetlab.v1.DCNetLab/CreateLab"
+	DCNetLab_ListLabs_FullMethodName              = "/dcnetlab.v1.DCNetLab/ListLabs"
+	DCNetLab_GetLab_FullMethodName                = "/dcnetlab.v1.DCNetLab/GetLab"
+	DCNetLab_DeleteLab_FullMethodName             = "/dcnetlab.v1.DCNetLab/DeleteLab"
+	DCNetLab_StartLab_FullMethodName              = "/dcnetlab.v1.DCNetLab/StartLab"
+	DCNetLab_StopLab_FullMethodName               = "/dcnetlab.v1.DCNetLab/StopLab"
+	DCNetLab_ListNodes_FullMethodName             = "/dcnetlab.v1.DCNetLab/ListNodes"
+	DCNetLab_ListLinks_FullMethodName             = "/dcnetlab.v1.DCNetLab/ListLinks"
+	DCNetLab_ListAllocations_FullMethodName       = "/dcnetlab.v1.DCNetLab/ListAllocations"
+	DCNetLab_StartNode_FullMethodName             = "/dcnetlab.v1.DCNetLab/StartNode"
+	DCNetLab_StopNode_FullMethodName              = "/dcnetlab.v1.DCNetLab/StopNode"
+	DCNetLab_GetNodeRuntime_FullMethodName        = "/dcnetlab.v1.DCNetLab/GetNodeRuntime"
+	DCNetLab_GetNodeBGP_FullMethodName            = "/dcnetlab.v1.DCNetLab/GetNodeBGP"
+	DCNetLab_GetNodeRoutes_FullMethodName         = "/dcnetlab.v1.DCNetLab/GetNodeRoutes"
+	DCNetLab_GetNodeBGPTable_FullMethodName       = "/dcnetlab.v1.DCNetLab/GetNodeBGPTable"
+	DCNetLab_GetNodeFIB_FullMethodName            = "/dcnetlab.v1.DCNetLab/GetNodeFIB"
+	DCNetLab_GetNodeMetrics_FullMethodName        = "/dcnetlab.v1.DCNetLab/GetNodeMetrics"
+	DCNetLab_GetNodeMetricsHistory_FullMethodName = "/dcnetlab.v1.DCNetLab/GetNodeMetricsHistory"
+	DCNetLab_UploadPackage_FullMethodName         = "/dcnetlab.v1.DCNetLab/UploadPackage"
+	DCNetLab_ListPackages_FullMethodName          = "/dcnetlab.v1.DCNetLab/ListPackages"
+	DCNetLab_DeletePackage_FullMethodName         = "/dcnetlab.v1.DCNetLab/DeletePackage"
+	DCNetLab_GetNodeInventory_FullMethodName      = "/dcnetlab.v1.DCNetLab/GetNodeInventory"
+	DCNetLab_InstallPackage_FullMethodName        = "/dcnetlab.v1.DCNetLab/InstallPackage"
+	DCNetLab_CreateProgram_FullMethodName         = "/dcnetlab.v1.DCNetLab/CreateProgram"
+	DCNetLab_ListPrograms_FullMethodName          = "/dcnetlab.v1.DCNetLab/ListPrograms"
+	DCNetLab_StartProgram_FullMethodName          = "/dcnetlab.v1.DCNetLab/StartProgram"
+	DCNetLab_StopProgram_FullMethodName           = "/dcnetlab.v1.DCNetLab/StopProgram"
+	DCNetLab_UpgradeProgram_FullMethodName        = "/dcnetlab.v1.DCNetLab/UpgradeProgram"
+	DCNetLab_DeleteProgram_FullMethodName         = "/dcnetlab.v1.DCNetLab/DeleteProgram"
+	DCNetLab_GetProgramLogs_FullMethodName        = "/dcnetlab.v1.DCNetLab/GetProgramLogs"
+	DCNetLab_CreatePlan_FullMethodName            = "/dcnetlab.v1.DCNetLab/CreatePlan"
+	DCNetLab_GetPlan_FullMethodName               = "/dcnetlab.v1.DCNetLab/GetPlan"
+	DCNetLab_ApplyPlan_FullMethodName             = "/dcnetlab.v1.DCNetLab/ApplyPlan"
+	DCNetLab_GetOperation_FullMethodName          = "/dcnetlab.v1.DCNetLab/GetOperation"
+	DCNetLab_ListOperations_FullMethodName        = "/dcnetlab.v1.DCNetLab/ListOperations"
+	DCNetLab_ListGenerations_FullMethodName       = "/dcnetlab.v1.DCNetLab/ListGenerations"
+	DCNetLab_ListProfiles_FullMethodName          = "/dcnetlab.v1.DCNetLab/ListProfiles"
+	DCNetLab_Healthz_FullMethodName               = "/dcnetlab.v1.DCNetLab/Healthz"
 )
 
 // DCNetLabClient is the client API for DCNetLab service.
@@ -108,6 +110,14 @@ type DCNetLabClient interface {
 	// deployed node (`ip route`): what actually forwards packets, as
 	// installed by zebra from the RIB.
 	GetNodeFIB(ctx context.Context, in *GetNodeFIBRequest, opts ...grpc.CallOption) (*NodeFIB, error)
+	// GetNodeMetrics samples resource usage of one server live from
+	// its agent, node-exporter style: CPU, memory, load, filesystem,
+	// disk I/O and per-interface network.
+	GetNodeMetrics(ctx context.Context, in *GetNodeMetricsRequest, opts ...grpc.CallOption) (*NodeMetrics, error)
+	// GetNodeMetricsHistory returns the collected resource-usage time
+	// series of one server: 15 s points from the controller's metrics
+	// collector, kept 2 h in memory and 24 h on disk.
+	GetNodeMetricsHistory(ctx context.Context, in *GetNodeMetricsHistoryRequest, opts ...grpc.CallOption) (*NodeMetricsHistory, error)
 	// --- Packages ---
 	// Packages are versioned program artifacts (tar.gz with a
 	// manifest.json) in the controller's repository; lab servers
@@ -312,6 +322,26 @@ func (c *dCNetLabClient) GetNodeFIB(ctx context.Context, in *GetNodeFIBRequest, 
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(NodeFIB)
 	err := c.cc.Invoke(ctx, DCNetLab_GetNodeFIB_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) GetNodeMetrics(ctx context.Context, in *GetNodeMetricsRequest, opts ...grpc.CallOption) (*NodeMetrics, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(NodeMetrics)
+	err := c.cc.Invoke(ctx, DCNetLab_GetNodeMetrics_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) GetNodeMetricsHistory(ctx context.Context, in *GetNodeMetricsHistoryRequest, opts ...grpc.CallOption) (*NodeMetricsHistory, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(NodeMetricsHistory)
+	err := c.cc.Invoke(ctx, DCNetLab_GetNodeMetricsHistory_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -563,6 +593,14 @@ type DCNetLabServer interface {
 	// deployed node (`ip route`): what actually forwards packets, as
 	// installed by zebra from the RIB.
 	GetNodeFIB(context.Context, *GetNodeFIBRequest) (*NodeFIB, error)
+	// GetNodeMetrics samples resource usage of one server live from
+	// its agent, node-exporter style: CPU, memory, load, filesystem,
+	// disk I/O and per-interface network.
+	GetNodeMetrics(context.Context, *GetNodeMetricsRequest) (*NodeMetrics, error)
+	// GetNodeMetricsHistory returns the collected resource-usage time
+	// series of one server: 15 s points from the controller's metrics
+	// collector, kept 2 h in memory and 24 h on disk.
+	GetNodeMetricsHistory(context.Context, *GetNodeMetricsHistoryRequest) (*NodeMetricsHistory, error)
 	// --- Packages ---
 	// Packages are versioned program artifacts (tar.gz with a
 	// manifest.json) in the controller's repository; lab servers
@@ -660,6 +698,12 @@ func (UnimplementedDCNetLabServer) GetNodeBGPTable(context.Context, *GetNodeBGPT
 }
 func (UnimplementedDCNetLabServer) GetNodeFIB(context.Context, *GetNodeFIBRequest) (*NodeFIB, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetNodeFIB not implemented")
+}
+func (UnimplementedDCNetLabServer) GetNodeMetrics(context.Context, *GetNodeMetricsRequest) (*NodeMetrics, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetNodeMetrics not implemented")
+}
+func (UnimplementedDCNetLabServer) GetNodeMetricsHistory(context.Context, *GetNodeMetricsHistoryRequest) (*NodeMetricsHistory, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetNodeMetricsHistory not implemented")
 }
 func (UnimplementedDCNetLabServer) UploadPackage(context.Context, *UploadPackageRequest) (*Package, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UploadPackage not implemented")
@@ -1026,6 +1070,42 @@ func _DCNetLab_GetNodeFIB_Handler(srv interface{}, ctx context.Context, dec func
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DCNetLabServer).GetNodeFIB(ctx, req.(*GetNodeFIBRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_GetNodeMetrics_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetNodeMetricsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).GetNodeMetrics(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_GetNodeMetrics_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).GetNodeMetrics(ctx, req.(*GetNodeMetricsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_GetNodeMetricsHistory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetNodeMetricsHistoryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).GetNodeMetricsHistory(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_GetNodeMetricsHistory_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).GetNodeMetricsHistory(ctx, req.(*GetNodeMetricsHistoryRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1460,6 +1540,14 @@ var DCNetLab_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetNodeFIB",
 			Handler:    _DCNetLab_GetNodeFIB_Handler,
+		},
+		{
+			MethodName: "GetNodeMetrics",
+			Handler:    _DCNetLab_GetNodeMetrics_Handler,
+		},
+		{
+			MethodName: "GetNodeMetricsHistory",
+			Handler:    _DCNetLab_GetNodeMetricsHistory_Handler,
 		},
 		{
 			MethodName: "UploadPackage",

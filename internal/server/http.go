@@ -17,8 +17,9 @@ import (
 
 // NewHTTPServer builds the Kratos HTTP server serving the protobuf
 // API under /api/v1, the WebSocket endpoints (node terminal, topology
-// observations) under /ws/v1 and, when WebDir is set, the built web UI.
-func NewHTTPServer(c *conf.Server, svc *service.DCNetLabService, term TerminalOpener, watcher TopologyWatcher, logger log.Logger) *khttp.Server {
+// observations) under /ws/v1, the Prometheus scrape endpoint under
+// /metrics and, when WebDir is set, the built web UI.
+func NewHTTPServer(c *conf.Server, svc *service.DCNetLabService, term TerminalOpener, watcher TopologyWatcher, msrc MetricsSource, logger log.Logger) *khttp.Server {
 	srv := khttp.NewServer(
 		khttp.Address(c.HTTPAddr),
 		khttp.Middleware(recovery.Recovery(), logging.Server(logger)),
@@ -27,6 +28,7 @@ func NewHTTPServer(c *conf.Server, svc *service.DCNetLabService, term TerminalOp
 	v1.RegisterDCNetLabHTTPServer(srv, svc)
 	srv.HandleFunc("/ws/v1/labs/{labId}/nodes/{nodeId}/terminal", terminalHandler(term, logger))
 	srv.HandleFunc("/ws/v1/labs/{labId}/topology", topologyHandler(watcher))
+	srv.HandleFunc("/metrics", metricsHandler(msrc))
 
 	if c.WebDir != "" {
 		// Registered after the API routes so /api/v1 keeps precedence.

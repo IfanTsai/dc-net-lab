@@ -12,6 +12,7 @@ import (
 	"github.com/ifantsai/dcnetlab/internal/biz"
 	"github.com/ifantsai/dcnetlab/internal/conf"
 	"github.com/ifantsai/dcnetlab/internal/data"
+	"github.com/ifantsai/dcnetlab/internal/metrics"
 	"github.com/ifantsai/dcnetlab/internal/observer"
 	"github.com/ifantsai/dcnetlab/internal/server"
 	"github.com/ifantsai/dcnetlab/internal/service"
@@ -47,7 +48,8 @@ func wireApp(confServer *conf.Server, confData *conf.Data, logger log.Logger, sl
 		cleanup()
 		return nil, nil, err
 	}
-	programUsecase := biz.NewProgramUsecase(programRepo, programAgent, driver, packageUsecase, confServer, slogLogger)
+	history := metrics.NewHistory(confData, slogLogger)
+	programUsecase := biz.NewProgramUsecase(programRepo, programAgent, driver, packageUsecase, history, confServer, slogLogger)
 	planUsecase := biz.NewPlanUsecase(planRepo, manager, driver, programUsecase, confData, slogLogger)
 	operationRepo := data.NewOperationRepo(dataData)
 	operationUsecase := biz.NewOperationUsecase(operationRepo, slogLogger)
@@ -58,10 +60,13 @@ func wireApp(confServer *conf.Server, confData *conf.Data, logger log.Logger, sl
 	terminalUsecase := biz.NewTerminalUsecase(labRepo, topologyRepo, driver, slogLogger)
 	observerStore := data.NewObserverStore(dataData)
 	observerObserver := observer.New(observerStore, driver, slogLogger)
-	httpServer := server.NewHTTPServer(confServer, dcNetLabService, terminalUsecase, observerObserver, logger)
+	httpServer := server.NewHTTPServer(confServer, dcNetLabService, terminalUsecase, observerObserver, history, logger)
 	grpcServer := server.NewGRPCServer(confServer, dcNetLabService, logger)
 	repoServer := server.NewRepoServer(confServer, packageUsecase, slogLogger)
-	app := newApp(confServer, logger, httpServer, grpcServer, repoServer, observerObserver)
+	metricsStore := data.NewMetricsStore(dataData)
+	agent := data.NewMetricsAgent(programAgent)
+	collector := metrics.NewCollector(metricsStore, agent, driver, history, slogLogger)
+	app := newApp(confServer, logger, httpServer, grpcServer, repoServer, observerObserver, collector)
 	return app, func() {
 		cleanup()
 	}, nil
