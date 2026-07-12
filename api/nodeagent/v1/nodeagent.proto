@@ -1,0 +1,153 @@
+// NodeAgent is the gRPC surface of dcnetlab-node-agent, the
+// process supervisor running inside every lab server container. The
+// controller is its only client, reaching it over the containerlab
+// management network. By design there is no arbitrary-command RPC:
+// the agent only installs packages from the controller's repository
+// and supervises declared programs running out of them.
+syntax = "proto3";
+
+package nodeagent.v1;
+
+option go_package = "github.com/ifantsai/dcnetlab/pb/nodeagent/v1;v1";
+
+service NodeAgent {
+  // InstallPackage downloads a package archive from the controller's
+  // repository, verifies its checksum and unpacks it under the
+  // package store. Installing an already present version is a no-op.
+  rpc InstallPackage(InstallPackageRequest) returns (InstallPackageReply);
+  // RemovePackage deletes locally installed package versions; those
+  // referenced by installed programs are kept and reported.
+  rpc RemovePackage(RemovePackageRequest) returns (RemovePackageReply);
+  // Install registers (or replaces) a program definition; the
+  // program must not be running and its package must be installed.
+  rpc Install(InstallRequest) returns (ProgramInfo);
+  // Start launches a program and begins supervising it according to
+  // its restart policy.
+  rpc Start(ProgramRef) returns (ProgramInfo);
+  // Stop terminates a program (SIGTERM, then SIGKILL) and disables
+  // restarts until the next Start.
+  rpc Stop(ProgramRef) returns (ProgramInfo);
+  // Remove stops a program and deletes its definition and logs.
+  rpc Remove(ProgramRef) returns (RemoveReply);
+  // List returns every installed program with its live status.
+  rpc List(ListRequest) returns (ListReply);
+  // ListPackages returns every complete package version in the local
+  // store.
+  rpc ListPackages(ListPackagesRequest) returns (ListPackagesReply);
+  // TailLogs returns the last lines of a program's combined
+  // stdout/stderr log.
+  rpc TailLogs(TailLogsRequest) returns (TailLogsReply);
+}
+
+// PackageRef identifies one package version and where to fetch it.
+// url points at the controller's package repository on the management
+// network; sha256 is the hex digest of the tar.gz archive.
+message PackageRef {
+  string name = 1;
+  string version = 2;
+  string sha256 = 3;
+  string url = 4;
+  // entrypoint is the executable inside the unpacked archive,
+  // relative to its root; the agent marks it executable.
+  string entrypoint = 5;
+}
+
+message InstallPackageRequest {
+  PackageRef package = 1;
+}
+
+message InstallPackageReply {}
+
+message RemovePackageRequest {
+  string name = 1;
+  // version narrows the removal to one version; empty removes every
+  // version of the package not referenced by a program.
+  string version = 2;
+}
+
+message RemovePackageReply {
+  repeated string removed = 1;
+  // in_use lists versions kept because installed programs reference
+  // them, with the referencing program names.
+  repeated InUseVersion in_use = 2;
+}
+
+// InUseVersion is one package version kept during removal and the
+// programs pinning it.
+message InUseVersion {
+  string version = 1;
+  repeated string programs = 2;
+}
+
+// ProgramSpec is the agent-side program definition: an entrypoint of
+// an installed package version plus its arguments.
+message ProgramSpec {
+  string name = 1;
+  string package_name = 2;
+  string package_version = 3;
+  string entrypoint = 4;
+  repeated string args = 5;
+  // restart_policy is Never, OnFailure or Always; oneshot programs
+  // reject Always (systemd semantics).
+  string restart_policy = 6;
+  // type is simple (long-running daemon, the default) or oneshot
+  // (runs to completion), mirroring systemd service types.
+  string type = 7;
+  // auto_start marks the program enabled: the agent starts it on
+  // every boot of its own process (systemd: systemctl enable).
+  bool auto_start = 8;
+}
+
+message InstallRequest {
+  ProgramSpec spec = 1;
+}
+
+message ProgramRef {
+  string name = 1;
+}
+
+// ProgramInfo is the live status of one installed program. State is
+// Configured, Running, Stopped or Failed.
+message ProgramInfo {
+  ProgramSpec spec = 1;
+  string state = 2;
+  int32 pid = 3;
+  int32 restarts = 4;
+  string last_error = 5;
+  // started_at is the unix time of the last successful start, 0 when
+  // never started.
+  int64 started_at = 6;
+}
+
+message RemoveReply {}
+
+message ListRequest {}
+
+message ListReply {
+  repeated ProgramInfo programs = 1;
+}
+
+message ListPackagesRequest {}
+
+// InstalledPackage is one complete package version in the local
+// store.
+message InstalledPackage {
+  string name = 1;
+  string version = 2;
+  string sha256 = 3;
+}
+
+message ListPackagesReply {
+  repeated InstalledPackage packages = 1;
+}
+
+message TailLogsRequest {
+  string name = 1;
+  // lines caps the tail length; the agent applies a default and an
+  // upper bound.
+  int32 lines = 2;
+}
+
+message TailLogsReply {
+  string content = 1;
+}

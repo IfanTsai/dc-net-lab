@@ -19,9 +19,14 @@ api:
 wire:
 	PATH="$(TOOL_PATH)" wire ./cmd/controller
 
+# node-agent, node-cli and trafficgen are static (CGO off): they run
+# inside the Alpine-based FRR containers via a bind mount from bin/.
 build:
 	$(GO) build ./...
 	$(GO) build -o bin/dcnetlab-controller ./cmd/controller
+	CGO_ENABLED=0 $(GO) build -o bin/dcnetlab-node-agent ./serverapps/node-agent
+	CGO_ENABLED=0 $(GO) build -o bin/dcnetlab-node-cli ./serverapps/node-cli
+	CGO_ENABLED=0 $(GO) build -o bin/dcnetlab-trafficgen ./serverapps/trafficgen
 
 test:
 	$(GO) test ./...

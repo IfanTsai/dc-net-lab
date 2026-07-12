@@ -59,6 +59,10 @@ cmd_up() {
 
   echo "building controller..."
   (cd "$ROOT" && go build -o bin/dcnetlab-controller ./cmd/controller)
+  # Static binaries bind-mounted into server containers by the compiler.
+  (cd "$ROOT" && CGO_ENABLED=0 go build -o bin/dcnetlab-node-agent ./serverapps/node-agent)
+  (cd "$ROOT" && CGO_ENABLED=0 go build -o bin/dcnetlab-node-cli ./serverapps/node-cli)
+  (cd "$ROOT" && CGO_ENABLED=0 go build -o bin/dcnetlab-trafficgen ./serverapps/trafficgen)
 
   local web_args=()
   if [ "$dev" = 0 ]; then
