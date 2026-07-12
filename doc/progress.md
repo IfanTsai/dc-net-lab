@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | Iteration 0 | 运行时验证：Controller 骨架、Vue 骨架、两节点拓扑 | ✅ 已完成 |
 | Iteration 1 | 物理网络闭环：Profile、IPAM、ASN、FRR 编译、Plan/Apply、Topology UI | ✅ 已完成，含真实部署验证 |
-| Iteration 2 | Server Program:Compute Server Container、Server Agent、lab-app | ⬜ 未开始 |
+| Iteration 2 | Server Program:Compute Server Container、Server Agent、trafficgen | ✅ 已完成，含 Package 制品部署 |
 | Iteration 3 | Daemon Framework | ⬜ 未开始 |
 | Iteration 4 | Traffic | ⬜ 未开始 |
 | Iteration 5 | 原生抓包（AF_PACKET） | ⬜ 未开始 |
@@ -89,6 +89,55 @@ Create Lab（Micro/Standard Profile）→ Plan（资源分配预览）→ Apply�
 - **启停控制**：页头一键启停数据中心按钮 + 节点抽屉设备启停按钮。
 - 前端加入 Playwright（devDependency），用于 UI 验证截图与后续 E2E。
 
+### Server Program 框架（设计 §9.6–10.6、§15.1，Iteration 2）
+
+用户可以从 UI 在 server 上部署并启停真实程序（Iteration 2 退出标准已达成）。
+
+- **`dcnetlab-trafficgen`**（`serverapps/trafficgen` + `serverapps/internal/trafficgen`）：单二进制六模式（http/tcp/udp 的 server/client），统一 JSON 结构化打点（total/failed/rate/latency 每 5s 一行），为后续 Traffic 复用打底；client 断连自动重拨。
+- **`dcnetlab-node-agent`**（`serverapps/node-agent` + `serverapps/internal/agent`）：每台 server 容器内的进程监督器，gRPC（`api/nodeagent/v1`，默认 `:50061`，管理网可达）提供 InstallPackage/Install/Start/Stop/Remove/List/TailLogs；进程组管理（Setpgid + SIGTERM→SIGKILL）、RestartPolicy（Never/OnFailure/Always，指数退避封顶 15s）、meta.json 持久化（agent 重启杀残留进程并恢复期望态）、日志落盘 + 5MB 轮转；按设计**无任意命令执行接口**，只能运行制品库中带校验和的包。
+- **交付形态**：`make build` 产出静态二进制（CGO off，跑在 Alpine 基础的 FRR 容器里），编译器给 server 节点注入单文件 `binds`（仅 agent，语义上等价于 OS 预装的 node agent；`--bin-dir` 默认 controller 同目录）+ exec 后台拉起；不构建独立镜像。
+- **Program 资源**（`internal/model/program.go` + biz/data/service 分层 + `pb` API）：`/api/v1/labs/{labId}/programs` CRUD + start/stop/upgrade + logs；desired state 存 controller SQLite，**独立于网络 Plan/Apply**；agent 地址运行时经 `docker inspect` 解析（`Driver.NodeAddress`），不依赖模型中的管理 IP。
+- **重部署自动恢复**：apply 新增 `RestorePrograms` 步骤——`--reconfigure` 摧毁容器后先向新 agent 重装包、再按 desired state 重装重启程序（等待 agent 就绪最长 30s）。关键坑：**每次 plan 重建节点拿到新 ID**，程序以 ServerName（跨代次稳定）重绑定并回填新 ServerID。已实测：重部署后程序自动回到 Running，跨 fabric 流量秒级恢复。
+- **Programs UI**：新页面（列表 3s 轮询 / 创建对话框选 server+软件包+版本+参数+重启策略 / 启停删除升级 / 日志抽屉）；未部署实验禁用操作并提示。
+- **真实环境验收**（dc1，25 容器）：rack-1 server 起 `http-server`、pod-2 rack-3 server 起 `http-client --interval 500ms` 跨 fabric 请求，双端日志 2 req/s、0 失败、延迟约 0.5ms；停止/启动/删除、重部署恢复全部验证通过。
+
+### Package 制品部署流程（设计 §9.6 Program Package，Iteration 2.5）
+
+把"业务程序如何到达 server"抽象成真实数据中心的部署链路：制品入库 → 内部源分发 → 校验安装 → 运行，替代此前内置应用直接 bind mount 的交付捷径。
+
+- **Package 资源**（`internal/model/package.go` + biz/data/service 分层）：tar.gz 制品 + 根目录 `manifest.json`（name/version/entrypoint/description）为唯一身份来源；SQLite 存元数据（`UNIQUE(name, version)`），payload 落盘 `data/packages/<name>/<version>.tar.gz`；`/api/v1/packages` 提供上传（bytes/base64）、列表（name 升序 + 版本降序）、删除。
+- **内置包同链路**：Controller 启动时把构建产物 trafficgen 打包注册为 builtin 包（`trafficgen@0.1.0`，不可删除；名字保留）；同版本二进制内容变化（开发迭代）自动替换 payload 并更新校验和，agent 端按 sha 比对触发重装。
+- **拉模型分发**：Controller 在 `--repo-listen`（默认 `0.0.0.0:50062`）暴露只读包仓库（`GET /packages/<name>/<version>`）；`InstallPackage` 指令携带 URL + sha256，URL 主机为该 server 容器管理网网关（`Driver.NodeGateway`，经 docker inspect 发现），agent 主动下载、流式校验 sha、防路径逃逸解包（拒绝 `..`/绝对路径/链接）、原子 rename 激活，同版本同 sha 幂等跳过。
+- **多版本 + 升级回滚**：agent 包存储按 `packages/<name>/<version>/` 共存（GC 保留最近 3 版 + 程序引用的版本）；`POST .../programs/{id}/upgrade {version}` 切换引用并重启（先停旧进程再装新定义），回滚是同一操作，本地已有版本**不重新下载**（实测 agent 安装事件数不变）。
+- **Program 引用 package@version**：`ProgramSpec` 以 `packageName + packageVersion + entrypoint（自包 denormalize）+ args` 取代原 mode 字段；存量 mode 程序在数据层启动迁移中自动转换为 `trafficgen@0.1.0` 引用（mode 折叠为第一个参数）。
+- **代码结构隔离**：server 内运行的程序移入顶层 `serverapps/` 子树（`serverapps/{node-agent,trafficgen}` + `serverapps/internal/{agent,trafficgen}`），Go internal 规则硬性阻止 controller 引用其实现；两侧共享的线上契约常量（端口/状态/重启策略）抽到 `internal/agentapi`。
+- **命名定稿**：内置流量应用定名 `trafficgen`（原 lab-app）、容器内 agent 定名 `node-agent`（原 server-agent），目录/二进制/proto（`api/nodeagent/v1`，服务 `NodeAgent`）/builtin 包名全链路一致；存量程序引用与旧 builtin 包行经数据层启动迁移自动更新。
+- **容器内 pkg CLI**：`pkg list|list <name>|install <name>[@<ver>]|remove <name>[@<ver>]`——登录 server 终端即可像用发行版包管理器一样查看制品库与装卸包，对应真实服务器上的 `yum/apt` 运维体验。CLI 是独立的多调用二进制 `node-cli`（busybox 式，`pkg` 为其软链，按 `argv[0]` 分发子命令，`node-cli pkg ...` 等价）；daemon 与 CLI 在容器内以裸名挂载（`/opt/dcnetlab/bin/{node-agent,node-cli}`，进程名即 `node-agent`），部署时软链进 `/usr/local/bin`。包仓库新增 JSON index 端点（`GET /packages`、`GET /packages/<name>`，按版本降序）；agent 新增 `RemovePackage` RPC（被程序引用的版本拒删，回复携带引用它的程序名）；`pkg remove` 一个版本都没删掉时按错误处理（退出码 1，报错指明 `<pkg>@<ver> is in use by program <name>`），部分删除成功时保留版本以 `kept:` 行说明原因；安装经本机 daemon 的 gRPC 走同一条下载/校验/解包链路（保持包存储单写者）。repo 地址自动发现：`--repo`/`DCNETLAB_REPO` → daemon 在每次安装时记下的 `repo.url` → eth0 网段首地址 + 默认端口 50062。
+- **Packages UI**：新"软件包"页面（列表含版本/入口/大小/SHA-256/builtin 标记、tar.gz 上传、删除保护）；Programs 创建对话框改为选包 + 版本（trafficgen 保留模式下拉作为参数预设），行操作新增"升级"（版本切换对话框）。
+- **UI 直装包到服务器**：包不一定要以 Program 运行——工具类静态 binary 的部署诉求走"安装到服务器"行操作（`POST /api/v1/labs/{labId}/packages/{name}/{version}/install`，选实验 + 多选 server，空选即全部），Controller 逐台调 agent `InstallPackage`（幂等），逐台返回成败（部分失败不中断，对话框内逐行展示）；对应 `apt install` 装完即用、无需 service unit 的场景，装完终端里直接可执行。
+- **真实环境验收**（dc1）：上传 `demo@1.0.0/2.0.0`（shell 服务）→ 部署运行 → 升级 2.0.0（日志切 v2、双版本目录共存）→ 回滚 1.0.0（无重复下载）→ 重部署后 trafficgen 双程序 + demo 全部自动恢复 Running、流量归零丢包；builtin 删除被拒。
+
+### Program 的 systemd 化语义（类型 / 开机自启 / 崩溃自愈）
+
+参考 systemd service 语义补齐"真实环境部署的不一定是 daemon"这块拼图，并把 agent 的两处生命周期缺口（graceful 重启误停程序、容器重启后 agent 无人拉起）补上。
+
+- **程序类型**（systemd `Type=`）：`ProgramSpec` 增加 `type`——`simple`（常驻服务，默认）/ `oneshot`（一次性任务，跑完即止）。oneshot 正常退出进入新终态 `Exited`（区别于 Stopped/Failed，对应 systemd oneshot 的 inactive/dead）；oneshot 拒绝 `Always` 重启策略（与 systemd 行为一致，agent 与 biz 双侧校验）。UI 创建对话框用类型单选联动重启策略选项，oneshot 的启动按钮显示"运行"。
+- **开机自启**（systemd `systemctl enable`）：`ProgramSpec` 增加 `autoStart`。启用的程序在每次"开机"时自动启动，无论之前是否在跑：agent 进程启动（`NewManager` 恢复）与重部署（`RestorePrograms`）都是开机路径。oneshot 的 Start 语义是"运行一次"（`systemctl start` 于 oneshot unit）：controller 侧 desired 即刻落回 Stopped，只有 autoStart 才会让它在下次开机/重部署重跑。
+- **graceful shutdown 修复**：原 `Manager.Shutdown` 借道 `Stop` 把每个程序的 desired 持久化成 Stopped，导致 agent 优雅重启后所有程序被"恢复"为停止态——把"supervisor 要退出"和"用户想停程序"两个语义混在了一起。现拆出 `terminate`（只杀进程组、不动 desired），Shutdown 走 terminate；systemd 重启自身同样不会 disable 任何服务。
+- **agent 崩溃自愈**：Observer 深度巡检（6s）对 running 状态的 server 容器探测 agent 端口（500ms TCP dial），拒连即通过 `Driver.Exec` 重放启动脚本拉起 agent——脚本收敛为 `agentapi.StartAgentScript` 单一来源，部署时的 containerlab exec 与自愈路径共用，杜绝漂移。复活的 agent 从本地 `meta.json` 恢复 desired Running 与 autoStart 的程序，自愈即"服务器开机"。覆盖场景：agent 被 OOM/误杀、宿主机挂起唤醒、容器被平台外重启（此时数据面 veth 仍需重部署恢复，但包/程序管理即刻可用）。
+- **接线**：`api/nodeagent/v1` 与 `api/dcnetlab/v1` 的 `ProgramSpec` 增加 `type`/`auto_start`；存量程序 type 为空视同 simple，无需迁移。agent 新增单测：graceful shutdown 后恢复 Running、autoStart 冷启动拉起、oneshot 全生命周期（Exited、不重跑、Always 拒绝）。
+
+### 批量交付与节点视角（范围选择 / 库存 / program CLI）
+
+把"往一台 server 上装东西"扩展成面向机群的交付操作，并补齐"这台机器上到底有什么"的节点视角。
+
+- **范围选择器**：新组件 `ServerScopeSelect`（el-cascader，pod → rack → server 树，勾选分支即整组选中，值为叶子 server ID 列表），Packages 安装对话框与 Programs 创建对话框共用；安装侧保留"空选即全部"（dc 粒度），部署侧至少选一台。
+- **批量部署程序**：`CreateProgram` 请求 `server_id` 升级为 `repeated server_ids`——同一份定义在多台 server 各建一个 Program 资源（类 DaemonSet 语义），回复携带 programs + 逐台 failures（重名、非 server 目标等不中断其余目标；全部失败才报错）。程序名在每台 server 上唯一（agent 侧身份），跨 server 允许重名。
+- **节点库存**（`GET /labs/{id}/nodes/{nodeId}/inventory`）：拓扑图点击 server，抽屉新增"程序"标签页，实时从该机 agent 拉取已安装包列表（agent 新增 `ListPackages` RPC，按 sha 标记只报告完整版本）与全部程序（含终端里自建的程序，界面标注"非托管"）；Controller 侧按 ServerName+Name 匹配打 `managed` 标记。
+- **容器内 program 命令**：`node-cli` 新增 `program` 命令组（软链 `program`），语义与 UI Programs 页逐条对齐——`deploy <name> <pkg>[@ver] [--type oneshot] [--auto-start] [--restart-policy P] [-- args]`（按需从仓库装包、注册不启动）、`start`（oneshot 即"运行一次"）、`stop/remove/list/logs`。终端里建的程序是**节点本地**的：agent 重启/开机自启语义齐全，但 Controller 不管理、重部署不恢复（对应真实世界里绕过配置管理手写 systemd unit），在 UI 库存页可见并标注。
+- **接线**：`pkg install` 的"索引解析 + 幂等安装"抽成 `resolveEntry/installEntry` 供 pkg 与 program 共用；启动脚本软链增加 `program`（golden 基线随之更新）。
+- **文档**：新增 [node-agent.md](node-agent.md)——agent 的定位/状态目录/gRPC API/程序模型（systemd 语义映射）/运行逻辑（boot 恢复、监督循环、优雅退出、自愈、托管 vs 非托管），以及 `pkg`/`program` 两组容器内命令的完整参考。
+
 ### 代码规范与工程化
 
 - [golang-style.md](golang-style.md) 为 Go 代码基线；golangci-lint（`.golangci.yml`，版本固定）+ 自研 `scripts/check-style.py`（空行语义）挂在 `make lint`，零告警纳入提交门禁。
@@ -102,6 +151,7 @@ Create Lab（Micro/Standard Profile）→ Plan（资源分配预览）→ Apply�
 4. **WSL2 内核限制**：macvlan 不支持 `addrgenmode random`（仅 IPv6 相关，已规避）；VRRP macvlan 需显式 `up` 且 VIP 用 /32，否则 vrrpd 不发通告、双 Master。
 5. **vtysh JSON 输出**：缺 `/etc/frr/vtysh.conf` 时警告会混入 stdout，产物绑定 vtysh.conf + 解析时跳到首个 `{` 双保险。
 6. **wire v0.7.0** 自带的 x/tools 解析不了新版本 Go，`init-tools.sh` 用临时模块升级 x/tools 后构建。
+7. **server 默认路由 exec 竞态**：`ip route replace default via <gw>` 在 zebra 尚未给 bond0 配地址时因 nexthop 不可达而失败（containerlab exec 与 FRR 启动并发），管理网默认路由反客为主、流量静默逃逸——加 `dev bond0 onlink` 让路由安装不依赖 nexthop 预先可达。
 
 ## 与设计文档的已知偏差
 
@@ -113,7 +163,9 @@ Create Lab（Micro/Standard Profile）→ Plan（资源分配预览）→ Apply�
 
 ## 下一步计划（按优先级）
 
-1. **Server Agent 与 Program 框架**（Iteration 2）：Compute Server 镜像、`dcnetlab-server-agent`、Program 安装/启停/日志、`lab-app` HTTP/TCP/UDP 模式。可顺带解决 server 访问外网需求（external 节点做 NAT 出口 + BGP default-originate 逐级下发，镜像需带 iptables）。
+1. **Daemon Framework**（Iteration 3）：在 Program 之上加受控子类型（启动顺序、就绪/存活检查、配置模板），为 Pingmesh 等常驻探测打底。
+2. **server 访问外网**：external 节点做 NAT 出口 + BGP default-originate 逐级下发（自定义 Program Package 需要拉依赖时用，镜像需带 iptables）。
+3. **Package 格式扩展**：deb（需 Debian 系 server 镜像）与 OCI Image 作为 `format` 扩展位；server 扩缩容迭代时引入"集成进镜像"的装机预装通道（第一个搬进镜像的是 agent）。
 
 ## 环境备注
 
