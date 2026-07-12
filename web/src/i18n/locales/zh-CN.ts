@@ -83,6 +83,8 @@ export default {
     namePlaceholder: 'my-dc',
     profileMicro: 'Micro(1 Pod、2 Spine、1 机柜 MLAG Leaf 对、2 Server)',
     profileStandard: 'Standard(2 Pod、每 Pod 2 机柜、冗余出口)',
+    internetAccess: '外网访问',
+    internetAccessHint: '经 dcedge NAT 和 external 出口访问真实互联网,需先执行 make edge-image',
     created: '实验 {name} 已创建',
     planTitle: '变更计划',
     planSummary: '代次 {base} → {next},共 {ops} 项变更、{allocs} 项资源分配',

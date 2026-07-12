@@ -31,6 +31,7 @@ export interface TopologySpec {
   dcEdges: number
   superSpines: number
   pods: PodSpec[]
+  internetAccess?: boolean
 }
 
 export interface Lab {

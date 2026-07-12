@@ -8,8 +8,8 @@ const base = '/api/v1'
 export const labApi = {
   list: () => api.get<{ labs: Lab[] }>(`${base}/labs`).then((r) => r.labs),
   get: (id: string) => api.get<Lab>(`${base}/labs/${id}`),
-  create: (name: string, profile: string, topology?: TopologySpec) =>
-    api.post<Lab>(`${base}/labs`, { name, profile, topology }),
+  create: (name: string, profile: string, internetAccess = false, topology?: TopologySpec) =>
+    api.post<Lab>(`${base}/labs`, { name, profile, internetAccess, topology }),
   remove: (id: string) => api.del<{ operationId: string }>(`${base}/labs/${id}`),
 
   nodes: (id: string) => api.get<{ nodes: Node[] }>(`${base}/labs/${id}/nodes`).then((r) => r.nodes),

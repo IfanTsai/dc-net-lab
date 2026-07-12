@@ -83,6 +83,8 @@ export default {
     namePlaceholder: 'my-dc',
     profileMicro: 'Micro (1 pod, 2 spine, 1 rack MLAG leaf pair, 2 servers)',
     profileStandard: 'Standard (2 pods, 2 racks each, redundant edge)',
+    internetAccess: 'Internet',
+    internetAccessHint: 'Real internet via dcedge NAT and the external exit; run make edge-image first',
     created: 'Lab {name} created',
     planTitle: 'Change Plan',
     planSummary:

@@ -11,7 +11,7 @@ const store = useLabStore()
 const { t } = useI18n()
 
 const createVisible = ref(false)
-const createForm = ref({ name: '', profile: 'micro' })
+const createForm = ref({ name: '', profile: 'micro', internetAccess: false })
 const plan = ref<Plan | null>(null)
 const planVisible = ref(false)
 const activeOpId = ref('')
@@ -20,7 +20,11 @@ onMounted(() => store.refreshLabs())
 
 async function createLab() {
   try {
-    const lab = await labApi.create(createForm.value.name, createForm.value.profile)
+    const lab = await labApi.create(
+      createForm.value.name,
+      createForm.value.profile,
+      createForm.value.internetAccess,
+    )
     createVisible.value = false
     createForm.value.name = ''
     await store.refreshLabs()
@@ -121,6 +125,10 @@ const phaseType: Record<string, string> = {
             <el-option :label="t('labs.profileStandard')" value="standard" />
           </el-select>
         </el-form-item>
+        <el-form-item :label="t('labs.internetAccess')">
+          <el-switch v-model="createForm.internetAccess" />
+          <span class="hint">{{ t('labs.internetAccessHint') }}</span>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="createVisible = false">{{ t('common.cancel') }}</el-button>
@@ -154,4 +162,5 @@ const phaseType: Record<string, string> = {
 <style scoped>
 .header { display: flex; justify-content: space-between; align-items: center; }
 .error-text { color: var(--el-color-danger); font-size: 12px; }
+.hint { margin-left: 8px; color: var(--el-text-color-secondary); font-size: 12px; }
 </style>
