@@ -8,6 +8,10 @@ package agentapi
 // DefaultPort is the agent's gRPC port on the management network.
 const DefaultPort = 50061
 
+// DefaultMetricsPort is the agent's Prometheus /metrics port,
+// node-exporter's conventional 9100.
+const DefaultMetricsPort = 9100
+
 // DefaultRepoPort is the controller's package repository port; lab
 // servers reach it via their management gateway.
 const DefaultRepoPort = 50062

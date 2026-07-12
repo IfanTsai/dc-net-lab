@@ -38,6 +38,14 @@
 | `List` | 全部程序的实时快照（spec + 状态/PID/重启次数） |
 | `TailLogs` | 程序日志尾部（默认 200 行,上限 2000 行） |
 
+## Prometheus 指标端点（`GET /metrics`,默认端口 9100）
+
+除 gRPC 外,agent 在管理网上暴露一个标准的 Prometheus text format 端点（`-metrics-listen`,默认 `:9100`,即 node-exporter 惯例端口）,指标族以 `dcnetlab_node_` 为前缀。遵循 Prometheus 数据模型,只导出**累计计数器与瞬时 gauge,不导出速率**——速率由抓取方差分（controller 采集器相邻 sweep 差分;外部 Prometheus 直接抓该端点后自行 `rate()`）。
+
+采集语义（共享内核容器的适配）:CPU/内存/磁盘 I/O 取自容器自身 cgroup v2 子树,进程数取自容器 PID namespace,网卡流量取自容器 netns（`/proc/net/dev`,`iface` 标签）,负载为共享宿主内核值,uptime 为 PID 1 年龄;cgroup 不可用时 CPU/内存回退到宿主 `/proc/stat`、`/proc/meminfo`。内存 used 采用 working set 口径（`memory.current - inactive_file`）。
+
+主要指标族:`dcnetlab_node_cpu_seconds_total{mode}`、`dcnetlab_node_cpu_usage_seconds_total`、`dcnetlab_node_cpu_limit_cores`、`dcnetlab_node_memory_{used,cache,limit,swap_used}_bytes`、`dcnetlab_node_load{1,5,15}`、`dcnetlab_node_filesystem_{size,used,avail}_bytes`、`dcnetlab_node_procs`、`dcnetlab_node_uptime_seconds`、`dcnetlab_node_disk_{read,written}_bytes_total`、`dcnetlab_node_disk_{reads,writes}_total`、`dcnetlab_node_network_{receive,transmit}_{bytes,packets,errors,drop}_total{iface}`。
+
 ## 程序模型（systemd 语义）
 
 | 概念 | 对应 systemd | 说明 |
