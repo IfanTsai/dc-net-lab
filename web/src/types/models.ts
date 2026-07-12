@@ -245,3 +245,83 @@ export interface ProfileInfo {
   name: string
   topology: TopologySpec
 }
+
+// Package is one versioned program artifact (tar.gz + manifest) in
+// the controller's repository; the bundled trafficgen is the builtin.
+export interface Package {
+  meta: ResourceMeta
+  version: string
+  format: string
+  entrypoint: string
+  description?: string
+  sha256: string
+  // int64 fields are strings in protobuf JSON.
+  sizeBytes?: string
+  builtin?: boolean
+}
+
+// ServerInstallResult is the per-server outcome of delivering a
+// package onto lab servers; error is empty on success.
+export interface ServerInstallResult {
+  serverId: string
+  serverName: string
+  error?: string
+}
+
+// NodeInventory is what is actually on one server, live from its
+// agent; managed=false marks node-local programs created via the
+// in-container CLI.
+export interface NodeInventory {
+  packages?: { name: string; version: string; sha256: string }[]
+  programs?: {
+    name: string
+    packageName: string
+    packageVersion: string
+    entrypoint?: string
+    args?: string[]
+    restartPolicy: string
+    type?: string
+    autoStart?: boolean
+    state: string
+    pid?: number
+    restarts?: number
+    lastError?: string
+    managed?: boolean
+  }[]
+}
+
+// TrafficgenMode is a subcommand of the builtin trafficgen package; the UI
+// offers them as presets that become the first program argument.
+export type TrafficgenMode =
+  | 'http-server' | 'http-client' | 'tcp-server' | 'tcp-client' | 'udp-server' | 'udp-client'
+
+// Program is a supervised process on a lab server, managed by the
+// per-server dcnetlab-node-agent; it runs the entrypoint of an
+// installed Package version.
+export interface Program {
+  meta: ResourceMeta
+  spec: {
+    labId: string
+    serverId: string
+    serverName: string
+    packageName: string
+    packageVersion: string
+    entrypoint?: string
+    args?: string[]
+    restartPolicy: string
+    // type follows systemd service semantics: simple (daemon) or
+    // oneshot (runs to completion); autoStart mirrors systemctl
+    // enable (start on every server boot and redeploy).
+    type?: 'simple' | 'oneshot' | string
+    autoStart?: boolean
+    desiredState: string
+  }
+  status: {
+    state: 'Configured' | 'Running' | 'Stopped' | 'Failed' | 'Exited' | 'Unknown' | string
+    pid?: number
+    restarts?: number
+    lastError?: string
+    startedAt?: string
+    lastObserved?: string
+  }
+}

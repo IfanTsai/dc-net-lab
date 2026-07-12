@@ -12,6 +12,8 @@ const { t, locale } = useI18n()
 const menu = computed(() => [
   { path: '/labs', label: t('menu.labs') },
   { path: '/topology', label: t('menu.topology') },
+  { path: '/programs', label: t('menu.programs') },
+  { path: '/packages', label: t('menu.packages') },
   { path: '/operations', label: t('menu.operations') },
 ])
 

@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { Lab, Link, Node, NodeBGP, NodeBGPTable, NodeRoutes, NodeRuntime, Operation, Plan, ProfileInfo, TopologySpec } from '../types/models'
+import type { Lab, Link, Node, NodeBGP, NodeBGPTable, NodeInventory, NodeRoutes, NodeRuntime, Operation, Package, Plan, ProfileInfo, Program, ServerInstallResult, TopologySpec } from '../types/models'
 
 const base = '/api/v1'
 
@@ -36,6 +36,35 @@ export const labApi = {
     api.get<NodeBGPTable>(`${base}/labs/${labId}/nodes/${nodeId}/bgp-table`),
   nodeFIB: (labId: string, nodeId: string) =>
     api.get<NodeRoutes>(`${base}/labs/${labId}/nodes/${nodeId}/fib`),
+
+  packages: () => api.get<{ packages: Package[] }>(`${base}/packages`).then((r) => r.packages),
+  uploadPackage: (payloadBase64: string) =>
+    api.post<Package>(`${base}/packages`, { payload: payloadBase64 }),
+  deletePackage: (name: string, version: string) =>
+    api.del<Record<string, never>>(`${base}/packages/${name}/${version}`),
+  installPackage: (labId: string, name: string, version: string, serverIds: string[]) =>
+    api.post<{ results: ServerInstallResult[] }>(
+      `${base}/labs/${labId}/packages/${name}/${version}/install`,
+      { serverIds },
+    ).then((r) => r.results ?? []),
+
+  programs: (labId: string) =>
+    api.get<{ programs: Program[] }>(`${base}/labs/${labId}/programs`).then((r) => r.programs),
+  createProgram: (labId: string, body: { name: string; serverIds: string[]; packageName: string; packageVersion: string; args?: string[]; type?: string; autoStart?: boolean; restartPolicy: string }) =>
+    api.post<{ programs?: Program[]; failures?: ServerInstallResult[] }>(`${base}/labs/${labId}/programs`, body)
+      .then((r) => ({ programs: r.programs ?? [], failures: r.failures ?? [] })),
+  nodeInventory: (labId: string, nodeId: string) =>
+    api.get<NodeInventory>(`${base}/labs/${labId}/nodes/${nodeId}/inventory`),
+  startProgram: (labId: string, id: string) =>
+    api.post<Program>(`${base}/labs/${labId}/programs/${id}/start`),
+  stopProgram: (labId: string, id: string) =>
+    api.post<Program>(`${base}/labs/${labId}/programs/${id}/stop`),
+  upgradeProgram: (labId: string, id: string, version: string) =>
+    api.post<Program>(`${base}/labs/${labId}/programs/${id}/upgrade`, { version }),
+  deleteProgram: (labId: string, id: string) =>
+    api.del<Record<string, never>>(`${base}/labs/${labId}/programs/${id}`),
+  programLogs: (labId: string, id: string, tail = 200) =>
+    api.get<{ content: string }>(`${base}/labs/${labId}/programs/${id}/logs?tail=${tail}`).then((r) => r.content),
 
   createPlan: (id: string) => api.post<Plan>(`${base}/labs/${id}/plans`),
   getPlan: (planId: string) => api.get<Plan>(`${base}/plans/${planId}`),

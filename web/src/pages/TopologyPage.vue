@@ -4,7 +4,7 @@ import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useLabStore } from '../stores/lab'
 import { labApi } from '../api/lab'
-import type { Link, Node, NodeBGP, NodeBGPTable, NodeRoutes, NodeRuntime } from '../types/models'
+import type { Link, Node, NodeBGP, NodeBGPTable, NodeInventory, NodeRoutes, NodeRuntime } from '../types/models'
 import TopologyCanvas from '../components/TopologyCanvas.vue'
 import TerminalPanel from '../components/TerminalPanel.vue'
 
@@ -141,6 +141,8 @@ const nodeBGPTable = ref<NodeBGPTable | null>(null)
 const bgpTableLoading = ref(false)
 const nodeFIB = ref<NodeRoutes | null>(null)
 const fibLoading = ref(false)
+const nodeInventory = ref<NodeInventory | null>(null)
+const inventoryLoading = ref(false)
 
 // Opening the drawer for another node resets to the simulated view;
 // observation sweeps replace the node object with the same id and
@@ -152,6 +154,7 @@ watch(selectedNode, (node, prev) => {
     nodeRoutes.value = null
     nodeBGPTable.value = null
     nodeFIB.value = null
+    nodeInventory.value = null
     nodeBGP.value = null
     if (node) void loadBGP(node)
   }
@@ -162,6 +165,7 @@ watch(drawerTab, (tab) => {
   if (tab === 'routes') void refreshRoutes()
   if (tab === 'bgp-table') void refreshBGPTable()
   if (tab === 'fib') void refreshFIB()
+  if (tab === 'programs') void refreshInventory()
 })
 
 // fetchView wraps the shared fetch-on-demand pattern of the drawer
@@ -187,6 +191,21 @@ const refreshRuntime = () => fetchView(nodeRuntime, runtimeLoading, labApi.nodeR
 const refreshRoutes = () => fetchView(nodeRoutes, routesLoading, labApi.nodeRoutes)
 const refreshBGPTable = () => fetchView(nodeBGPTable, bgpTableLoading, labApi.nodeBGPTable)
 const refreshFIB = () => fetchView(nodeFIB, fibLoading, labApi.nodeFIB)
+const refreshInventory = () => fetchView(nodeInventory, inventoryLoading, labApi.nodeInventory)
+
+// programStateTag mirrors the Programs page state colouring.
+function programStateTag(state: string): string {
+  switch (state) {
+    case 'Running':
+      return 'success'
+    case 'Failed':
+      return 'danger'
+    case 'Unknown':
+      return 'warning'
+    default:
+      return 'info'
+  }
+}
 
 // The FIB mixes two layers, like a real switch: LPM forwarding
 // entries and host (punt) entries for the device's own addresses.
@@ -539,6 +558,53 @@ function linkKindLabel(l: Link): string {
             </el-table>
           </el-tab-pane>
 
+          <el-tab-pane
+            v-if="selectedNode.spec.role === 'server'"
+            :label="t('topology.programsView')"
+            name="programs"
+          >
+            <div class="runtime-toolbar">
+              <span class="runtime-hint">{{ t('topology.programsHint') }}</span>
+              <el-button size="small" :loading="inventoryLoading" @click="refreshInventory">
+                {{ t('topology.refresh') }}
+              </el-button>
+            </div>
+            <template v-if="nodeInventory">
+              <h4>{{ t('programs.title') }}</h4>
+              <el-table :data="nodeInventory.programs ?? []" size="small" v-loading="inventoryLoading">
+                <el-table-column :label="t('common.name')" width="130">
+                  <template #default="{ row }">
+                    <div>{{ row.name }}</div>
+                    <el-tag v-if="!row.managed" size="small" type="warning">{{ t('topology.nodeLocal') }}</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column :label="t('programs.package')">
+                  <template #default="{ row }">
+                    <code>{{ row.packageName }}@{{ row.packageVersion }}</code>
+                    <div class="sub">
+                      {{ row.type === 'oneshot' ? t('programs.typeOneshot') : t('programs.typeSimple') }}
+                      <template v-if="row.autoStart"> · {{ t('programs.autoStart') }}</template>
+                    </div>
+                  </template>
+                </el-table-column>
+                <el-table-column :label="t('programs.state')" width="110">
+                  <template #default="{ row }">
+                    <el-tag size="small" :type="programStateTag(row.state)">{{ row.state }}</el-tag>
+                    <div class="sub" v-if="row.state === 'Running'">pid {{ row.pid }} · ↻{{ row.restarts ?? 0 }}</div>
+                  </template>
+                </el-table-column>
+              </el-table>
+
+              <h4>{{ t('menu.packages') }}</h4>
+              <el-table :data="nodeInventory.packages ?? []" size="small" v-loading="inventoryLoading">
+                <el-table-column prop="name" :label="t('common.name')" width="150" />
+                <el-table-column prop="version" :label="t('packages.version')" width="110" />
+                <el-table-column :label="t('packages.digest')">
+                  <template #default="{ row }"><code>{{ (row.sha256 ?? '').slice(0, 12) }}</code></template>
+                </el-table-column>
+              </el-table>
+            </template>
+          </el-tab-pane>
           <el-tab-pane :label="t('topology.runtimeView')" name="runtime">
             <div class="runtime-toolbar">
               <span class="runtime-hint">{{ t('topology.runtimeHint') }}</span>
