@@ -158,6 +158,91 @@ func TestCompileGolden(t *testing.T) {
 	}
 }
 
+// internetFixture: external-1 <-> dcedge-1, the tiers involved in the
+// internet exit path.
+func internetFixture(internetAccess bool) (*model.Lab, []*model.Node, []*model.Link) {
+	lab := &model.Lab{
+		Meta: model.ResourceMeta{ID: "lab-1", Name: "golden"},
+		Spec: model.LabSpec{Topology: model.TopologySpec{InternetAccess: internetAccess}},
+	}
+
+	external := &model.Node{
+		Meta: model.ResourceMeta{ID: "n-ext", Name: "external-1"},
+		Spec: model.NodeSpec{
+			LabID: "lab-1", Role: model.RoleExternal, ASN: 64500,
+			Loopback:    netip.MustParsePrefix("10.1.0.0/32"),
+			RuntimeType: model.RuntimeFRR,
+		},
+	}
+
+	dcedge := &model.Node{
+		Meta: model.ResourceMeta{ID: "n-edge", Name: "dcedge-1"},
+		Spec: model.NodeSpec{
+			LabID: "lab-1", Role: model.RoleDCEdge, ASN: 64600,
+			Loopback:    netip.MustParsePrefix("10.1.0.1/32"),
+			RuntimeType: model.RuntimeFRR,
+		},
+	}
+
+	links := []*model.Link{{
+		Meta: model.ResourceMeta{ID: "l-1", Name: "external-1--dcedge-1"},
+		Spec: model.LinkSpec{
+			LabID: "lab-1", Kind: model.LinkFabric,
+			EndpointA: model.LinkEndpoint{NodeID: "n-ext", NodeName: "external-1", Interface: "eth1", Address: netip.MustParsePrefix("10.0.0.0/31")},
+			EndpointB: model.LinkEndpoint{NodeID: "n-edge", NodeName: "dcedge-1", Interface: "eth1", Address: netip.MustParsePrefix("10.0.0.1/31")},
+			MTU:       9100,
+		},
+	}}
+
+	return lab, []*model.Node{external, dcedge}, links
+}
+
+// TestInternetAccessArtifacts guards the internet exit path: the
+// external originates a default route towards its dcedge, the dcedge
+// SNATs internet-bound traffic to its loopback, and both run the
+// iptables-capable edge image. With the toggle off none of this may
+// appear.
+func TestInternetAccessArtifacts(t *testing.T) {
+	lab, nodes, links := internetFixture(true)
+	art, err := Compile(lab, nodes, links, containerlab.DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	extConf := string(art.Files["configs/external-1/frr.conf"])
+	if want := "neighbor 10.0.0.1 default-originate"; !strings.Contains(extConf, want) {
+		t.Errorf("external config missing %q:\n%s", want, extConf)
+	}
+
+	if edgeConf := string(art.Files["configs/dcedge-1/frr.conf"]); strings.Contains(edgeConf, "default-originate") {
+		t.Errorf("dcedge must not originate a default route:\n%s", edgeConf)
+	}
+
+	topo := string(art.ClabTopology)
+	for _, want := range []string{
+		"iptables -t nat -A POSTROUTING ! -d 10.0.0.0/8 ! -o eth0 -j SNAT --to-source 10.1.0.1",
+		"dcnetlab/frr-edge:10.2.1",
+	} {
+		if !strings.Contains(topo, want) {
+			t.Errorf("clab topology missing %q:\n%s", want, topo)
+		}
+	}
+
+	lab, nodes, links = internetFixture(false)
+	art, err = Compile(lab, nodes, links, containerlab.DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if conf := string(art.Files["configs/external-1/frr.conf"]); strings.Contains(conf, "default-originate") {
+		t.Errorf("air-gapped external must not originate a default route:\n%s", conf)
+	}
+
+	if topo := string(art.ClabTopology); strings.Contains(topo, "iptables") || strings.Contains(topo, "frr-edge") {
+		t.Errorf("air-gapped topology must not carry NAT or the edge image:\n%s", topo)
+	}
+}
+
 // TestServerBGPUsesPhysicalLeafIPs guards the core VRRP constraint:
 // servers must peer with the leaves' physical vlanif addresses and
 // never with the shared virtual gateway address.

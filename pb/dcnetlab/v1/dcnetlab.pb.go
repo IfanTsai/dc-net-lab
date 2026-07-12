@@ -392,8 +392,12 @@ type TopologySpec struct {
 	DcEdges         int32                  `protobuf:"varint,2,opt,name=dc_edges,json=dcEdges,proto3" json:"dc_edges,omitempty"`
 	SuperSpines     int32                  `protobuf:"varint,3,opt,name=super_spines,json=superSpines,proto3" json:"super_spines,omitempty"`
 	Pods            []*PodSpec             `protobuf:"bytes,4,rep,name=pods,proto3" json:"pods,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// InternetAccess connects the fabric to the real internet: dc-edges
+	// NAT at the DC boundary, externals attach to a host-side WAN
+	// network and originate a default route. Off = air-gapped DC.
+	InternetAccess bool `protobuf:"varint,5,opt,name=internet_access,json=internetAccess,proto3" json:"internet_access,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *TopologySpec) Reset() {
@@ -452,6 +456,13 @@ func (x *TopologySpec) GetPods() []*PodSpec {
 		return x.Pods
 	}
 	return nil
+}
+
+func (x *TopologySpec) GetInternetAccess() bool {
+	if x != nil {
+		return x.InternetAccess
+	}
+	return false
 }
 
 type LabSpec struct {
@@ -4501,9 +4512,12 @@ type CreateLabRequest struct {
 	// Profile is micro, standard or custom; defaults to micro.
 	Profile string `protobuf:"bytes,2,opt,name=profile,proto3" json:"profile,omitempty"`
 	// Topology is required (and only used) with the custom profile.
-	Topology      *TopologySpec `protobuf:"bytes,3,opt,name=topology,proto3" json:"topology,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Topology *TopologySpec `protobuf:"bytes,3,opt,name=topology,proto3" json:"topology,omitempty"`
+	// InternetAccess applies to every profile: it toggles
+	// TopologySpec.internet_access on the resulting lab.
+	InternetAccess bool `protobuf:"varint,4,opt,name=internet_access,json=internetAccess,proto3" json:"internet_access,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *CreateLabRequest) Reset() {
@@ -4555,6 +4569,13 @@ func (x *CreateLabRequest) GetTopology() *TopologySpec {
 		return x.Topology
 	}
 	return nil
+}
+
+func (x *CreateLabRequest) GetInternetAccess() bool {
+	if x != nil {
+		return x.InternetAccess
+	}
+	return false
 }
 
 type ListLabsRequest struct {
@@ -6817,12 +6838,13 @@ const file_dcnetlab_v1_dcnetlab_proto_rawDesc = "" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x06spines\x18\x02 \x01(\x05R\x06spines\x12\x14\n" +
 	"\x05racks\x18\x03 \x01(\x05R\x05racks\x12(\n" +
-	"\x10servers_per_rack\x18\x04 \x01(\x05R\x0eserversPerRack\"\xa1\x01\n" +
+	"\x10servers_per_rack\x18\x04 \x01(\x05R\x0eserversPerRack\"\xca\x01\n" +
 	"\fTopologySpec\x12)\n" +
 	"\x10external_routers\x18\x01 \x01(\x05R\x0fexternalRouters\x12\x19\n" +
 	"\bdc_edges\x18\x02 \x01(\x05R\adcEdges\x12!\n" +
 	"\fsuper_spines\x18\x03 \x01(\x05R\vsuperSpines\x12(\n" +
-	"\x04pods\x18\x04 \x03(\v2\x14.dcnetlab.v1.PodSpecR\x04pods\"\xb5\x01\n" +
+	"\x04pods\x18\x04 \x03(\v2\x14.dcnetlab.v1.PodSpecR\x04pods\x12'\n" +
+	"\x0finternet_access\x18\x05 \x01(\bR\x0einternetAccess\"\xb5\x01\n" +
 	"\aLabSpec\x12\x18\n" +
 	"\aprofile\x18\x01 \x01(\tR\aprofile\x125\n" +
 	"\btopology\x18\x02 \x01(\v2\x19.dcnetlab.v1.TopologySpecR\btopology\x12.\n" +
@@ -7181,11 +7203,12 @@ const file_dcnetlab_v1_dcnetlab_proto_rawDesc = "" +
 	"updated_at\x18\n" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"1\n" +
 	"\fOperationRef\x12!\n" +
-	"\foperation_id\x18\x01 \x01(\tR\voperationId\"w\n" +
+	"\foperation_id\x18\x01 \x01(\tR\voperationId\"\xa0\x01\n" +
 	"\x10CreateLabRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\aprofile\x18\x02 \x01(\tR\aprofile\x125\n" +
-	"\btopology\x18\x03 \x01(\v2\x19.dcnetlab.v1.TopologySpecR\btopology\"\x11\n" +
+	"\btopology\x18\x03 \x01(\v2\x19.dcnetlab.v1.TopologySpecR\btopology\x12'\n" +
+	"\x0finternet_access\x18\x04 \x01(\bR\x0einternetAccess\"\x11\n" +
 	"\x0fListLabsRequest\"5\n" +
 	"\rListLabsReply\x12$\n" +
 	"\x04labs\x18\x01 \x03(\v2\x10.dcnetlab.v1.LabR\x04labs\"\x1f\n" +

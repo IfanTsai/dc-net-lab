@@ -59,6 +59,11 @@ type TopologySpec struct {
 	DCEdges         int       `json:"dcEdges"`
 	SuperSpines     int       `json:"superSpines"`
 	Pods            []PodSpec `json:"pods"`
+	// InternetAccess connects the simulated fabric to the real
+	// internet: dc-edges NAT outbound traffic at the DC boundary and
+	// externals attach to a host-side WAN network and originate a
+	// default route into the fabric. Off means an air-gapped DC.
+	InternetAccess bool `json:"internetAccess"`
 }
 
 // PodSpec describes one pod inside the fabric. Leaves come in racks:

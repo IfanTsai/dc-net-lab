@@ -65,6 +65,8 @@ open http://127.0.0.1:8080   # 创建 Lab → Plan → Apply,几分钟后得到�
 make down                    # 一键停止
 ```
 
+创建 Lab 时可开启"外网访问"：server 的互联网流量沿 leaf → spine → superspine → dcedge（边界 NAT）→ external（运营商出口）穿过整套仿真网络抵达真实互联网，断掉沿途设备即真实断网。需要先 `make edge-image` 构建带 iptables 的 FRR 镜像。
+
 常用命令与配置：
 
 ```bash

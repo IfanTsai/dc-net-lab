@@ -55,7 +55,7 @@ func (s *DCNetLabService) CreateLab(ctx context.Context, req *v1.CreateLabReques
 		profile = model.ProfileMicro
 	}
 
-	lab, err := s.labs.CreateLab(req.Name, profile, topologySpecToModel(req.Topology))
+	lab, err := s.labs.CreateLab(req.Name, profile, topologySpecToModel(req.Topology), req.InternetAccess)
 	if err != nil {
 		return nil, asAPIError(err)
 	}

@@ -53,6 +53,11 @@ type Driver interface {
 	// container stop) keeps the veth wiring and injected network
 	// config intact, so a later start restores the exact device.
 	StopNodes(ctx context.Context, labName string, nodeNames []string) error
+	// EnsureImage verifies a container image is available locally.
+	EnsureImage(ctx context.Context, image string) error
+	// ConnectInternet attaches a deployed node to the shared WAN
+	// network and routes its non-fabric traffic to the real internet.
+	ConnectInternet(ctx context.Context, labName, nodeName string) error
 }
 
 // TerminalSession is a live interactive shell inside a lab node.
@@ -243,13 +248,15 @@ func (d *ContainerlabDriver) NodeGateway(ctx context.Context, labName, nodeName 
 	return d.inspectNetwork(ctx, labName, nodeName, "Gateway", "management gateway")
 }
 
-// inspectNetwork extracts one field of the container's single
-// attached network.
+// inspectNetwork extracts one field of the container's management
+// network. External routers carry a second, WAN attachment, which is
+// skipped by name so the management address stays unambiguous.
 func (d *ContainerlabDriver) inspectNetwork(ctx context.Context, labName, nodeName, field, what string) (string, error) {
 	container := fmt.Sprintf("clab-%s-%s", labName, nodeName)
 
 	out, err := exec.CommandContext(ctx, "docker", "inspect", "-f",
-		fmt.Sprintf(`{{range .NetworkSettings.Networks}}{{.%s}}{{end}}`, field), container).Output()
+		fmt.Sprintf(`{{range $name, $net := .NetworkSettings.Networks}}{{if ne $name %q}}{{$net.%s}}{{end}}{{end}}`,
+			WANNetworkName, field), container).Output()
 	if err != nil {
 		return "", fmt.Errorf("docker inspect %s: %w", container, err)
 	}
@@ -367,5 +374,13 @@ func (NoopDriver) StartNodes(ctx context.Context, labName string, nodeNames []st
 }
 
 func (NoopDriver) StopNodes(ctx context.Context, labName string, nodeNames []string) error {
+	return ErrNotSupported
+}
+
+// EnsureImage succeeds unconditionally: the noop driver never runs
+// containers, so no image is actually needed.
+func (NoopDriver) EnsureImage(ctx context.Context, image string) error { return nil }
+
+func (NoopDriver) ConnectInternet(ctx context.Context, labName, nodeName string) error {
 	return ErrNotSupported
 }

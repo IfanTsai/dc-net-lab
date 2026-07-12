@@ -22,11 +22,15 @@ type InterfaceConfig struct {
 	PeerName string
 }
 
-// NeighborConfig is one eBGP neighbor.
+// NeighborConfig is one eBGP neighbor. DefaultOriginate marks the
+// neighbor as receiving an unconditional default route: the external
+// routers advertise it towards their dc-edges when the lab has
+// internet access, like a carrier PE handing 0.0.0.0/0 to a customer.
 type NeighborConfig struct {
-	Address  netip.Addr
-	RemoteAS uint32
-	Name     string
+	Address          netip.Addr
+	RemoteAS         uint32
+	Name             string
+	DefaultOriginate bool
 }
 
 // VlanConfig is the leaf's server-gateway VLAN interface: its own
@@ -104,6 +108,11 @@ router bgp {{ .ASN }}
  address-family ipv4 unicast
   redistribute connected
   maximum-paths 64
+{{- range .Neighbors }}
+{{- if .DefaultOriginate }}
+  neighbor {{ .Address }} default-originate
+{{- end }}
+{{- end }}
 {{- if .ServerGroup }}
   neighbor SERVERS default-originate
   neighbor SERVERS prefix-list SERVERS-OUT out
@@ -149,8 +158,10 @@ func Render(cfg RouterConfig) ([]byte, error) {
 // leaf additionally gets its gateway VLAN (with VRRP), a peer-group
 // listening for the rack's servers and an iBGP session to its MLAG
 // peer. Servers get a bond0 config peering with the physical vlanif
-// addresses of both leaves.
-func BuildRouterConfigs(nodes []*model.Node, links []*model.Link) (map[string]RouterConfig, error) {
+// addresses of both leaves. With internetAccess the external routers
+// originate a default route towards their dc-edge neighbors, from
+// where eBGP propagates it down to the leaves.
+func BuildRouterConfigs(nodes []*model.Node, links []*model.Link, internetAccess bool) (map[string]RouterConfig, error) {
 	byID := make(map[string]*model.Node, len(nodes))
 	byName := make(map[string]*model.Node, len(nodes))
 	byVlanIP := make(map[netip.Addr]*model.Node)
@@ -223,8 +234,8 @@ func BuildRouterConfigs(nodes []*model.Node, links []*model.Link) (map[string]Ro
 			return nil, fmt.Errorf("link %s references unknown node", l.Meta.Name)
 		}
 
-		addSide(cfgs, a, z, l.Spec.EndpointA, l.Spec.EndpointB)
-		addSide(cfgs, z, a, l.Spec.EndpointB, l.Spec.EndpointA)
+		addSide(cfgs, a, z, l.Spec.EndpointA, l.Spec.EndpointB, internetAccess)
+		addSide(cfgs, z, a, l.Spec.EndpointB, l.Spec.EndpointA, internetAccess)
 	}
 
 	for id, cfg := range cfgs {
@@ -266,7 +277,7 @@ func serverConfig(n *model.Node, byVlanIP map[netip.Addr]*model.Node) RouterConf
 // addSide records local's interface on an addressed fabric link and
 // an eBGP neighbor towards the peer router. L2 links (server access,
 // MLAG peer) carry no addresses and are realised outside FRR.
-func addSide(cfgs map[string]RouterConfig, local, peer *model.Node, lep, pep model.LinkEndpoint) {
+func addSide(cfgs map[string]RouterConfig, local, peer *model.Node, lep, pep model.LinkEndpoint, internetAccess bool) {
 	if !lep.Address.IsValid() {
 		return
 	}
@@ -286,6 +297,8 @@ func addSide(cfgs map[string]RouterConfig, local, peer *model.Node, lep, pep mod
 			Address:  pep.Address.Addr(),
 			RemoteAS: peer.Spec.ASN,
 			Name:     peer.Meta.Name,
+			DefaultOriginate: internetAccess &&
+				local.Spec.Role == model.RoleExternal && peer.Spec.Role == model.RoleDCEdge,
 		})
 	}
 

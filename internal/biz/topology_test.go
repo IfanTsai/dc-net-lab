@@ -15,6 +15,10 @@ type fakeTopologyRepo struct {
 	links []*model.Link
 }
 
+func (r *fakeTopologyRepo) GetLab(id string) (*model.Lab, error) {
+	return &model.Lab{Meta: model.ResourceMeta{ID: id}}, nil
+}
+
 func (r *fakeTopologyRepo) ListNodes(labID string) ([]*model.Node, error) { return r.nodes, nil }
 
 func (r *fakeTopologyRepo) ListLinks(labID string) ([]*model.Link, error) { return r.links, nil }

@@ -2,7 +2,7 @@ GO ?= go
 # buf and the protoc plugins are installed into GOPATH/bin by `make init`.
 TOOL_PATH := $(shell $(GO) env GOPATH)/bin:$(PATH)
 
-.PHONY: all init api wire build test vet lint run up down status web-install web-dev web-build clean
+.PHONY: all init api wire build test vet lint run up down status web-install web-dev web-build edge-image clean
 
 all: build test
 
@@ -40,6 +40,11 @@ vet:
 lint:
 	PATH="$(TOOL_PATH)" golangci-lint run
 	python3 scripts/check-style.py
+
+# Build the FRR + iptables image used by dcedge/external when a lab
+# enables internet access. Tag must match containerlab.DefaultOptions.
+edge-image:
+	docker build -t dcnetlab/frr-edge:10.2.1 build/frr-edge
 
 # Regenerate compiler golden files after intentional template changes.
 golden:

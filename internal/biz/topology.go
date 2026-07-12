@@ -10,6 +10,7 @@ import (
 
 // TopologyRepo abstracts the desired-state topology queries.
 type TopologyRepo interface {
+	GetLab(id string) (*model.Lab, error)
 	ListNodes(labID string) ([]*model.Node, error)
 	ListLinks(labID string) ([]*model.Link, error)
 	ListAllocations(labID string) ([]model.Allocation, error)
@@ -47,6 +48,11 @@ func (uc *TopologyUsecase) ListAllocations(labID string) ([]model.Allocation, er
 // from the deployed config. Nodes that do not run BGP yield an empty
 // config.
 func (uc *TopologyUsecase) GetNodeBGP(labID, nodeID string) (*frr.RouterConfig, error) {
+	lab, err := uc.repo.GetLab(labID)
+	if err != nil {
+		return nil, fmt.Errorf("get lab: %w", err)
+	}
+
 	nodes, err := uc.repo.ListNodes(labID)
 	if err != nil {
 		return nil, fmt.Errorf("list nodes: %w", err)
@@ -70,7 +76,7 @@ func (uc *TopologyUsecase) GetNodeBGP(labID, nodeID string) (*frr.RouterConfig, 
 		return nil, fmt.Errorf("node %q: %w", nodeID, ErrNotFound)
 	}
 
-	cfgs, err := frr.BuildRouterConfigs(nodes, links)
+	cfgs, err := frr.BuildRouterConfigs(nodes, links, lab.Spec.Topology.InternetAccess)
 	if err != nil {
 		return nil, fmt.Errorf("build router configs: %w", err)
 	}

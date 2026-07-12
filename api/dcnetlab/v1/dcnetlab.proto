@@ -278,6 +278,10 @@ message TopologySpec {
   int32 dc_edges = 2;
   int32 super_spines = 3;
   repeated PodSpec pods = 4;
+  // InternetAccess connects the fabric to the real internet: dc-edges
+  // NAT at the DC boundary, externals attach to a host-side WAN
+  // network and originate a default route. Off = air-gapped DC.
+  bool internet_access = 5;
 }
 
 message LabSpec {
@@ -812,6 +816,9 @@ message CreateLabRequest {
   string profile = 2;
   // Topology is required (and only used) with the custom profile.
   TopologySpec topology = 3;
+  // InternetAccess applies to every profile: it toggles
+  // TopologySpec.internet_access on the resulting lab.
+  bool internet_access = 4;
 }
 
 message ListLabsRequest {}

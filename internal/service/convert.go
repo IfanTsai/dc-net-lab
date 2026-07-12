@@ -77,6 +77,7 @@ func topologySpecToPB(t model.TopologySpec) *v1.TopologySpec {
 		ExternalRouters: int32(t.ExternalRouters),
 		DcEdges:         int32(t.DCEdges),
 		SuperSpines:     int32(t.SuperSpines),
+		InternetAccess:  t.InternetAccess,
 	}
 
 	for _, p := range t.Pods {
@@ -100,6 +101,7 @@ func topologySpecToModel(pb *v1.TopologySpec) *model.TopologySpec {
 		ExternalRouters: int(pb.ExternalRouters),
 		DCEdges:         int(pb.DcEdges),
 		SuperSpines:     int(pb.SuperSpines),
+		InternetAccess:  pb.InternetAccess,
 	}
 
 	for _, p := range pb.Pods {

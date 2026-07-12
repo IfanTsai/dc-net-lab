@@ -39,8 +39,10 @@ func NewLabUsecase(repo LabRepo, ops *operation.Manager, driver runtime.Driver, 
 }
 
 // CreateLab registers a new lab with the given profile. For the
-// custom profile a topology spec must be provided.
-func (uc *LabUsecase) CreateLab(name string, profile model.ProfileName, custom *model.TopologySpec) (*model.Lab, error) {
+// custom profile a topology spec must be provided. internetAccess
+// applies to every profile: built-in profiles carry no such knob of
+// their own, so it rides on the request rather than the spec.
+func (uc *LabUsecase) CreateLab(name string, profile model.ProfileName, custom *model.TopologySpec, internetAccess bool) (*model.Lab, error) {
 	if name == "" {
 		return nil, fmt.Errorf("lab name is required")
 	}
@@ -60,6 +62,8 @@ func (uc *LabUsecase) CreateLab(name string, profile model.ProfileName, custom *
 
 		topo = t
 	}
+
+	topo.InternetAccess = topo.InternetAccess || internetAccess
 
 	now := time.Now().UTC()
 	lab := &model.Lab{

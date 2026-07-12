@@ -159,6 +159,15 @@ Create Lab（Micro/Standard Profile）→ Plan（资源分配预览）→ Apply�
 - **UI**：监控标签页下方新增"历史曲线"区——时间范围切换（30m/1h/2h/24h）+ 四块 ECharts 折线（CPU 三系列、内存 used/limit、网卡按接口筛选 rx/tx、磁盘读写）；ECharts 按需引入（LineChart + Grid/Legend/Tooltip + Canvas）,采集 gap 断线不插值（`connectNulls: false`）,配色用经 CVD 校验的分类调色板前三槽位；随实时区静默轮询（历史 30 s 一刷）。监控 tab 激活时抽屉动态加宽（60%,CSS 上限 900px,其余 tab 保持 420px）,实时区与四图用 `auto-fit` 网格——窄单列/宽双列自适应,图表随 ResizeObserver 重排。
 - **测试**：History 覆盖追加/窗口裁剪/跨小时翻转/过期清理/撕裂行回放/盘上查询/Retain；Collector 覆盖首点基线、双 sweep 差分、agent 失联 gap、counter 回绕钳零、基线超龄；/metrics endpoint 覆盖格式/标签/陈旧点过滤。
 
+### 仿真外网访问（internet access）
+
+模拟真实数据中心的互联网出口：server 的外网流量走完整仿真路径 server → leaf → spine → superspine → dcedge → external → 真实互联网，设备故障时外网访问真实中断。创建 lab 时可选开启（`CreateLabRequest.internet_access`，UI 开关），关闭即气隙 DC，行为与之前完全一致。
+
+- **职责划分对齐真实架构**：dcedge 是 DC 运营方边界，做业务语义 NAT——对非 `10.0.0.0/8` 目的、非 eth0 出口的流量 `SNAT --to-source <loopback>`（exec 注入）。loopback 唯一且 BGP 可达，回程天然锚定到持有 conntrack 状态的那台 dcedge，双边 ECMP 下会话一致；目的仍在 10/8 的流量（未来 DCI）不做 NAT。external 代表运营商/骨干（多 DC 演进时的共享层）：部署后接入共享 docker 网络 `dcnetlab-wan`（`ConnectInternet` 步骤），默认路由指 WAN 网关，出 WAN 口再做一层机械 masquerade（Docker 宿主机只为 WAN 网段源地址 NAT，语义等价运营商 CGN），并对 dcedge 邻居 `default-originate`——默认路由经 eBGP 逐级下发到 leaf，server 侧零改动。
+- **镜像**：官方 FRR 镜像无 iptables，`build/frr-edge/Dockerfile`（FROM frr + `apk add iptables`）经 `make edge-image` 构建为 `dcnetlab/frr-edge:10.2.1`，仅 dcedge/external 在开关开启时使用；apply 流水线前置 `EnsureEdgeImage` 步骤缺镜像时快速失败并提示构建命令。
+- **实现位置**：模型/API 开关（`TopologySpec.InternetAccess`）；FRR 编译器 `NeighborConfig.DefaultOriginate`；containerlab 编译器 `dcedgeExec` + `EdgeImage`；runtime `internal/runtime/internet.go`（建网/接入/找 WAN 口/配路由与 masquerade，全程幂等）；biz apply 流水线 `ConnectInternet` 步骤（noop runtime 跳过）。BGP 视图（GetNodeBGP）与部署共用同一编译器，default-originate 同步呈现。
+- **测试与验证**：编译器测试覆盖开关两态的产物差异；e2e 验证 traceroute 全路径穿 fabric、`apk add`/HTTPS 可用、dcedge SNAT 计数命中、pause dcedge 断外网且 unpause 自愈、未开启的 lab 保持气隙。
+
 ### 代码规范与工程化
 
 - [golang-style.md](golang-style.md) 为 Go 代码基线；golangci-lint（`.golangci.yml`，版本固定）+ 自研 `scripts/check-style.py`（空行语义）挂在 `make lint`，零告警纳入提交门禁。
@@ -173,6 +182,7 @@ Create Lab（Micro/Standard Profile）→ Plan（资源分配预览）→ Apply�
 5. **vtysh JSON 输出**：缺 `/etc/frr/vtysh.conf` 时警告会混入 stdout，产物绑定 vtysh.conf + 解析时跳到首个 `{` 双保险。
 6. **wire v0.7.0** 自带的 x/tools 解析不了新版本 Go，`init-tools.sh` 用临时模块升级 x/tools 后构建。
 7. **server 默认路由 exec 竞态**：`ip route replace default via <gw>` 在 zebra 尚未给 bond0 配地址时因 nexthop 不可达而失败（containerlab exec 与 FRR 启动并发），管理网默认路由反客为主、流量静默逃逸——加 `dev bond0 onlink` 让路由安装不依赖 nexthop 预先可达。
+8. **`docker network connect` 接口命名冲突**：Docker 按自身 endpoint 计数给新接口起名 `eth<n>`，不知道 containerlab 已把 veth 塞进命名空间占了 eth1+，撞名报 `file exists`；但失败会推进计数器，有界重试即可越过占用序号（Docker 28 的 `com.docker.network.endpoint.ifname` 选项可指定接口名，27 忽略之）。接口名不可假设，用 endpoint IP 反查。
 
 ## 与设计文档的已知偏差
 
@@ -185,8 +195,8 @@ Create Lab（Micro/Standard Profile）→ Plan（资源分配预览）→ Apply�
 ## 下一步计划（按优先级）
 
 1. **Daemon Framework**（Iteration 3）：在 Program 之上加受控子类型（启动顺序、就绪/存活检查、配置模板），为 Pingmesh 等常驻探测打底。
-2. **server 访问外网**：external 节点做 NAT 出口 + BGP default-originate 逐级下发（自定义 Program Package 需要拉依赖时用，镜像需带 iptables）。
-3. **Package 格式扩展**：deb（需 Debian 系 server 镜像）与 OCI Image 作为 `format` 扩展位；server 扩缩容迭代时引入"集成进镜像"的装机预装通道（第一个搬进镜像的是 agent）。
+2. **Package 格式扩展**：deb（需 Debian 系 server 镜像）与 OCI Image 作为 `format` 扩展位；server 扩缩容迭代时引入"集成进镜像"的装机预装通道（第一个搬进镜像的是 agent）。
+3. **多 DC 互联**：dcedge 每 DC 独享、共享 external 骨干层；DC 间流量（目的 10/8）已在边界 NAT 规则中预留不做转换，对应真实 DCI 语义。
 
 ## 环境备注
 

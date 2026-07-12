@@ -21,9 +21,13 @@ type Artifact struct {
 	Files map[string][]byte
 }
 
-// Compile builds the full artifact set for a lab.
+// Compile builds the full artifact set for a lab. Internet access is
+// a lab-spec property, so it is derived here rather than left to the
+// caller's options.
 func Compile(lab *model.Lab, nodes []*model.Node, links []*model.Link, opts containerlab.Options) (*Artifact, error) {
-	routerCfgs, err := frr.BuildRouterConfigs(nodes, links)
+	opts.InternetAccess = lab.Spec.Topology.InternetAccess
+
+	routerCfgs, err := frr.BuildRouterConfigs(nodes, links, opts.InternetAccess)
 	if err != nil {
 		return nil, fmt.Errorf("build frr configs: %w", err)
 	}

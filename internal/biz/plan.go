@@ -2,6 +2,7 @@ package biz
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -181,12 +182,23 @@ func (uc *PlanUsecase) ApplyPlan(planID string) (*model.Operation, error) {
 	}
 
 	genDir := generationDir(uc.dataDir, lab.Meta.ID, plan.NewGeneration)
+	opts := containerlab.DefaultOptions()
+	opts.HostBinDir = uc.binDir
 	var artifact *compiler.Artifact
 
-	steps := []operation.Step{
+	var steps []operation.Step
+	if lab.Spec.Topology.InternetAccess {
+		steps = append(steps, operation.Step{Name: "EnsureEdgeImage", Fn: func(ctx context.Context) error {
+			if err := uc.driver.EnsureImage(ctx, opts.EdgeImage); err != nil {
+				return fmt.Errorf("internet access needs the edge image, build it with `make edge-image`: %w", err)
+			}
+
+			return nil
+		}})
+	}
+
+	steps = append(steps, []operation.Step{
 		{Name: "CompileArtifacts", Fn: func(ctx context.Context) error {
-			opts := containerlab.DefaultOptions()
-			opts.HostBinDir = uc.binDir
 			a, err := compiler.Compile(lab, nodes, links, opts)
 			artifact = a
 
@@ -202,6 +214,9 @@ func (uc *PlanUsecase) ApplyPlan(planID string) (*model.Operation, error) {
 		{Name: "DeployTopology", Fn: func(ctx context.Context) error {
 			return uc.driver.Deploy(ctx, genDir)
 		}},
+		{Name: "ConnectInternet", Fn: func(ctx context.Context) error {
+			return uc.connectInternet(ctx, lab, nodes)
+		}},
 		{Name: "ValidateControlPlane", Fn: func(ctx context.Context) error {
 			return uc.validateControlPlane(ctx, lab, nodes, links)
 		}},
@@ -214,7 +229,7 @@ func (uc *PlanUsecase) ApplyPlan(planID string) (*model.Operation, error) {
 		{Name: "RestorePrograms", Fn: func(ctx context.Context) error {
 			return uc.programs.RestorePrograms(ctx, lab, nodes)
 		}},
-	}
+	}...)
 
 	uc.ops.Run(op, steps, func(failed error) {
 		if failed != nil {
@@ -247,4 +262,33 @@ func (uc *PlanUsecase) ApplyPlan(planID string) (*model.Operation, error) {
 	})
 
 	return op, nil
+}
+
+// connectInternet attaches every external router to the WAN network
+// after deploy. The compiler cannot emit this as exec commands: the
+// WAN interface only exists once the container joins the network.
+// Air-gapped labs and runtimes without the capability skip it.
+func (uc *PlanUsecase) connectInternet(ctx context.Context, lab *model.Lab, nodes []*model.Node) error {
+	if !lab.Spec.Topology.InternetAccess {
+		return nil
+	}
+
+	for _, n := range nodes {
+		if n.Spec.Role != model.RoleExternal {
+			continue
+		}
+
+		err := uc.driver.ConnectInternet(ctx, lab.Meta.Name, n.Meta.Name)
+		if errors.Is(err, runtime.ErrNotSupported) {
+			uc.log.Info("internet attach skipped", "runtime", uc.driver.Name())
+
+			return nil
+		}
+
+		if err != nil {
+			return fmt.Errorf("connect %s to internet: %w", n.Meta.Name, err)
+		}
+	}
+
+	return nil
 }
