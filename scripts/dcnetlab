@@ -6,10 +6,17 @@
 #   scripts/dcnetlab down        stop everything started by "up"
 #   scripts/dcnetlab status      show what is running
 #   scripts/dcnetlab logs        tail controller logs
+#   scripts/dcnetlab edge-image  build the FRR edge image for internet access
+#
+# On macOS the script re-execs itself inside an OrbStack machine so
+# deploys run against a real Linux kernel; without OrbStack (or with
+# DCNETLAB_RUNTIME=noop) it keeps running locally, artifacts only.
 #
 # Configuration via environment:
-#   DCNETLAB_LISTEN   controller address (default 127.0.0.1:8080)
-#   DCNETLAB_RUNTIME  runtime driver: auto|containerlab|noop (default auto)
+#   DCNETLAB_LISTEN       controller address (default 127.0.0.1:8080,
+#                         or 0.0.0.0:8080 when forwarded into OrbStack)
+#   DCNETLAB_RUNTIME      runtime driver: auto|containerlab|noop (default auto)
+#   DCNETLAB_ORB_MACHINE  OrbStack machine used on macOS (default dcnetlab)
 
 set -euo pipefail
 
@@ -17,6 +24,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUN_DIR="$ROOT/.run"
 LISTEN="${DCNETLAB_LISTEN:-127.0.0.1:8080}"
 RUNTIME="${DCNETLAB_RUNTIME:-auto}"
+ORB_MACHINE="${DCNETLAB_ORB_MACHINE:-dcnetlab}"
+# Host:port printed in URLs; set by the macOS forwarder below so links
+# point at the OrbStack machine instead of the VM-internal address.
+ADVERTISE="${DCNETLAB_ADVERTISE:-}"
 CTRL_PID="$RUN_DIR/controller.pid"
 WEB_PID="$RUN_DIR/web.pid"
 CTRL_LOG="$RUN_DIR/controller.log"
@@ -47,6 +58,90 @@ wait_healthy() {
   return 1
 }
 
+# containerlab drives Linux kernel APIs (netlink, network namespaces),
+# so real deployments cannot run on Darwin. On macOS with a non-noop
+# runtime, re-exec the whole command inside the OrbStack machine:
+# /Users is mounted there at the same path, so the repo, .run dir and
+# working directory all carry over unchanged. Without OrbStack (or
+# with DCNETLAB_RUNTIME=noop) everything keeps running locally.
+maybe_exec_in_orb() {
+  [ "$(uname -s)" = Darwin ] || return 0
+  [ "$RUNTIME" = noop ] && return 0
+
+  if ! command -v orb >/dev/null 2>&1; then
+    echo "note: OrbStack not found; running locally, runtime degrades to noop" >&2
+    echo "hint: install it from https://orbstack.dev, then run 'make orb-setup'" >&2
+    return 0
+  fi
+  if ! orbctl list 2>/dev/null | grep -qw "$ORB_MACHINE"; then
+    echo "note: OrbStack machine '$ORB_MACHINE' not found; running locally, runtime degrades to noop" >&2
+    echo "hint: run 'make orb-setup' to create it and install docker/containerlab/go/node" >&2
+    return 0
+  fi
+  if [ "${1:-}" = up ] && ! orb -m "$ORB_MACHINE" sh -c 'command -v containerlab' >/dev/null 2>&1; then
+    echo "note: containerlab missing in machine '$ORB_MACHINE'; deploys will degrade to noop" >&2
+    echo "hint: run 'make orb-setup' to install the missing tools" >&2
+  fi
+
+  # Bind all interfaces inside the VM so the mac browser reaches the
+  # controller via the machine's .orb.local hostname.
+  local listen="${DCNETLAB_LISTEN:-0.0.0.0:8080}"
+
+  # When attached to a terminal, orb queries/resets terminal modes and
+  # puts it into raw mode for the remote session; that renders as a
+  # screen clear swallowing earlier output (tty stdout) or staircased
+  # lines (tty stdin disabling LF -> CRLF translation). Detach both:
+  # stdout through a pipe, stdin from /dev/null — none of the
+  # forwarded commands read from stdin.
+  if [ -t 0 ] || [ -t 1 ]; then
+    orb -m "$ORB_MACHINE" env \
+      DCNETLAB_LISTEN="$listen" \
+      DCNETLAB_RUNTIME="$RUNTIME" \
+      DCNETLAB_ADVERTISE="$ORB_MACHINE.orb.local:${listen##*:}" \
+      "$ROOT/scripts/dcnetlab" "$@" </dev/null 2>&1 | cat
+    exit "${PIPESTATUS[0]}"
+  fi
+
+  exec orb -m "$ORB_MACHINE" env \
+    DCNETLAB_LISTEN="$listen" \
+    DCNETLAB_RUNTIME="$RUNTIME" \
+    DCNETLAB_ADVERTISE="$ORB_MACHINE.orb.local:${listen##*:}" \
+    "$ROOT/scripts/dcnetlab" "$@"
+}
+
+# web/node_modules is shared between macOS and the OrbStack machine
+# (same /Users path), but rollup and esbuild load their native
+# binaries from per-platform optional packages, so a tree installed on
+# one OS lacks the other's. Fetch the missing platform packages into a
+# temporary prefix and merge them in, leaving the rest of the tree
+# untouched — a plain "npm install" here would prune the other OS's
+# native packages and break it the same way in reverse.
+ensure_web_natives() {
+  local os=linux arch
+  [ "$(uname -s)" = Darwin ] && os=darwin
+  case "$(uname -m)" in
+    aarch64 | arm64) arch=arm64 ;;
+    x86_64) arch=x64 ;;
+    *) echo "unsupported architecture: $(uname -m)" >&2; return 1 ;;
+  esac
+  local rollup_pkg="@rollup/rollup-$os-$arch" esbuild_pkg="@esbuild/$os-$arch"
+  [ "$os" = linux ] && rollup_pkg="$rollup_pkg-gnu"
+
+  (cd "$ROOT/web" \
+    && node -e "require.resolve('$rollup_pkg/package.json'); require.resolve('$esbuild_pkg/package.json')" \
+      >/dev/null 2>&1) && return 0
+
+  echo "installing web native binaries for $os/$arch..."
+  local rollup_v esbuild_v tmp
+  rollup_v=$(cd "$ROOT/web" && node -p 'require("rollup/package.json").version')
+  esbuild_v=$(cd "$ROOT/web" && node -p 'require("esbuild/package.json").version')
+  tmp=$(mktemp -d)
+  (cd "$tmp" && npm install --silent --no-save --no-package-lock \
+    "$rollup_pkg@$rollup_v" "$esbuild_pkg@$esbuild_v")
+  cp -R "$tmp/node_modules/@rollup" "$tmp/node_modules/@esbuild" "$ROOT/web/node_modules/"
+  rm -rf "$tmp"
+}
+
 cmd_up() {
   local dev=0
   [ "${1:-}" = "--dev" ] && dev=1
@@ -64,14 +159,20 @@ cmd_up() {
   (cd "$ROOT" && CGO_ENABLED=0 go build -o bin/dcnetlab-node-cli ./serverapps/node-cli)
   (cd "$ROOT" && CGO_ENABLED=0 go build -o bin/dcnetlab-trafficgen ./serverapps/trafficgen)
 
+  if [ ! -d "$ROOT/web/node_modules" ]; then
+    echo "installing web dependencies..."
+    (cd "$ROOT/web" && npm install --silent)
+  fi
+  ensure_web_natives
+
   local web_args=()
   if [ "$dev" = 0 ]; then
-    if [ ! -d "$ROOT/web/node_modules" ]; then
-      echo "installing web dependencies..."
-      (cd "$ROOT/web" && npm install --silent)
-    fi
     echo "building web UI..."
-    (cd "$ROOT/web" && npm run build --silent >"$WEB_LOG" 2>&1)
+    if ! (cd "$ROOT/web" && npm run build --silent >"$WEB_LOG" 2>&1); then
+      echo "web build failed; last lines of $WEB_LOG:" >&2
+      tail -n 20 "$WEB_LOG" >&2
+      exit 1
+    fi
     web_args=(--web-dir "$ROOT/web/dist")
   fi
 
@@ -86,28 +187,45 @@ cmd_up() {
 
   if [ "$dev" = 1 ]; then
     echo "starting Vite dev server..."
-    # setsid may fork, so the session leader writes its own pid;
-    # "down" kills that process group to take npm and vite with it.
-    (cd "$ROOT/web" && WEB_PID="$WEB_PID" setsid bash -c 'echo $$ >"$WEB_PID"; exec npm run dev' >"$WEB_LOG" 2>&1 </dev/null &)
+    # When forwarded into OrbStack, Vite must bind all interfaces to
+    # be reachable from the mac browser via the machine hostname.
+    local vite_args=""
+    [ -n "$ADVERTISE" ] && vite_args="-- --host"
+    if command -v setsid >/dev/null 2>&1; then
+      # setsid may fork, so the session leader writes its own pid;
+      # "down" kills that process group to take npm and vite with it.
+      (cd "$ROOT/web" && WEB_PID="$WEB_PID" VITE_ARGS="$vite_args" setsid bash -c 'echo $$ >"$WEB_PID"; exec npm run dev $VITE_ARGS' >"$WEB_LOG" 2>&1 </dev/null &)
+    else
+      # macOS has no setsid; record the npm pid directly, npm forwards
+      # signals to vite so a plain kill in "down" is enough.
+      (cd "$ROOT/web" && nohup npm run dev $vite_args >"$WEB_LOG" 2>&1 </dev/null & echo $! >"$WEB_PID")
+    fi
     for _ in $(seq 1 20); do [ -s "$WEB_PID" ] && break; sleep 0.1; done
+    local web_host=localhost
+    [ -n "$ADVERTISE" ] && web_host="${ADVERTISE%%:*}"
     echo
-    echo "DCNetLab is up:  http://localhost:5173  (dev, hot reload)"
-    echo "API:             http://$LISTEN"
+    echo "DCNetLab is up:  http://$web_host:5173  (dev, hot reload)"
+    echo "API:             http://${ADVERTISE:-$LISTEN}"
   else
     echo
-    echo "DCNetLab is up:  http://$LISTEN"
+    echo "DCNetLab is up:  http://${ADVERTISE:-$LISTEN}"
   fi
 }
 
 cmd_down() {
-  stop_pid "$WEB_PID" "web dev server" group
+  # Vite is started with setsid where available (see cmd_up); mirror
+  # that decision so the right target (group vs single pid) is killed.
+  local group=""
+  command -v setsid >/dev/null 2>&1 && group=group
+
+  stop_pid "$WEB_PID" "web dev server" $group
   stop_pid "$CTRL_PID" "controller"
   echo "DCNetLab is down"
 }
 
 cmd_status() {
   if alive "$CTRL_PID"; then
-    echo "controller: running (pid $(cat "$CTRL_PID"), http://$LISTEN)"
+    echo "controller: running (pid $(cat "$CTRL_PID"), http://${ADVERTISE:-$LISTEN})"
   else
     echo "controller: stopped"
   fi
@@ -120,10 +238,21 @@ cmd_status() {
 
 cmd_logs() { tail -n 100 -f "$CTRL_LOG"; }
 
+# Build the FRR + iptables image used by dcedge/external when a lab
+# enables internet access. Tag must match containerlab.DefaultOptions.
+# Routed through the macOS forwarder so the image lands in the same
+# docker daemon the controller deploys with.
+cmd_edge_image() { docker build -t dcnetlab/frr-edge:10.2.1 "$ROOT/build/frr-edge"; }
+
+case "${1:-}" in
+  up|down|status|logs|edge-image) maybe_exec_in_orb "$@" ;;
+esac
+
 case "${1:-}" in
   up) shift; cmd_up "$@" ;;
   down) cmd_down ;;
   status) cmd_status ;;
   logs) cmd_logs ;;
-  *) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  edge-image) cmd_edge_image ;;
+  *) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

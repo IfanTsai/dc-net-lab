@@ -59,6 +59,8 @@ Apply  编译 FRR 配置 + Containerlab 拓扑 → 写入 Generation 快照 → 
 
 依赖：Go 1.23+、Node 20+、Docker；部署真实拓扑还需 [containerlab](https://containerlab.dev)（缺省自动降级为 `noop` 运行时，仅生成产物）。
 
+containerlab 依赖 Linux 内核，macOS 上 `make up` 会自动转发到 [OrbStack](https://orbstack.dev) 机器内执行，浏览器访问 `http://dcnetlab.orb.local:8080`。首次使用先装好 OrbStack 再 `make orb-setup`（创建机器并安装 Docker/containerlab/Go/Node，幂等可重复执行）；未安装 OrbStack 或设置 `DCNETLAB_RUNTIME=noop` 时保持本地运行。
+
 ```bash
 make up                      # 构建后端 + 前端,Controller 托管 UI
 open http://127.0.0.1:8080   # 创建 Lab → Plan → Apply,几分钟后得到一座可交互的数据中心
@@ -75,7 +77,7 @@ scripts/dcnetlab status      # 查看运行状态
 scripts/dcnetlab logs        # 跟踪 Controller 日志
 ```
 
-环境变量：`DCNETLAB_LISTEN`（默认 `127.0.0.1:8080`）、`DCNETLAB_RUNTIME`（`auto|containerlab|noop`）。
+环境变量：`DCNETLAB_LISTEN`（默认 `127.0.0.1:8080`）、`DCNETLAB_RUNTIME`（`auto|containerlab|noop`）、`DCNETLAB_ORB_MACHINE`（macOS 上使用的 OrbStack 机器名，默认 `dcnetlab`）。
 
 API 冒烟（REST 与 gRPC 由同一份 protobuf 生成）：
 

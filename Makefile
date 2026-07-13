@@ -2,7 +2,7 @@ GO ?= go
 # buf and the protoc plugins are installed into GOPATH/bin by `make init`.
 TOOL_PATH := $(shell $(GO) env GOPATH)/bin:$(PATH)
 
-.PHONY: all init api wire build test vet lint run up down status web-install web-dev web-build edge-image clean
+.PHONY: all init api wire build test vet lint run up down status orb-setup web-install web-dev web-build edge-image clean
 
 all: build test
 
@@ -42,9 +42,10 @@ lint:
 	python3 scripts/check-style.py
 
 # Build the FRR + iptables image used by dcedge/external when a lab
-# enables internet access. Tag must match containerlab.DefaultOptions.
+# enables internet access; on macOS the launcher forwards the build
+# into the OrbStack machine so it lands in the controller's daemon.
 edge-image:
-	docker build -t dcnetlab/frr-edge:10.2.1 build/frr-edge
+	scripts/dcnetlab edge-image
 
 # Regenerate compiler golden files after intentional template changes.
 golden:
@@ -62,6 +63,11 @@ down:
 
 status:
 	scripts/dcnetlab status
+
+# One-time OrbStack machine setup on macOS: create the Linux machine
+# and install docker/containerlab/go/node so "up" deploys for real.
+orb-setup:
+	scripts/orb-setup
 
 web-install:
 	cd web && npm install

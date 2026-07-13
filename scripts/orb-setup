@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# One-time OrbStack machine setup for real deployments on macOS:
+# creates the Linux machine and installs docker, containerlab, Go and
+# Node inside it, so scripts/dcnetlab can forward "up" into it.
+# Idempotent: existing machine and tools are detected and skipped.
+#
+#   scripts/orb-setup [machine]   default: $DCNETLAB_ORB_MACHINE or dcnetlab
+
+set -euo pipefail
+
+MACHINE="${1:-${DCNETLAB_ORB_MACHINE:-dcnetlab}}"
+GO_VERSION=1.25.0
+NODE_MAJOR=22
+
+if [ "$(uname -s)" != Darwin ]; then
+  echo "orb-setup is only needed on macOS; on Linux install containerlab directly" >&2
+  exit 1
+fi
+if ! command -v orb >/dev/null 2>&1; then
+  echo "OrbStack not installed; get it from https://orbstack.dev (or: brew install orbstack)" >&2
+  exit 1
+fi
+
+if orbctl list 2>/dev/null | grep -qw "$MACHINE"; then
+  echo "machine '$MACHINE': already exists"
+else
+  echo "creating Ubuntu machine '$MACHINE'..."
+  orb create ubuntu "$MACHINE"
+fi
+
+run() { orb -m "$MACHINE" "$@"; }
+has() { run sh -c "command -v $1" >/dev/null 2>&1; }
+
+if has docker; then
+  echo "docker: already installed"
+else
+  echo "installing docker..."
+  run sudo bash -c 'curl -fsSL https://get.docker.com | sh'
+fi
+
+# The controller talks to docker.sock directly (exec, ps, inspect);
+# get.docker.com does not add the login user to the docker group.
+if run id -nG | tr ' ' '\n' | grep -qx docker; then
+  echo "docker group: already a member"
+else
+  echo "adding $(run whoami) to the docker group..."
+  run sudo usermod -aG docker "$(run whoami)"
+fi
+
+if has containerlab; then
+  echo "containerlab: already installed"
+else
+  echo "installing containerlab..."
+  run sudo bash -c 'bash -c "$(curl -sL https://get.containerlab.dev)"'
+fi
+
+if has go; then
+  echo "go: already installed ($(run go version))"
+else
+  echo "installing Go $GO_VERSION..."
+  arch="$(run uname -m)"
+  case "$arch" in
+    aarch64) goarch=arm64 ;;
+    x86_64) goarch=amd64 ;;
+    *) echo "unsupported architecture: $arch" >&2; exit 1 ;;
+  esac
+  run sudo bash -c "curl -fsSL https://go.dev/dl/go${GO_VERSION}.linux-${goarch}.tar.gz | tar -C /usr/local -xz \
+    && ln -sf /usr/local/go/bin/go /usr/local/go/bin/gofmt /usr/local/bin/"
+fi
+
+if has node; then
+  echo "node: already installed ($(run node --version))"
+else
+  echo "installing Node $NODE_MAJOR..."
+  run sudo bash -c "curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - && apt-get install -y nodejs"
+fi
+
+echo
+echo "machine '$MACHINE' is ready; 'make up' will now deploy real topologies"
