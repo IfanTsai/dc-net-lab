@@ -79,19 +79,23 @@ func ensureWANNetwork(ctx context.Context) error {
 }
 
 // connectToWAN attaches the container to the WAN network, tolerating
-// a previous attachment. Docker names the new interface eth<n> from
-// its own endpoint counter, which knows nothing about the ethN veths
-// containerlab already moved into the namespace; a collision fails
-// the connect but advances the counter, so retrying walks past the
-// fabric interfaces to the first free name. (Docker 28's
-// com.docker.network.endpoint.ifname option would make this
-// deterministic; 27 ignores it.)
+// a previous attachment. Left to itself docker names the interface
+// eth<n> from its own endpoint counter, which knows nothing about the
+// ethN veths containerlab already moved into the namespace; since
+// Docker 28 the com.docker.network.endpoint.ifname option pins a
+// collision-free name instead (and 29 no longer advances the counter
+// on failure, so colliding would retry the same name forever). Older
+// daemons ignore the option and fail the connect with "file exists" —
+// but advance their counter doing so, so retrying walks past the
+// fabric interfaces to the first free name.
 func connectToWAN(ctx context.Context, container string) error {
 	const maxAttempts = 32
 
 	var lastOut []byte
 	for range maxAttempts {
-		out, err := exec.CommandContext(ctx, "docker", "network", "connect", WANNetworkName, container).CombinedOutput()
+		out, err := exec.CommandContext(ctx, "docker", "network", "connect",
+			"--driver-opt", "com.docker.network.endpoint.ifname=wan0",
+			WANNetworkName, container).CombinedOutput()
 		if err == nil || strings.Contains(string(out), "already exists in network") {
 			return nil
 		}
