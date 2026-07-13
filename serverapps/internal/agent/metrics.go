@@ -533,7 +533,12 @@ func (c *MetricsCollector) filesystem() FilesystemMetrics {
 		return FilesystemMetrics{Mount: c.rootfs}
 	}
 
-	bsize := st.Bsize
+	// Statfs_t.Bsize is int64 on linux but uint32 on darwin. The hop
+	// through uint64 keeps the widening conversion non-redundant on
+	// both, so unconvert stays quiet whichever GOOS lints this file
+	// (a plain int64(st.Bsize) is flagged on linux, and a
+	// //nolint:unconvert directive is flagged as unused on darwin).
+	bsize := int64(uint64(st.Bsize))
 
 	return FilesystemMetrics{
 		Mount:      c.rootfs,
