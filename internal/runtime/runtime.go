@@ -23,6 +23,12 @@ import (
 // "skip", not as a failure.
 var ErrNotSupported = errors.New("operation not supported by this runtime driver")
 
+// ErrUnavailable marks failures of the runtime itself — the docker
+// daemon unreachable or its socket denying access — as opposed to a
+// container-level error. Polling cannot heal these, so callers should
+// fail fast instead of retrying until their deadline.
+var ErrUnavailable = errors.New("container runtime unavailable")
+
 // Driver deploys and destroys lab topologies.
 type Driver interface {
 	// Name identifies the backend ("containerlab", "noop").
@@ -154,10 +160,25 @@ func (d *ContainerlabDriver) Exec(ctx context.Context, labName, nodeName string,
 
 	out, err := exec.CommandContext(ctx, "docker", args...).CombinedOutput()
 	if err != nil {
+		if daemonUnavailable(out) {
+			return out, fmt.Errorf("%w: docker exec %s: %s", ErrUnavailable, container, strings.TrimSpace(string(out)))
+		}
+
 		return out, fmt.Errorf("docker exec %s %v: %w\n%s", container, cmdArgs, err, out)
 	}
 
 	return out, nil
+}
+
+// daemonUnavailable reports whether docker CLI output indicates the
+// daemon itself is unreachable (not running, or the socket denying
+// access) rather than a container-level failure.
+func daemonUnavailable(out []byte) bool {
+	s := strings.ToLower(string(out))
+
+	return strings.Contains(s, "cannot connect to the docker daemon") ||
+		strings.Contains(s, "is the docker daemon running") ||
+		strings.Contains(s, "permission denied while trying to connect")
 }
 
 // OpenTerminal attaches an interactive shell to a lab container: it

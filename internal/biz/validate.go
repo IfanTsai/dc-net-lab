@@ -77,6 +77,12 @@ func (uc *PlanUsecase) validateControlPlane(ctx context.Context, lab *model.Lab,
 			return nil
 		}
 
+		// A runtime-level failure will not heal by polling; surface it
+		// immediately instead of burning the whole timeout.
+		if errors.Is(err, runtime.ErrUnavailable) {
+			return err
+		}
+
 		if err == nil && len(pending) == 0 {
 			return nil
 		}
@@ -116,7 +122,7 @@ func (uc *PlanUsecase) bgpUnconverged(ctx context.Context, lab *model.Lab, nodes
 
 		out, err := uc.driver.Exec(ctx, lab.Meta.Name, n.Meta.Name,
 			[]string{"vtysh", "-c", "show bgp summary json"})
-		if errors.Is(err, runtime.ErrNotSupported) {
+		if errors.Is(err, runtime.ErrNotSupported) || errors.Is(err, runtime.ErrUnavailable) {
 			return nil, err
 		}
 
@@ -192,6 +198,12 @@ func (uc *PlanUsecase) validateDataPlane(ctx context.Context, lab *model.Lab, no
 					uc.log.Info("data-plane validation skipped", "runtime", uc.driver.Name())
 
 					return nil
+				}
+
+				// Runtime-level failures do not heal between attempts.
+				if errors.Is(err, runtime.ErrUnavailable) {
+					return fmt.Errorf("ping %s -> %s (%s): %w",
+						src.Meta.Name, target.name, target.addr, err)
 				}
 
 				if err == nil {
