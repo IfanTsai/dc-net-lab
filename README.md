@@ -59,7 +59,7 @@ Apply  编译 FRR 配置 + Containerlab 拓扑 → 写入 Generation 快照 → 
 
 依赖：Go 1.23+、Node 20+、Docker；部署真实拓扑还需 [containerlab](https://containerlab.dev)（缺省自动降级为 `noop` 运行时，仅生成产物）。
 
-containerlab 依赖 Linux 内核，macOS 上 `make up` 会自动转发到 [OrbStack](https://orbstack.dev) 机器内执行，浏览器访问 `http://dcnetlab.orb.local:8080`。首次使用先装好 OrbStack 再 `make orb-setup`（创建机器并安装 Docker/containerlab/Go/Node，幂等可重复执行）；未安装 OrbStack 或设置 `DCNETLAB_RUNTIME=noop` 时保持本地运行。
+containerlab 依赖 Linux 内核，macOS 上 `make up` 会自动转发到 [OrbStack](https://orbstack.dev) 机器内执行，浏览器访问 `http://dcnetlab.orb.local:8080`。首次使用先装好 OrbStack 再 `make orb-setup`（创建机器并安装 Docker/containerlab/Go/Node，幂等可重复执行）；未安装 OrbStack 或设置 `DCNETLAB_RUNTIME=noop` 时保持本地运行。转发机制与文件共享原理见 [macOS 适配](doc/macos.md)。
 
 ```bash
 make up                      # 构建后端 + 前端,Controller 托管 UI
@@ -146,6 +146,7 @@ proto 依赖（`google/api` 注解）由 buf 从 BSR 拉取并经 `buf.lock` 锁
 | [PRD](doc/PRD.md) | 需求与产品定义 |
 | [技术设计](doc/design.md) | 架构、网络模型与迭代规划 |
 | [node-agent](doc/node-agent.md) | agent 运行逻辑与容器内 `pkg`/`program` 命令参考 |
+| [macOS 适配](doc/macos.md) | OrbStack 转发运行时的实现原理与图示 |
 | [开发进展](doc/progress.md) | 各迭代交付明细与关键经验 |
 
 ## Roadmap

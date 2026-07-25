@@ -64,6 +64,15 @@ Create Lab（Micro/Standard Profile）→ Plan（资源分配预览）→ Apply�
 - **Apply 自带两步校验**（noop 运行时自动跳过）：`ValidateControlPlane` 按模型推导每节点期望 BGP 会话数并轮询到全部 Established；`ValidateDataPlane` 每台 server ping VRRP 网关 + ping 下一台 server（跨机柜穿越 fabric）。
 - **真实环境验证结论**（Micro，9 容器）：26 条 BGP 会话全部 Established；VRRP 自动选主与秒级故障切换（macvlan down → 对端接管、VIP 不中断、恢复后抢占回）；spine 到机柜 /24 双下一跳 ECMP。
 
+### macOS 适配（OrbStack 转发运行时）
+
+containerlab 依赖 Linux 内核（netlink、网络命名空间），Darwin 无法本地部署。适配思路是**把整个运行入口转发进一台 OrbStack Linux 虚机**，而非在 macOS 上模拟（原理与图示详见 [macos.md](macos.md)）：
+
+- **透明转发**（`scripts/dcnetlab`）：Darwin 且运行时非 `noop` 时，`up`/`down`/`status`/`logs`/`edge-image` 整条命令 re-exec 进 OrbStack 机器执行。OrbStack 把 `/Users` 以相同路径挂载进虚机（virtiofs），repo、`.run` 目录与工作目录零改动携带；`DCNETLAB_LISTEN` 在虚机内改绑 `0.0.0.0`，并经 `DCNETLAB_ADVERTISE` 用 `<machine>.orb.local` 主机名回显 URL，mac 浏览器直连。tty 场景下 stdin 接 `/dev/null`、stdout 走管道，规避 `orb` 对终端 raw mode 的干扰（清屏 / 阶梯行）。
+- **幂等装机**（`scripts/orb-setup`）：创建 Ubuntu 机器并安装 Docker（含把登录用户加进 docker 组）、containerlab、Go、Node，全部检测后跳过、可重复执行；另装 docker.service drop-in——OrbStack 的 `/Users` virtiofs 在 systemd 视野之外异步挂载，docker 若先于共享就绪重启容器，源文件缺失的单文件 bind mount 会被静默建成空目录（agent 二进制从此挂空、自愈失效），drop-in 用有界 `ExecStartPre`（最长 60s）等挂载点就绪再放行 docker。
+- **双平台共享 node_modules**：mac 与虚机共用同一份 `web/node_modules`，但 rollup/esbuild 的原生二进制按平台走 optional package，`ensure_web_natives` 只补装缺失平台的原生包并合并进树，避免整树 `npm install` 互相剪除对方平台。
+- **降级链与报错指引**：未装 OrbStack / 机器不存在 / 设 `DCNETLAB_RUNTIME=noop` 时保持本地运行、运行时降级 `noop`（仅生成产物），脚本打印安装 hint；biz 层把 `ErrNotSupported` 翻译为带解法的错误（装 containerlab，或 macOS 上 `make orb-setup` + `make down && make up`），不再裸露 `operation not supported by this runtime driver`。
+
 ### DC/设备启停
 
 - proto 4 个 RPC:`StartLab`/`StopLab`（异步 Operation）、`StartNode`/`StopNode`（同步返回 Node）。
@@ -249,8 +258,10 @@ Auto Start 与 Restart Policy 已在"Program 的 systemd 化"一轮落地（`aut
 1. **Operation 进度仍为 HTTP 轮询**：Traffic UI 与故障实验会加重实时推送需求，It. 4 做 Traffic UI 时是把 Operation/Traffic 指标统一迁到现有 WebSocket 通道的合适时机。
 2. **Package 格式扩展**：deb（需 Debian 系 server 镜像）与 OCI Image 作为 `format` 扩展位；随 It. 7 扩缩容触碰镜像与装机链路时引入"集成进镜像"的预装通道（第一个搬进镜像的是 agent）。
 3. **多 DC 互联**：dcedge 每 DC 独享、共享 external 骨干层；DC 间流量（目的 10/8）已在边界 NAT 规则中预留不做转换，对应真实 DCI 语义。
+4. **控制面 / 数据面分离（宿主侧 runtime agent）**：Controller 与 docker 宿主现有四处耦合——子进程直调 `containerlab`/`docker` CLI、编译产物以宿主绝对路径作 bind mount 源、经管理网直拨容器内 agent 的 gRPC、agent 按管理网网关地址回拉软件包（假设 Controller 就在网关侧）。`runtime.Driver` 接口已是天然切分缝隙，做多宿主 / 多 DC（上条）时引入宿主侧 runtime agent（产物传输 + exec 流代理 + 双向网络打通）即可分离；单机场景不提前拆。详见 [macos.md](macos.md)「为什么必须进虚机」。
 
 ## 环境备注
 
 - 开发机：WSL2，Go 1.23+、Node 24、Docker 27、containerlab 0.77（SUID + `clab_admins`，免 sudo）；内核支持 bonding/8021q/macvlan/bridge vlan_filtering。
+- macOS：经 OrbStack 虚机运行真实部署（见上文「macOS 适配」），`make orb-setup` 一次装机，`make up` 自动转发；虚机内 Docker 28 / Ubuntu。
 - 运行入口：`make up` / `scripts/dcnetlab up [--dev]`（推荐），或 `make run`（仅后端）+ `make web-dev`（前端开发模式）。
