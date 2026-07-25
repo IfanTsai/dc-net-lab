@@ -13,6 +13,7 @@ import (
 	"github.com/ifantsai/dcnetlab/internal/biz"
 	"github.com/ifantsai/dcnetlab/internal/metrics"
 	"github.com/ifantsai/dcnetlab/internal/model"
+	"github.com/ifantsai/dcnetlab/internal/traffic"
 	pb "github.com/ifantsai/dcnetlab/pb/nodeagent/v1"
 )
 
@@ -38,6 +39,10 @@ func NewProgramAgent(log *slog.Logger) biz.ProgramAgent {
 // NewMetricsAgent exposes the same client as the slice the metrics
 // collector needs.
 func NewMetricsAgent(a biz.ProgramAgent) metrics.Agent { return a }
+
+// NewTrafficAgent exposes the same client as the slice the traffic
+// collector needs.
+func NewTrafficAgent(a biz.ProgramAgent) traffic.Agent { return a }
 
 // call dials the agent at addr (management IP, default agent port)
 // and runs fn against the stub.

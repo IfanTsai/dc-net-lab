@@ -9,6 +9,7 @@ import (
 	"github.com/ifantsai/dcnetlab/internal/metrics"
 	"github.com/ifantsai/dcnetlab/internal/model"
 	"github.com/ifantsai/dcnetlab/internal/observer"
+	"github.com/ifantsai/dcnetlab/internal/traffic"
 )
 
 // NewLabRepo provides the biz.LabRepo implementation.
@@ -22,6 +23,9 @@ func NewObserverStore(d *Data) observer.Store { return d }
 
 // NewMetricsStore exposes the persistence the metrics collector needs.
 func NewMetricsStore(d *Data) metrics.Store { return d }
+
+// NewTrafficStore exposes the persistence the traffic collector needs.
+func NewTrafficStore(d *Data) traffic.Store { return d }
 
 func (s *Data) CreateLab(lab *model.Lab) error {
 	doc, err := marshal(lab)

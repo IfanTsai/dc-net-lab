@@ -427,3 +427,61 @@ export interface HealthCheck {
   timeoutSeconds?: number
   failureThreshold?: number
 }
+
+// TrafficAssertion is one pass/fail threshold evaluated against the
+// scenario's latest metrics window; metric is rate/successRate/p50/
+// p95/p99, comparator is gte/lte.
+export interface TrafficAssertion {
+  metric: 'rate' | 'successRate' | 'p50' | 'p95' | 'p99' | string
+  comparator: 'gte' | 'lte' | string
+  threshold: number
+}
+
+export interface TrafficAssertionResult extends TrafficAssertion {
+  value: number
+  pass: boolean
+}
+
+// TrafficPoint is one collected sample: the client's windowed rate,
+// success rate (percent) and latency percentiles (microseconds).
+export interface TrafficPoint {
+  ts?: string
+  rate?: number
+  successRate?: number
+  p50Us?: string
+  p95Us?: string
+  p99Us?: string
+}
+
+// TrafficScenario drives measurable traffic between two lab servers
+// through a pair of trafficgen Programs (server role on the
+// destination, client role on the source).
+export interface TrafficScenario {
+  meta: ResourceMeta
+  spec: {
+    labId: string
+    sourceServerId: string
+    sourceServerName: string
+    destServerId: string
+    destServerName: string
+    protocol: 'http' | 'tcp' | 'udp' | string
+    port?: number
+    rate: number
+    concurrency: number
+    payloadBytes?: number
+    durationSeconds?: number
+    assertions?: TrafficAssertion[]
+  }
+  status: {
+    phase: 'Stopped' | 'Running' | 'Failed' | string
+    serverProgramId?: string
+    serverProgramName?: string
+    clientProgramId?: string
+    clientProgramName?: string
+    startedAt?: string
+    lastPoint?: TrafficPoint
+    assertions?: TrafficAssertionResult[]
+    lastObserved?: string
+    lastError?: string
+  }
+}

@@ -7,8 +7,13 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"sync"
 	"time"
 )
+
+// udpBufSize covers the largest datagram a worker can send: the seq
+// prefix plus the maximum payload.
+const udpBufSize = maxUDPPayloadBytes + 4096
 
 // RunUDPServer echoes datagrams back to their sender.
 func RunUDPServer(ctx context.Context, log *slog.Logger, args []string) error {
@@ -31,7 +36,7 @@ func RunUDPServer(ctx context.Context, log *slog.Logger, args []string) error {
 	}()
 
 	log.Info("listening", "addr", *listen)
-	buf := make([]byte, 64*1024)
+	buf := make([]byte, udpBufSize)
 	for {
 		n, addr, err := pc.ReadFrom(buf)
 		if err != nil {
@@ -49,13 +54,17 @@ func RunUDPServer(ctx context.Context, log *slog.Logger, args []string) error {
 	}
 }
 
-// RunUDPClient sends one datagram per interval and waits for the
-// echo; a missing reply within the timeout counts as failure.
+// RunUDPClient runs concurrency workers, each sending one datagram
+// per interval and waiting for the echo; a missing reply within the
+// timeout counts as failure. A non-zero payload appends filler bytes
+// to each datagram.
 func RunUDPClient(ctx context.Context, log *slog.Logger, args []string) error {
 	fs := flag.NewFlagSet("udp-client", flag.ContinueOnError)
 	target := fs.String("target", "", "target address, e.g. 10.100.0.11:9000")
-	interval := fs.Duration("interval", time.Second, "send interval")
+	interval := fs.Duration("interval", time.Second, "send interval per worker")
 	timeout := fs.Duration("timeout", 2*time.Second, "reply timeout")
+	concurrency := fs.Int("concurrency", 1, "number of parallel workers")
+	payloadBytes := fs.Int("payload-bytes", 0, "extra filler bytes appended to each datagram")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -64,34 +73,65 @@ func RunUDPClient(ctx context.Context, log *slog.Logger, args []string) error {
 		return errors.New("udp-client: --target is required")
 	}
 
-	conn, err := net.Dial("udp", *target)
-	if err != nil {
-		return fmt.Errorf("udp dial: %w", err)
+	if *concurrency < 1 {
+		return errors.New("udp-client: --concurrency must be >= 1")
 	}
 
-	defer func() { _ = conn.Close() }()
+	payload, err := makePayload(*payloadBytes, maxUDPPayloadBytes)
+	if err != nil {
+		return fmt.Errorf("udp-client: %w", err)
+	}
 
 	st := newStats()
 	go st.report(ctx, log)
 
-	ticker := time.NewTicker(*interval)
+	var wg sync.WaitGroup
+	for range *concurrency {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			runUDPWorker(ctx, log, *target, *interval, *timeout, payload, st)
+		}()
+	}
+	wg.Wait()
+
+	return nil
+}
+
+// runUDPWorker owns one UDP socket to target until ctx is cancelled.
+func runUDPWorker(ctx context.Context, log *slog.Logger, target string, interval, timeout time.Duration, payload []byte, st *stats) {
+	conn, err := net.Dial("udp", target)
+	if err != nil {
+		log.Warn("dial failed", "error", err)
+
+		return
+	}
+
+	defer func() { _ = conn.Close() }()
+
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	buf := make([]byte, 64*1024)
+	buf := make([]byte, udpBufSize)
 	seq := 0
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			return
 		case <-ticker.C:
 			seq++
 			start := time.Now()
 
-			if err := conn.SetDeadline(time.Now().Add(*timeout)); err != nil {
-				return fmt.Errorf("set deadline: %w", err)
+			if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
+				log.Warn("set deadline failed", "error", err)
+
+				continue
 			}
 
-			if _, err := fmt.Fprintf(conn, "seq %d", seq); err != nil {
+			msg := fmt.Appendf(nil, "seq %d ", seq)
+			msg = append(msg, payload...)
+
+			if _, err := conn.Write(msg); err != nil {
 				st.failure()
 				log.Warn("send failed", "seq", seq, "error", err)
 

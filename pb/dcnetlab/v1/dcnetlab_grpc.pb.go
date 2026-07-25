@@ -25,45 +25,51 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	DCNetLab_CreateLab_FullMethodName             = "/dcnetlab.v1.DCNetLab/CreateLab"
-	DCNetLab_ListLabs_FullMethodName              = "/dcnetlab.v1.DCNetLab/ListLabs"
-	DCNetLab_GetLab_FullMethodName                = "/dcnetlab.v1.DCNetLab/GetLab"
-	DCNetLab_DeleteLab_FullMethodName             = "/dcnetlab.v1.DCNetLab/DeleteLab"
-	DCNetLab_StartLab_FullMethodName              = "/dcnetlab.v1.DCNetLab/StartLab"
-	DCNetLab_StopLab_FullMethodName               = "/dcnetlab.v1.DCNetLab/StopLab"
-	DCNetLab_ListNodes_FullMethodName             = "/dcnetlab.v1.DCNetLab/ListNodes"
-	DCNetLab_ListLinks_FullMethodName             = "/dcnetlab.v1.DCNetLab/ListLinks"
-	DCNetLab_ListAllocations_FullMethodName       = "/dcnetlab.v1.DCNetLab/ListAllocations"
-	DCNetLab_StartNode_FullMethodName             = "/dcnetlab.v1.DCNetLab/StartNode"
-	DCNetLab_StopNode_FullMethodName              = "/dcnetlab.v1.DCNetLab/StopNode"
-	DCNetLab_GetNodeRuntime_FullMethodName        = "/dcnetlab.v1.DCNetLab/GetNodeRuntime"
-	DCNetLab_GetNodeBGP_FullMethodName            = "/dcnetlab.v1.DCNetLab/GetNodeBGP"
-	DCNetLab_GetNodeRoutes_FullMethodName         = "/dcnetlab.v1.DCNetLab/GetNodeRoutes"
-	DCNetLab_GetNodeBGPTable_FullMethodName       = "/dcnetlab.v1.DCNetLab/GetNodeBGPTable"
-	DCNetLab_GetNodeFIB_FullMethodName            = "/dcnetlab.v1.DCNetLab/GetNodeFIB"
-	DCNetLab_GetNodeMetrics_FullMethodName        = "/dcnetlab.v1.DCNetLab/GetNodeMetrics"
-	DCNetLab_GetNodeMetricsHistory_FullMethodName = "/dcnetlab.v1.DCNetLab/GetNodeMetricsHistory"
-	DCNetLab_UploadPackage_FullMethodName         = "/dcnetlab.v1.DCNetLab/UploadPackage"
-	DCNetLab_ListPackages_FullMethodName          = "/dcnetlab.v1.DCNetLab/ListPackages"
-	DCNetLab_DeletePackage_FullMethodName         = "/dcnetlab.v1.DCNetLab/DeletePackage"
-	DCNetLab_GetNodeInventory_FullMethodName      = "/dcnetlab.v1.DCNetLab/GetNodeInventory"
-	DCNetLab_InstallPackage_FullMethodName        = "/dcnetlab.v1.DCNetLab/InstallPackage"
-	DCNetLab_CreateProgram_FullMethodName         = "/dcnetlab.v1.DCNetLab/CreateProgram"
-	DCNetLab_ListPrograms_FullMethodName          = "/dcnetlab.v1.DCNetLab/ListPrograms"
-	DCNetLab_StartProgram_FullMethodName          = "/dcnetlab.v1.DCNetLab/StartProgram"
-	DCNetLab_StopProgram_FullMethodName           = "/dcnetlab.v1.DCNetLab/StopProgram"
-	DCNetLab_UpgradeProgram_FullMethodName        = "/dcnetlab.v1.DCNetLab/UpgradeProgram"
-	DCNetLab_DeleteProgram_FullMethodName         = "/dcnetlab.v1.DCNetLab/DeleteProgram"
-	DCNetLab_BatchProgramOp_FullMethodName        = "/dcnetlab.v1.DCNetLab/BatchProgramOp"
-	DCNetLab_GetProgramLogs_FullMethodName        = "/dcnetlab.v1.DCNetLab/GetProgramLogs"
-	DCNetLab_CreatePlan_FullMethodName            = "/dcnetlab.v1.DCNetLab/CreatePlan"
-	DCNetLab_GetPlan_FullMethodName               = "/dcnetlab.v1.DCNetLab/GetPlan"
-	DCNetLab_ApplyPlan_FullMethodName             = "/dcnetlab.v1.DCNetLab/ApplyPlan"
-	DCNetLab_GetOperation_FullMethodName          = "/dcnetlab.v1.DCNetLab/GetOperation"
-	DCNetLab_ListOperations_FullMethodName        = "/dcnetlab.v1.DCNetLab/ListOperations"
-	DCNetLab_ListGenerations_FullMethodName       = "/dcnetlab.v1.DCNetLab/ListGenerations"
-	DCNetLab_ListProfiles_FullMethodName          = "/dcnetlab.v1.DCNetLab/ListProfiles"
-	DCNetLab_Healthz_FullMethodName               = "/dcnetlab.v1.DCNetLab/Healthz"
+	DCNetLab_CreateLab_FullMethodName                 = "/dcnetlab.v1.DCNetLab/CreateLab"
+	DCNetLab_ListLabs_FullMethodName                  = "/dcnetlab.v1.DCNetLab/ListLabs"
+	DCNetLab_GetLab_FullMethodName                    = "/dcnetlab.v1.DCNetLab/GetLab"
+	DCNetLab_DeleteLab_FullMethodName                 = "/dcnetlab.v1.DCNetLab/DeleteLab"
+	DCNetLab_StartLab_FullMethodName                  = "/dcnetlab.v1.DCNetLab/StartLab"
+	DCNetLab_StopLab_FullMethodName                   = "/dcnetlab.v1.DCNetLab/StopLab"
+	DCNetLab_ListNodes_FullMethodName                 = "/dcnetlab.v1.DCNetLab/ListNodes"
+	DCNetLab_ListLinks_FullMethodName                 = "/dcnetlab.v1.DCNetLab/ListLinks"
+	DCNetLab_ListAllocations_FullMethodName           = "/dcnetlab.v1.DCNetLab/ListAllocations"
+	DCNetLab_StartNode_FullMethodName                 = "/dcnetlab.v1.DCNetLab/StartNode"
+	DCNetLab_StopNode_FullMethodName                  = "/dcnetlab.v1.DCNetLab/StopNode"
+	DCNetLab_GetNodeRuntime_FullMethodName            = "/dcnetlab.v1.DCNetLab/GetNodeRuntime"
+	DCNetLab_GetNodeBGP_FullMethodName                = "/dcnetlab.v1.DCNetLab/GetNodeBGP"
+	DCNetLab_GetNodeRoutes_FullMethodName             = "/dcnetlab.v1.DCNetLab/GetNodeRoutes"
+	DCNetLab_GetNodeBGPTable_FullMethodName           = "/dcnetlab.v1.DCNetLab/GetNodeBGPTable"
+	DCNetLab_GetNodeFIB_FullMethodName                = "/dcnetlab.v1.DCNetLab/GetNodeFIB"
+	DCNetLab_GetNodeMetrics_FullMethodName            = "/dcnetlab.v1.DCNetLab/GetNodeMetrics"
+	DCNetLab_GetNodeMetricsHistory_FullMethodName     = "/dcnetlab.v1.DCNetLab/GetNodeMetricsHistory"
+	DCNetLab_UploadPackage_FullMethodName             = "/dcnetlab.v1.DCNetLab/UploadPackage"
+	DCNetLab_ListPackages_FullMethodName              = "/dcnetlab.v1.DCNetLab/ListPackages"
+	DCNetLab_DeletePackage_FullMethodName             = "/dcnetlab.v1.DCNetLab/DeletePackage"
+	DCNetLab_GetNodeInventory_FullMethodName          = "/dcnetlab.v1.DCNetLab/GetNodeInventory"
+	DCNetLab_InstallPackage_FullMethodName            = "/dcnetlab.v1.DCNetLab/InstallPackage"
+	DCNetLab_CreateProgram_FullMethodName             = "/dcnetlab.v1.DCNetLab/CreateProgram"
+	DCNetLab_ListPrograms_FullMethodName              = "/dcnetlab.v1.DCNetLab/ListPrograms"
+	DCNetLab_StartProgram_FullMethodName              = "/dcnetlab.v1.DCNetLab/StartProgram"
+	DCNetLab_StopProgram_FullMethodName               = "/dcnetlab.v1.DCNetLab/StopProgram"
+	DCNetLab_UpgradeProgram_FullMethodName            = "/dcnetlab.v1.DCNetLab/UpgradeProgram"
+	DCNetLab_DeleteProgram_FullMethodName             = "/dcnetlab.v1.DCNetLab/DeleteProgram"
+	DCNetLab_BatchProgramOp_FullMethodName            = "/dcnetlab.v1.DCNetLab/BatchProgramOp"
+	DCNetLab_GetProgramLogs_FullMethodName            = "/dcnetlab.v1.DCNetLab/GetProgramLogs"
+	DCNetLab_CreateTrafficScenario_FullMethodName     = "/dcnetlab.v1.DCNetLab/CreateTrafficScenario"
+	DCNetLab_ListTrafficScenarios_FullMethodName      = "/dcnetlab.v1.DCNetLab/ListTrafficScenarios"
+	DCNetLab_StartTrafficScenario_FullMethodName      = "/dcnetlab.v1.DCNetLab/StartTrafficScenario"
+	DCNetLab_StopTrafficScenario_FullMethodName       = "/dcnetlab.v1.DCNetLab/StopTrafficScenario"
+	DCNetLab_DeleteTrafficScenario_FullMethodName     = "/dcnetlab.v1.DCNetLab/DeleteTrafficScenario"
+	DCNetLab_GetTrafficScenarioHistory_FullMethodName = "/dcnetlab.v1.DCNetLab/GetTrafficScenarioHistory"
+	DCNetLab_CreatePlan_FullMethodName                = "/dcnetlab.v1.DCNetLab/CreatePlan"
+	DCNetLab_GetPlan_FullMethodName                   = "/dcnetlab.v1.DCNetLab/GetPlan"
+	DCNetLab_ApplyPlan_FullMethodName                 = "/dcnetlab.v1.DCNetLab/ApplyPlan"
+	DCNetLab_GetOperation_FullMethodName              = "/dcnetlab.v1.DCNetLab/GetOperation"
+	DCNetLab_ListOperations_FullMethodName            = "/dcnetlab.v1.DCNetLab/ListOperations"
+	DCNetLab_ListGenerations_FullMethodName           = "/dcnetlab.v1.DCNetLab/ListGenerations"
+	DCNetLab_ListProfiles_FullMethodName              = "/dcnetlab.v1.DCNetLab/ListProfiles"
+	DCNetLab_Healthz_FullMethodName                   = "/dcnetlab.v1.DCNetLab/Healthz"
 )
 
 // DCNetLabClient is the client API for DCNetLab service.
@@ -152,6 +158,22 @@ type DCNetLabClient interface {
 	// outcome is reported, so one failure does not abort the rest.
 	BatchProgramOp(ctx context.Context, in *BatchProgramRequest, opts ...grpc.CallOption) (*BatchProgramReply, error)
 	GetProgramLogs(ctx context.Context, in *GetProgramLogsRequest, opts ...grpc.CallOption) (*ProgramLogs, error)
+	// --- Traffic ---
+	// TrafficScenarios drive measurable traffic between two lab servers
+	// through a pair of trafficgen Programs (server role on the
+	// destination, client role on the source); the collector tails the
+	// client's stat lines into rate/success-rate/latency metrics and
+	// evaluates any configured assertions.
+	CreateTrafficScenario(ctx context.Context, in *CreateTrafficScenarioRequest, opts ...grpc.CallOption) (*TrafficScenario, error)
+	ListTrafficScenarios(ctx context.Context, in *ListTrafficScenariosRequest, opts ...grpc.CallOption) (*ListTrafficScenariosReply, error)
+	StartTrafficScenario(ctx context.Context, in *TrafficScenarioOpRequest, opts ...grpc.CallOption) (*TrafficScenario, error)
+	StopTrafficScenario(ctx context.Context, in *TrafficScenarioOpRequest, opts ...grpc.CallOption) (*TrafficScenario, error)
+	DeleteTrafficScenario(ctx context.Context, in *TrafficScenarioOpRequest, opts ...grpc.CallOption) (*DeleteTrafficScenarioReply, error)
+	// GetTrafficScenarioHistory returns the collected metrics series of
+	// one scenario: 5 s points kept in memory for up to one hour
+	// (scenarios are short interactive experiments, not persisted
+	// across a controller restart like server metrics).
+	GetTrafficScenarioHistory(ctx context.Context, in *GetTrafficScenarioHistoryRequest, opts ...grpc.CallOption) (*TrafficScenarioHistory, error)
 	// --- Plans ---
 	CreatePlan(ctx context.Context, in *CreatePlanRequest, opts ...grpc.CallOption) (*Plan, error)
 	GetPlan(ctx context.Context, in *GetPlanRequest, opts ...grpc.CallOption) (*Plan, error)
@@ -483,6 +505,66 @@ func (c *dCNetLabClient) GetProgramLogs(ctx context.Context, in *GetProgramLogsR
 	return out, nil
 }
 
+func (c *dCNetLabClient) CreateTrafficScenario(ctx context.Context, in *CreateTrafficScenarioRequest, opts ...grpc.CallOption) (*TrafficScenario, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TrafficScenario)
+	err := c.cc.Invoke(ctx, DCNetLab_CreateTrafficScenario_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) ListTrafficScenarios(ctx context.Context, in *ListTrafficScenariosRequest, opts ...grpc.CallOption) (*ListTrafficScenariosReply, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListTrafficScenariosReply)
+	err := c.cc.Invoke(ctx, DCNetLab_ListTrafficScenarios_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) StartTrafficScenario(ctx context.Context, in *TrafficScenarioOpRequest, opts ...grpc.CallOption) (*TrafficScenario, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TrafficScenario)
+	err := c.cc.Invoke(ctx, DCNetLab_StartTrafficScenario_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) StopTrafficScenario(ctx context.Context, in *TrafficScenarioOpRequest, opts ...grpc.CallOption) (*TrafficScenario, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TrafficScenario)
+	err := c.cc.Invoke(ctx, DCNetLab_StopTrafficScenario_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) DeleteTrafficScenario(ctx context.Context, in *TrafficScenarioOpRequest, opts ...grpc.CallOption) (*DeleteTrafficScenarioReply, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteTrafficScenarioReply)
+	err := c.cc.Invoke(ctx, DCNetLab_DeleteTrafficScenario_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) GetTrafficScenarioHistory(ctx context.Context, in *GetTrafficScenarioHistoryRequest, opts ...grpc.CallOption) (*TrafficScenarioHistory, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TrafficScenarioHistory)
+	err := c.cc.Invoke(ctx, DCNetLab_GetTrafficScenarioHistory_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *dCNetLabClient) CreatePlan(ctx context.Context, in *CreatePlanRequest, opts ...grpc.CallOption) (*Plan, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Plan)
@@ -649,6 +731,22 @@ type DCNetLabServer interface {
 	// outcome is reported, so one failure does not abort the rest.
 	BatchProgramOp(context.Context, *BatchProgramRequest) (*BatchProgramReply, error)
 	GetProgramLogs(context.Context, *GetProgramLogsRequest) (*ProgramLogs, error)
+	// --- Traffic ---
+	// TrafficScenarios drive measurable traffic between two lab servers
+	// through a pair of trafficgen Programs (server role on the
+	// destination, client role on the source); the collector tails the
+	// client's stat lines into rate/success-rate/latency metrics and
+	// evaluates any configured assertions.
+	CreateTrafficScenario(context.Context, *CreateTrafficScenarioRequest) (*TrafficScenario, error)
+	ListTrafficScenarios(context.Context, *ListTrafficScenariosRequest) (*ListTrafficScenariosReply, error)
+	StartTrafficScenario(context.Context, *TrafficScenarioOpRequest) (*TrafficScenario, error)
+	StopTrafficScenario(context.Context, *TrafficScenarioOpRequest) (*TrafficScenario, error)
+	DeleteTrafficScenario(context.Context, *TrafficScenarioOpRequest) (*DeleteTrafficScenarioReply, error)
+	// GetTrafficScenarioHistory returns the collected metrics series of
+	// one scenario: 5 s points kept in memory for up to one hour
+	// (scenarios are short interactive experiments, not persisted
+	// across a controller restart like server metrics).
+	GetTrafficScenarioHistory(context.Context, *GetTrafficScenarioHistoryRequest) (*TrafficScenarioHistory, error)
 	// --- Plans ---
 	CreatePlan(context.Context, *CreatePlanRequest) (*Plan, error)
 	GetPlan(context.Context, *GetPlanRequest) (*Plan, error)
@@ -762,6 +860,24 @@ func (UnimplementedDCNetLabServer) BatchProgramOp(context.Context, *BatchProgram
 }
 func (UnimplementedDCNetLabServer) GetProgramLogs(context.Context, *GetProgramLogsRequest) (*ProgramLogs, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetProgramLogs not implemented")
+}
+func (UnimplementedDCNetLabServer) CreateTrafficScenario(context.Context, *CreateTrafficScenarioRequest) (*TrafficScenario, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateTrafficScenario not implemented")
+}
+func (UnimplementedDCNetLabServer) ListTrafficScenarios(context.Context, *ListTrafficScenariosRequest) (*ListTrafficScenariosReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListTrafficScenarios not implemented")
+}
+func (UnimplementedDCNetLabServer) StartTrafficScenario(context.Context, *TrafficScenarioOpRequest) (*TrafficScenario, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StartTrafficScenario not implemented")
+}
+func (UnimplementedDCNetLabServer) StopTrafficScenario(context.Context, *TrafficScenarioOpRequest) (*TrafficScenario, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StopTrafficScenario not implemented")
+}
+func (UnimplementedDCNetLabServer) DeleteTrafficScenario(context.Context, *TrafficScenarioOpRequest) (*DeleteTrafficScenarioReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteTrafficScenario not implemented")
+}
+func (UnimplementedDCNetLabServer) GetTrafficScenarioHistory(context.Context, *GetTrafficScenarioHistoryRequest) (*TrafficScenarioHistory, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetTrafficScenarioHistory not implemented")
 }
 func (UnimplementedDCNetLabServer) CreatePlan(context.Context, *CreatePlanRequest) (*Plan, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreatePlan not implemented")
@@ -1366,6 +1482,114 @@ func _DCNetLab_GetProgramLogs_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DCNetLab_CreateTrafficScenario_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateTrafficScenarioRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).CreateTrafficScenario(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_CreateTrafficScenario_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).CreateTrafficScenario(ctx, req.(*CreateTrafficScenarioRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_ListTrafficScenarios_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListTrafficScenariosRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).ListTrafficScenarios(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_ListTrafficScenarios_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).ListTrafficScenarios(ctx, req.(*ListTrafficScenariosRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_StartTrafficScenario_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TrafficScenarioOpRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).StartTrafficScenario(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_StartTrafficScenario_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).StartTrafficScenario(ctx, req.(*TrafficScenarioOpRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_StopTrafficScenario_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TrafficScenarioOpRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).StopTrafficScenario(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_StopTrafficScenario_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).StopTrafficScenario(ctx, req.(*TrafficScenarioOpRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_DeleteTrafficScenario_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TrafficScenarioOpRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).DeleteTrafficScenario(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_DeleteTrafficScenario_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).DeleteTrafficScenario(ctx, req.(*TrafficScenarioOpRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_GetTrafficScenarioHistory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetTrafficScenarioHistoryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).GetTrafficScenarioHistory(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_GetTrafficScenarioHistory_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).GetTrafficScenarioHistory(ctx, req.(*GetTrafficScenarioHistoryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DCNetLab_CreatePlan_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CreatePlanRequest)
 	if err := dec(in); err != nil {
@@ -1640,6 +1864,30 @@ var DCNetLab_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetProgramLogs",
 			Handler:    _DCNetLab_GetProgramLogs_Handler,
+		},
+		{
+			MethodName: "CreateTrafficScenario",
+			Handler:    _DCNetLab_CreateTrafficScenario_Handler,
+		},
+		{
+			MethodName: "ListTrafficScenarios",
+			Handler:    _DCNetLab_ListTrafficScenarios_Handler,
+		},
+		{
+			MethodName: "StartTrafficScenario",
+			Handler:    _DCNetLab_StartTrafficScenario_Handler,
+		},
+		{
+			MethodName: "StopTrafficScenario",
+			Handler:    _DCNetLab_StopTrafficScenario_Handler,
+		},
+		{
+			MethodName: "DeleteTrafficScenario",
+			Handler:    _DCNetLab_DeleteTrafficScenario_Handler,
+		},
+		{
+			MethodName: "GetTrafficScenarioHistory",
+			Handler:    _DCNetLab_GetTrafficScenarioHistory_Handler,
 		},
 		{
 			MethodName: "CreatePlan",

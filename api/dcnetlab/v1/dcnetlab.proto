@@ -196,6 +196,44 @@ service DCNetLab {
     option (google.api.http) = {get: "/api/v1/labs/{lab_id}/programs/{id}/logs"};
   }
 
+  // --- Traffic ---
+  // TrafficScenarios drive measurable traffic between two lab servers
+  // through a pair of trafficgen Programs (server role on the
+  // destination, client role on the source); the collector tails the
+  // client's stat lines into rate/success-rate/latency metrics and
+  // evaluates any configured assertions.
+  rpc CreateTrafficScenario(CreateTrafficScenarioRequest) returns (TrafficScenario) {
+    option (google.api.http) = {
+      post: "/api/v1/labs/{lab_id}/traffic-scenarios"
+      body: "*"
+    };
+  }
+  rpc ListTrafficScenarios(ListTrafficScenariosRequest) returns (ListTrafficScenariosReply) {
+    option (google.api.http) = {get: "/api/v1/labs/{lab_id}/traffic-scenarios"};
+  }
+  rpc StartTrafficScenario(TrafficScenarioOpRequest) returns (TrafficScenario) {
+    option (google.api.http) = {
+      post: "/api/v1/labs/{lab_id}/traffic-scenarios/{id}/start"
+      body: "*"
+    };
+  }
+  rpc StopTrafficScenario(TrafficScenarioOpRequest) returns (TrafficScenario) {
+    option (google.api.http) = {
+      post: "/api/v1/labs/{lab_id}/traffic-scenarios/{id}/stop"
+      body: "*"
+    };
+  }
+  rpc DeleteTrafficScenario(TrafficScenarioOpRequest) returns (DeleteTrafficScenarioReply) {
+    option (google.api.http) = {delete: "/api/v1/labs/{lab_id}/traffic-scenarios/{id}"};
+  }
+  // GetTrafficScenarioHistory returns the collected metrics series of
+  // one scenario: 5 s points kept in memory for up to one hour
+  // (scenarios are short interactive experiments, not persisted
+  // across a controller restart like server metrics).
+  rpc GetTrafficScenarioHistory(GetTrafficScenarioHistoryRequest) returns (TrafficScenarioHistory) {
+    option (google.api.http) = {get: "/api/v1/labs/{lab_id}/traffic-scenarios/{id}/history"};
+  }
+
   // --- Plans ---
   rpc CreatePlan(CreatePlanRequest) returns (Plan) {
     option (google.api.http) = {
@@ -797,6 +835,123 @@ message GetProgramLogsRequest {
 
 message ProgramLogs {
   string content = 1;
+}
+
+// --- Traffic ---
+
+// TrafficAssertion is one pass/fail threshold evaluated against the
+// scenario's latest metrics window. metric is rate, successRate, p50,
+// p95 or p99; comparator is gte or lte.
+message TrafficAssertion {
+  string metric = 1;
+  string comparator = 2;
+  double threshold = 3;
+}
+
+// TrafficScenarioSpec is the desired shape of the traffic: which
+// servers, which protocol, how hard to drive it. protocol is http,
+// tcp or udp; port defaults per protocol when zero; rate maps onto
+// one request per interval per client worker.
+message TrafficScenarioSpec {
+  string lab_id = 1;
+  string source_server_id = 2;
+  string source_server_name = 3;
+  string dest_server_id = 4;
+  string dest_server_name = 5;
+  string protocol = 6;
+  int32 port = 7;
+  double rate = 8;
+  int32 concurrency = 9;
+  int32 payload_bytes = 10;
+  // duration_seconds bounds how long the scenario runs before it
+  // auto-stops; 0 runs until stopped manually.
+  int32 duration_seconds = 11;
+  repeated TrafficAssertion assertions = 12;
+}
+
+// TrafficAssertionResult is one assertion evaluated against the
+// latest point.
+message TrafficAssertionResult {
+  string metric = 1;
+  string comparator = 2;
+  double threshold = 3;
+  double value = 4;
+  bool pass = 5;
+}
+
+// TrafficPoint is one collected sample: the client's windowed rate,
+// success rate (percent) and latency percentiles (microseconds).
+message TrafficPoint {
+  int64 ts = 1;
+  double rate = 2;
+  double success_rate = 3;
+  int64 p50_us = 4;
+  int64 p95_us = 5;
+  int64 p99_us = 6;
+}
+
+// TrafficScenarioStatus is the observed state: which Programs
+// implement the scenario (empty when Stopped) and the latest
+// collected metrics. phase is Stopped, Running or Failed.
+message TrafficScenarioStatus {
+  string phase = 1;
+  string server_program_id = 2;
+  string server_program_name = 3;
+  string client_program_id = 4;
+  string client_program_name = 5;
+  google.protobuf.Timestamp started_at = 6;
+  TrafficPoint last_point = 7;
+  repeated TrafficAssertionResult assertions = 8;
+  google.protobuf.Timestamp last_observed = 9;
+  string last_error = 10;
+}
+
+message TrafficScenario {
+  ResourceMeta meta = 1;
+  TrafficScenarioSpec spec = 2;
+  TrafficScenarioStatus status = 3;
+}
+
+message CreateTrafficScenarioRequest {
+  string lab_id = 1;
+  string name = 2;
+  string source_server_id = 3;
+  string dest_server_id = 4;
+  string protocol = 5;
+  int32 port = 6;
+  double rate = 7;
+  int32 concurrency = 8;
+  int32 payload_bytes = 9;
+  int32 duration_seconds = 10;
+  repeated TrafficAssertion assertions = 11;
+}
+
+message ListTrafficScenariosRequest {
+  string lab_id = 1;
+}
+
+message ListTrafficScenariosReply {
+  repeated TrafficScenario scenarios = 1;
+}
+
+message TrafficScenarioOpRequest {
+  string lab_id = 1;
+  string id = 2;
+}
+
+message DeleteTrafficScenarioReply {}
+
+message GetTrafficScenarioHistoryRequest {
+  string lab_id = 1;
+  string id = 2;
+  // start and end bound the series in unix seconds; end defaults to
+  // now, start to end minus 30 minutes.
+  int64 start = 3;
+  int64 end = 4;
+}
+
+message TrafficScenarioHistory {
+  repeated TrafficPoint points = 1;
 }
 
 // --- Plan ---

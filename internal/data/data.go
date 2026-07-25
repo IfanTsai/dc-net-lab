@@ -34,6 +34,9 @@ var ProviderSet = wire.NewSet(
 	NewProgramRepo,
 	NewProgramAgent,
 	NewPackageRepo,
+	NewTrafficRepo,
+	NewTrafficAgent,
+	NewTrafficStore,
 	NewObserverStore,
 	NewMetricsStore,
 	NewMetricsAgent,
@@ -112,6 +115,14 @@ CREATE TABLE IF NOT EXISTS packages (
 	doc TEXT NOT NULL,
 	UNIQUE(name, version)
 );
+CREATE TABLE IF NOT EXISTS traffic_scenarios (
+	id TEXT PRIMARY KEY,
+	lab_id TEXT NOT NULL,
+	name TEXT NOT NULL,
+	doc TEXT NOT NULL,
+	UNIQUE(lab_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_traffic_scenarios_lab ON traffic_scenarios(lab_id);
 `
 
 // NewData opens the SQLite database under the configured data

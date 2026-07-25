@@ -73,11 +73,12 @@ func (r *fakeProgramRepo) DeleteProgram(id string) error {
 type fakeAgent struct {
 	ProgramAgent
 
-	installs []string // "addr name@version"
-	started  []string // program names passed to Start
-	stopped  []string // program names passed to Stop
-	removed  []string // program names passed to Remove
-	failFor  map[string]bool
+	installs   []string         // "addr name@version"
+	registered []*model.Program // programs passed to Install, in call order
+	started    []string         // program names passed to Start
+	stopped    []string         // program names passed to Stop
+	removed    []string         // program names passed to Remove
+	failFor    map[string]bool
 }
 
 func (a *fakeAgent) InstallPackage(_ context.Context, addr string, pkg AgentPackage) error {
@@ -90,7 +91,11 @@ func (a *fakeAgent) InstallPackage(_ context.Context, addr string, pkg AgentPack
 	return nil
 }
 
-func (a *fakeAgent) Install(_ context.Context, _ string, _ *model.Program) error { return nil }
+func (a *fakeAgent) Install(_ context.Context, _ string, p *model.Program) error {
+	a.registered = append(a.registered, p)
+
+	return nil
+}
 
 func (a *fakeAgent) Start(_ context.Context, _, name string) (model.ProgramStatus, error) {
 	a.started = append(a.started, name)

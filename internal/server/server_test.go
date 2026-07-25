@@ -20,6 +20,7 @@ import (
 	"github.com/ifantsai/dcnetlab/internal/operation"
 	"github.com/ifantsai/dcnetlab/internal/runtime"
 	"github.com/ifantsai/dcnetlab/internal/service"
+	"github.com/ifantsai/dcnetlab/internal/traffic"
 )
 
 // Wire-format mirrors of the protobuf JSON mapping: int64 fields
@@ -84,7 +85,9 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 	opsUC := biz.NewOperationUsecase(d, log)
 	power := biz.NewPowerUsecase(d, ops, runtime.NoopDriver{}, log)
 	rt := biz.NewRuntimeUsecase(d, d, runtime.NoopDriver{}, log)
-	svc := service.NewDCNetLabService(labs, topos, plans, opsUC, power, rt, programs, packages, log)
+	trafficHistory := traffic.NewHistory()
+	trafficUC := biz.NewTrafficUsecase(d, programs, trafficHistory, log)
+	svc := service.NewDCNetLabService(labs, topos, plans, opsUC, power, rt, programs, packages, trafficUC, log)
 	term := biz.NewTerminalUsecase(d, d, runtime.NoopDriver{}, log)
 	obs := observer.New(d, runtime.NoopDriver{}, log)
 	// The Kratos HTTP server implements http.Handler, so the full

@@ -19,6 +19,7 @@ import (
 	"github.com/ifantsai/dcnetlab/internal/observer"
 	"github.com/ifantsai/dcnetlab/internal/server"
 	"github.com/ifantsai/dcnetlab/internal/service"
+	"github.com/ifantsai/dcnetlab/internal/traffic"
 )
 
 // wireApp builds the controller object graph from the per-layer
@@ -29,10 +30,14 @@ func wireApp(*conf.Server, *conf.Data, klog.Logger, *slog.Logger) (*kratos.App, 
 		observer.New,
 		metrics.NewHistory,
 		metrics.NewCollector,
+		traffic.NewHistory,
+		traffic.NewCollector,
 		wire.Bind(new(server.TerminalOpener), new(*biz.TerminalUsecase)),
 		wire.Bind(new(server.TopologyWatcher), new(*observer.Observer)),
 		wire.Bind(new(server.MetricsSource), new(*metrics.History)),
 		wire.Bind(new(biz.MetricsHistory), new(*metrics.History)),
+		wire.Bind(new(biz.TrafficHistory), new(*traffic.History)),
+		wire.Bind(new(traffic.Stopper), new(*biz.TrafficUsecase)),
 		newApp,
 	))
 }

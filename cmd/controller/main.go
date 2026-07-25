@@ -21,6 +21,7 @@ import (
 	"github.com/ifantsai/dcnetlab/internal/metrics"
 	"github.com/ifantsai/dcnetlab/internal/observer"
 	"github.com/ifantsai/dcnetlab/internal/server"
+	"github.com/ifantsai/dcnetlab/internal/traffic"
 )
 
 func main() {
@@ -86,11 +87,11 @@ func resolveBinDir(dir string, log *slog.Logger) string {
 
 // newApp registers the transport servers with the Kratos application.
 // The gRPC server is always constructed but only started when a gRPC
-// listen address is configured. The observer and the metrics
-// collector run as transport servers too, so their poll loops follow
-// the app lifecycle.
-func newApp(c *conf.Server, logger klog.Logger, hs *khttp.Server, gs *kgrpc.Server, rs *server.RepoServer, obs *observer.Observer, mc *metrics.Collector) *kratos.App {
-	servers := []transport.Server{hs, rs, obs, mc}
+// listen address is configured. The observer and the metrics and
+// traffic collectors run as transport servers too, so their poll
+// loops follow the app lifecycle.
+func newApp(c *conf.Server, logger klog.Logger, hs *khttp.Server, gs *kgrpc.Server, rs *server.RepoServer, obs *observer.Observer, mc *metrics.Collector, tc *traffic.Collector) *kratos.App {
+	servers := []transport.Server{hs, rs, obs, mc, tc}
 	if c.GRPCAddr != "" {
 		servers = append(servers, gs)
 	}

@@ -16,6 +16,7 @@ import (
 	"github.com/ifantsai/dcnetlab/internal/observer"
 	"github.com/ifantsai/dcnetlab/internal/server"
 	"github.com/ifantsai/dcnetlab/internal/service"
+	"github.com/ifantsai/dcnetlab/internal/traffic"
 	"log/slog"
 )
 
@@ -56,7 +57,10 @@ func wireApp(confServer *conf.Server, confData *conf.Data, logger log.Logger, sl
 	powerRepo := data.NewPowerRepo(dataData)
 	powerUsecase := biz.NewPowerUsecase(powerRepo, manager, driver, slogLogger)
 	runtimeUsecase := biz.NewRuntimeUsecase(labRepo, topologyRepo, driver, slogLogger)
-	dcNetLabService := service.NewDCNetLabService(labUsecase, topologyUsecase, planUsecase, operationUsecase, powerUsecase, runtimeUsecase, programUsecase, packageUsecase, slogLogger)
+	trafficRepo := data.NewTrafficRepo(dataData)
+	trafficHistory := traffic.NewHistory()
+	trafficUsecase := biz.NewTrafficUsecase(trafficRepo, programUsecase, trafficHistory, slogLogger)
+	dcNetLabService := service.NewDCNetLabService(labUsecase, topologyUsecase, planUsecase, operationUsecase, powerUsecase, runtimeUsecase, programUsecase, packageUsecase, trafficUsecase, slogLogger)
 	terminalUsecase := biz.NewTerminalUsecase(labRepo, topologyRepo, driver, slogLogger)
 	observerStore := data.NewObserverStore(dataData)
 	observerObserver := observer.New(observerStore, driver, slogLogger)
@@ -66,7 +70,10 @@ func wireApp(confServer *conf.Server, confData *conf.Data, logger log.Logger, sl
 	metricsStore := data.NewMetricsStore(dataData)
 	agent := data.NewMetricsAgent(programAgent)
 	collector := metrics.NewCollector(metricsStore, agent, driver, history, slogLogger)
-	app := newApp(confServer, logger, httpServer, grpcServer, repoServer, observerObserver, collector)
+	trafficStore := data.NewTrafficStore(dataData)
+	trafficAgent := data.NewTrafficAgent(programAgent)
+	trafficCollector := traffic.NewCollector(trafficStore, trafficAgent, driver, trafficUsecase, trafficHistory, slogLogger)
+	app := newApp(confServer, logger, httpServer, grpcServer, repoServer, observerObserver, collector, trafficCollector)
 	return app, func() {
 		cleanup()
 	}, nil

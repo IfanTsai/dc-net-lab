@@ -24,9 +24,11 @@ const OperationDCNetLabBatchProgramOp = "/dcnetlab.v1.DCNetLab/BatchProgramOp"
 const OperationDCNetLabCreateLab = "/dcnetlab.v1.DCNetLab/CreateLab"
 const OperationDCNetLabCreatePlan = "/dcnetlab.v1.DCNetLab/CreatePlan"
 const OperationDCNetLabCreateProgram = "/dcnetlab.v1.DCNetLab/CreateProgram"
+const OperationDCNetLabCreateTrafficScenario = "/dcnetlab.v1.DCNetLab/CreateTrafficScenario"
 const OperationDCNetLabDeleteLab = "/dcnetlab.v1.DCNetLab/DeleteLab"
 const OperationDCNetLabDeletePackage = "/dcnetlab.v1.DCNetLab/DeletePackage"
 const OperationDCNetLabDeleteProgram = "/dcnetlab.v1.DCNetLab/DeleteProgram"
+const OperationDCNetLabDeleteTrafficScenario = "/dcnetlab.v1.DCNetLab/DeleteTrafficScenario"
 const OperationDCNetLabGetLab = "/dcnetlab.v1.DCNetLab/GetLab"
 const OperationDCNetLabGetNodeBGP = "/dcnetlab.v1.DCNetLab/GetNodeBGP"
 const OperationDCNetLabGetNodeBGPTable = "/dcnetlab.v1.DCNetLab/GetNodeBGPTable"
@@ -39,6 +41,7 @@ const OperationDCNetLabGetNodeRuntime = "/dcnetlab.v1.DCNetLab/GetNodeRuntime"
 const OperationDCNetLabGetOperation = "/dcnetlab.v1.DCNetLab/GetOperation"
 const OperationDCNetLabGetPlan = "/dcnetlab.v1.DCNetLab/GetPlan"
 const OperationDCNetLabGetProgramLogs = "/dcnetlab.v1.DCNetLab/GetProgramLogs"
+const OperationDCNetLabGetTrafficScenarioHistory = "/dcnetlab.v1.DCNetLab/GetTrafficScenarioHistory"
 const OperationDCNetLabHealthz = "/dcnetlab.v1.DCNetLab/Healthz"
 const OperationDCNetLabInstallPackage = "/dcnetlab.v1.DCNetLab/InstallPackage"
 const OperationDCNetLabListAllocations = "/dcnetlab.v1.DCNetLab/ListAllocations"
@@ -50,12 +53,15 @@ const OperationDCNetLabListOperations = "/dcnetlab.v1.DCNetLab/ListOperations"
 const OperationDCNetLabListPackages = "/dcnetlab.v1.DCNetLab/ListPackages"
 const OperationDCNetLabListProfiles = "/dcnetlab.v1.DCNetLab/ListProfiles"
 const OperationDCNetLabListPrograms = "/dcnetlab.v1.DCNetLab/ListPrograms"
+const OperationDCNetLabListTrafficScenarios = "/dcnetlab.v1.DCNetLab/ListTrafficScenarios"
 const OperationDCNetLabStartLab = "/dcnetlab.v1.DCNetLab/StartLab"
 const OperationDCNetLabStartNode = "/dcnetlab.v1.DCNetLab/StartNode"
 const OperationDCNetLabStartProgram = "/dcnetlab.v1.DCNetLab/StartProgram"
+const OperationDCNetLabStartTrafficScenario = "/dcnetlab.v1.DCNetLab/StartTrafficScenario"
 const OperationDCNetLabStopLab = "/dcnetlab.v1.DCNetLab/StopLab"
 const OperationDCNetLabStopNode = "/dcnetlab.v1.DCNetLab/StopNode"
 const OperationDCNetLabStopProgram = "/dcnetlab.v1.DCNetLab/StopProgram"
+const OperationDCNetLabStopTrafficScenario = "/dcnetlab.v1.DCNetLab/StopTrafficScenario"
 const OperationDCNetLabUpgradeProgram = "/dcnetlab.v1.DCNetLab/UpgradeProgram"
 const OperationDCNetLabUploadPackage = "/dcnetlab.v1.DCNetLab/UploadPackage"
 
@@ -74,9 +80,17 @@ type DCNetLabHTTPServer interface {
 	// the entrypoint of an installed Package version, managed through
 	// the per-server dcnetlab-server-agent.
 	CreateProgram(context.Context, *CreateProgramRequest) (*CreateProgramReply, error)
+	// CreateTrafficScenario --- Traffic ---
+	// TrafficScenarios drive measurable traffic between two lab servers
+	// through a pair of trafficgen Programs (server role on the
+	// destination, client role on the source); the collector tails the
+	// client's stat lines into rate/success-rate/latency metrics and
+	// evaluates any configured assertions.
+	CreateTrafficScenario(context.Context, *CreateTrafficScenarioRequest) (*TrafficScenario, error)
 	DeleteLab(context.Context, *DeleteLabRequest) (*OperationRef, error)
 	DeletePackage(context.Context, *DeletePackageRequest) (*DeletePackageReply, error)
 	DeleteProgram(context.Context, *ProgramOpRequest) (*DeleteProgramReply, error)
+	DeleteTrafficScenario(context.Context, *TrafficScenarioOpRequest) (*DeleteTrafficScenarioReply, error)
 	GetLab(context.Context, *GetLabRequest) (*Lab, error)
 	// GetNodeBGP GetNodeBGP returns the BGP configuration of one node as derived
 	// by the FRR compiler from the topology model: eBGP neighbors over
@@ -117,6 +131,11 @@ type DCNetLabHTTPServer interface {
 	GetOperation(context.Context, *GetOperationRequest) (*Operation, error)
 	GetPlan(context.Context, *GetPlanRequest) (*Plan, error)
 	GetProgramLogs(context.Context, *GetProgramLogsRequest) (*ProgramLogs, error)
+	// GetTrafficScenarioHistory GetTrafficScenarioHistory returns the collected metrics series of
+	// one scenario: 5 s points kept in memory for up to one hour
+	// (scenarios are short interactive experiments, not persisted
+	// across a controller restart like server metrics).
+	GetTrafficScenarioHistory(context.Context, *GetTrafficScenarioHistoryRequest) (*TrafficScenarioHistory, error)
 	Healthz(context.Context, *HealthzRequest) (*HealthzReply, error)
 	// InstallPackage InstallPackage delivers a package version onto lab servers
 	// without declaring a program — the "deploy a binary" path (apt
@@ -134,15 +153,18 @@ type DCNetLabHTTPServer interface {
 	// ListProfiles --- Profiles & health ---
 	ListProfiles(context.Context, *ListProfilesRequest) (*ListProfilesReply, error)
 	ListPrograms(context.Context, *ListProgramsRequest) (*ListProgramsReply, error)
+	ListTrafficScenarios(context.Context, *ListTrafficScenariosRequest) (*ListTrafficScenariosReply, error)
 	// StartLab StartLab / StopLab power the deployed containers of a lab on and
 	// off (docker start/stop) without touching the generation.
 	StartLab(context.Context, *StartLabRequest) (*OperationRef, error)
 	// StartNode StartNode / StopNode power a single device on and off.
 	StartNode(context.Context, *StartNodeRequest) (*Node, error)
 	StartProgram(context.Context, *ProgramOpRequest) (*Program, error)
+	StartTrafficScenario(context.Context, *TrafficScenarioOpRequest) (*TrafficScenario, error)
 	StopLab(context.Context, *StopLabRequest) (*OperationRef, error)
 	StopNode(context.Context, *StopNodeRequest) (*Node, error)
 	StopProgram(context.Context, *ProgramOpRequest) (*Program, error)
+	StopTrafficScenario(context.Context, *TrafficScenarioOpRequest) (*TrafficScenario, error)
 	UpgradeProgram(context.Context, *UpgradeProgramRequest) (*Program, error)
 	// UploadPackage --- Packages ---
 	// Packages are versioned program artifacts (tar.gz with a
@@ -185,6 +207,12 @@ func RegisterDCNetLabHTTPServer(s *http.Server, srv DCNetLabHTTPServer) {
 	r.DELETE("/api/v1/labs/{lab_id}/programs/{id}", _DCNetLab_DeleteProgram0_HTTP_Handler(srv))
 	r.POST("/api/v1/labs/{lab_id}/programs/batch", _DCNetLab_BatchProgramOp0_HTTP_Handler(srv))
 	r.GET("/api/v1/labs/{lab_id}/programs/{id}/logs", _DCNetLab_GetProgramLogs0_HTTP_Handler(srv))
+	r.POST("/api/v1/labs/{lab_id}/traffic-scenarios", _DCNetLab_CreateTrafficScenario0_HTTP_Handler(srv))
+	r.GET("/api/v1/labs/{lab_id}/traffic-scenarios", _DCNetLab_ListTrafficScenarios0_HTTP_Handler(srv))
+	r.POST("/api/v1/labs/{lab_id}/traffic-scenarios/{id}/start", _DCNetLab_StartTrafficScenario0_HTTP_Handler(srv))
+	r.POST("/api/v1/labs/{lab_id}/traffic-scenarios/{id}/stop", _DCNetLab_StopTrafficScenario0_HTTP_Handler(srv))
+	r.DELETE("/api/v1/labs/{lab_id}/traffic-scenarios/{id}", _DCNetLab_DeleteTrafficScenario0_HTTP_Handler(srv))
+	r.GET("/api/v1/labs/{lab_id}/traffic-scenarios/{id}/history", _DCNetLab_GetTrafficScenarioHistory0_HTTP_Handler(srv))
 	r.POST("/api/v1/labs/{lab_id}/plans", _DCNetLab_CreatePlan0_HTTP_Handler(srv))
 	r.GET("/api/v1/plans/{id}", _DCNetLab_GetPlan0_HTTP_Handler(srv))
 	r.POST("/api/v1/plans/{id}/apply", _DCNetLab_ApplyPlan0_HTTP_Handler(srv))
@@ -901,6 +929,147 @@ func _DCNetLab_GetProgramLogs0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx htt
 	}
 }
 
+func _DCNetLab_CreateTrafficScenario0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in CreateTrafficScenarioRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabCreateTrafficScenario)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.CreateTrafficScenario(ctx, req.(*CreateTrafficScenarioRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*TrafficScenario)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_ListTrafficScenarios0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in ListTrafficScenariosRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabListTrafficScenarios)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.ListTrafficScenarios(ctx, req.(*ListTrafficScenariosRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*ListTrafficScenariosReply)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_StartTrafficScenario0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in TrafficScenarioOpRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabStartTrafficScenario)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.StartTrafficScenario(ctx, req.(*TrafficScenarioOpRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*TrafficScenario)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_StopTrafficScenario0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in TrafficScenarioOpRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabStopTrafficScenario)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.StopTrafficScenario(ctx, req.(*TrafficScenarioOpRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*TrafficScenario)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_DeleteTrafficScenario0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in TrafficScenarioOpRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabDeleteTrafficScenario)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.DeleteTrafficScenario(ctx, req.(*TrafficScenarioOpRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*DeleteTrafficScenarioReply)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_GetTrafficScenarioHistory0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in GetTrafficScenarioHistoryRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabGetTrafficScenarioHistory)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.GetTrafficScenarioHistory(ctx, req.(*GetTrafficScenarioHistoryRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*TrafficScenarioHistory)
+		return ctx.Result(200, reply)
+	}
+}
+
 func _DCNetLab_CreatePlan0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
 	return func(ctx http.Context) error {
 		var in CreatePlanRequest
@@ -1092,9 +1261,17 @@ type DCNetLabHTTPClient interface {
 	// the entrypoint of an installed Package version, managed through
 	// the per-server dcnetlab-server-agent.
 	CreateProgram(ctx context.Context, req *CreateProgramRequest, opts ...http.CallOption) (rsp *CreateProgramReply, err error)
+	// CreateTrafficScenario --- Traffic ---
+	// TrafficScenarios drive measurable traffic between two lab servers
+	// through a pair of trafficgen Programs (server role on the
+	// destination, client role on the source); the collector tails the
+	// client's stat lines into rate/success-rate/latency metrics and
+	// evaluates any configured assertions.
+	CreateTrafficScenario(ctx context.Context, req *CreateTrafficScenarioRequest, opts ...http.CallOption) (rsp *TrafficScenario, err error)
 	DeleteLab(ctx context.Context, req *DeleteLabRequest, opts ...http.CallOption) (rsp *OperationRef, err error)
 	DeletePackage(ctx context.Context, req *DeletePackageRequest, opts ...http.CallOption) (rsp *DeletePackageReply, err error)
 	DeleteProgram(ctx context.Context, req *ProgramOpRequest, opts ...http.CallOption) (rsp *DeleteProgramReply, err error)
+	DeleteTrafficScenario(ctx context.Context, req *TrafficScenarioOpRequest, opts ...http.CallOption) (rsp *DeleteTrafficScenarioReply, err error)
 	GetLab(ctx context.Context, req *GetLabRequest, opts ...http.CallOption) (rsp *Lab, err error)
 	// GetNodeBGP GetNodeBGP returns the BGP configuration of one node as derived
 	// by the FRR compiler from the topology model: eBGP neighbors over
@@ -1135,6 +1312,11 @@ type DCNetLabHTTPClient interface {
 	GetOperation(ctx context.Context, req *GetOperationRequest, opts ...http.CallOption) (rsp *Operation, err error)
 	GetPlan(ctx context.Context, req *GetPlanRequest, opts ...http.CallOption) (rsp *Plan, err error)
 	GetProgramLogs(ctx context.Context, req *GetProgramLogsRequest, opts ...http.CallOption) (rsp *ProgramLogs, err error)
+	// GetTrafficScenarioHistory GetTrafficScenarioHistory returns the collected metrics series of
+	// one scenario: 5 s points kept in memory for up to one hour
+	// (scenarios are short interactive experiments, not persisted
+	// across a controller restart like server metrics).
+	GetTrafficScenarioHistory(ctx context.Context, req *GetTrafficScenarioHistoryRequest, opts ...http.CallOption) (rsp *TrafficScenarioHistory, err error)
 	Healthz(ctx context.Context, req *HealthzRequest, opts ...http.CallOption) (rsp *HealthzReply, err error)
 	// InstallPackage InstallPackage delivers a package version onto lab servers
 	// without declaring a program — the "deploy a binary" path (apt
@@ -1152,15 +1334,18 @@ type DCNetLabHTTPClient interface {
 	// ListProfiles --- Profiles & health ---
 	ListProfiles(ctx context.Context, req *ListProfilesRequest, opts ...http.CallOption) (rsp *ListProfilesReply, err error)
 	ListPrograms(ctx context.Context, req *ListProgramsRequest, opts ...http.CallOption) (rsp *ListProgramsReply, err error)
+	ListTrafficScenarios(ctx context.Context, req *ListTrafficScenariosRequest, opts ...http.CallOption) (rsp *ListTrafficScenariosReply, err error)
 	// StartLab StartLab / StopLab power the deployed containers of a lab on and
 	// off (docker start/stop) without touching the generation.
 	StartLab(ctx context.Context, req *StartLabRequest, opts ...http.CallOption) (rsp *OperationRef, err error)
 	// StartNode StartNode / StopNode power a single device on and off.
 	StartNode(ctx context.Context, req *StartNodeRequest, opts ...http.CallOption) (rsp *Node, err error)
 	StartProgram(ctx context.Context, req *ProgramOpRequest, opts ...http.CallOption) (rsp *Program, err error)
+	StartTrafficScenario(ctx context.Context, req *TrafficScenarioOpRequest, opts ...http.CallOption) (rsp *TrafficScenario, err error)
 	StopLab(ctx context.Context, req *StopLabRequest, opts ...http.CallOption) (rsp *OperationRef, err error)
 	StopNode(ctx context.Context, req *StopNodeRequest, opts ...http.CallOption) (rsp *Node, err error)
 	StopProgram(ctx context.Context, req *ProgramOpRequest, opts ...http.CallOption) (rsp *Program, err error)
+	StopTrafficScenario(ctx context.Context, req *TrafficScenarioOpRequest, opts ...http.CallOption) (rsp *TrafficScenario, err error)
 	UpgradeProgram(ctx context.Context, req *UpgradeProgramRequest, opts ...http.CallOption) (rsp *Program, err error)
 	// UploadPackage --- Packages ---
 	// Packages are versioned program artifacts (tar.gz with a
@@ -1252,6 +1437,25 @@ func (c *DCNetLabHTTPClientImpl) CreateProgram(ctx context.Context, in *CreatePr
 	return &out, nil
 }
 
+// CreateTrafficScenario --- Traffic ---
+// TrafficScenarios drive measurable traffic between two lab servers
+// through a pair of trafficgen Programs (server role on the
+// destination, client role on the source); the collector tails the
+// client's stat lines into rate/success-rate/latency metrics and
+// evaluates any configured assertions.
+func (c *DCNetLabHTTPClientImpl) CreateTrafficScenario(ctx context.Context, in *CreateTrafficScenarioRequest, opts ...http.CallOption) (*TrafficScenario, error) {
+	var out TrafficScenario
+	pattern := "/api/v1/labs/{lab_id}/traffic-scenarios"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationDCNetLabCreateTrafficScenario))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (c *DCNetLabHTTPClientImpl) DeleteLab(ctx context.Context, in *DeleteLabRequest, opts ...http.CallOption) (*OperationRef, error) {
 	var out OperationRef
 	pattern := "/api/v1/labs/{id}"
@@ -1283,6 +1487,19 @@ func (c *DCNetLabHTTPClientImpl) DeleteProgram(ctx context.Context, in *ProgramO
 	pattern := "/api/v1/labs/{lab_id}/programs/{id}"
 	path := binding.EncodeURL(pattern, in, true)
 	opts = append(opts, http.Operation(OperationDCNetLabDeleteProgram))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "DELETE", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *DCNetLabHTTPClientImpl) DeleteTrafficScenario(ctx context.Context, in *TrafficScenarioOpRequest, opts ...http.CallOption) (*DeleteTrafficScenarioReply, error) {
+	var out DeleteTrafficScenarioReply
+	pattern := "/api/v1/labs/{lab_id}/traffic-scenarios/{id}"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationDCNetLabDeleteTrafficScenario))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "DELETE", path, nil, &out, opts...)
 	if err != nil {
@@ -1475,6 +1692,23 @@ func (c *DCNetLabHTTPClientImpl) GetProgramLogs(ctx context.Context, in *GetProg
 	return &out, nil
 }
 
+// GetTrafficScenarioHistory GetTrafficScenarioHistory returns the collected metrics series of
+// one scenario: 5 s points kept in memory for up to one hour
+// (scenarios are short interactive experiments, not persisted
+// across a controller restart like server metrics).
+func (c *DCNetLabHTTPClientImpl) GetTrafficScenarioHistory(ctx context.Context, in *GetTrafficScenarioHistoryRequest, opts ...http.CallOption) (*TrafficScenarioHistory, error) {
+	var out TrafficScenarioHistory
+	pattern := "/api/v1/labs/{lab_id}/traffic-scenarios/{id}/history"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationDCNetLabGetTrafficScenarioHistory))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (c *DCNetLabHTTPClientImpl) Healthz(ctx context.Context, in *HealthzRequest, opts ...http.CallOption) (*HealthzReply, error) {
 	var out HealthzReply
 	pattern := "/api/v1/healthz"
@@ -1624,6 +1858,19 @@ func (c *DCNetLabHTTPClientImpl) ListPrograms(ctx context.Context, in *ListProgr
 	return &out, nil
 }
 
+func (c *DCNetLabHTTPClientImpl) ListTrafficScenarios(ctx context.Context, in *ListTrafficScenariosRequest, opts ...http.CallOption) (*ListTrafficScenariosReply, error) {
+	var out ListTrafficScenariosReply
+	pattern := "/api/v1/labs/{lab_id}/traffic-scenarios"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationDCNetLabListTrafficScenarios))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // StartLab StartLab / StopLab power the deployed containers of a lab on and
 // off (docker start/stop) without touching the generation.
 func (c *DCNetLabHTTPClientImpl) StartLab(ctx context.Context, in *StartLabRequest, opts ...http.CallOption) (*OperationRef, error) {
@@ -1666,6 +1913,19 @@ func (c *DCNetLabHTTPClientImpl) StartProgram(ctx context.Context, in *ProgramOp
 	return &out, nil
 }
 
+func (c *DCNetLabHTTPClientImpl) StartTrafficScenario(ctx context.Context, in *TrafficScenarioOpRequest, opts ...http.CallOption) (*TrafficScenario, error) {
+	var out TrafficScenario
+	pattern := "/api/v1/labs/{lab_id}/traffic-scenarios/{id}/start"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationDCNetLabStartTrafficScenario))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (c *DCNetLabHTTPClientImpl) StopLab(ctx context.Context, in *StopLabRequest, opts ...http.CallOption) (*OperationRef, error) {
 	var out OperationRef
 	pattern := "/api/v1/labs/{id}/stop"
@@ -1697,6 +1957,19 @@ func (c *DCNetLabHTTPClientImpl) StopProgram(ctx context.Context, in *ProgramOpR
 	pattern := "/api/v1/labs/{lab_id}/programs/{id}/stop"
 	path := binding.EncodeURL(pattern, in, false)
 	opts = append(opts, http.Operation(OperationDCNetLabStopProgram))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *DCNetLabHTTPClientImpl) StopTrafficScenario(ctx context.Context, in *TrafficScenarioOpRequest, opts ...http.CallOption) (*TrafficScenario, error) {
+	var out TrafficScenario
+	pattern := "/api/v1/labs/{lab_id}/traffic-scenarios/{id}/stop"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationDCNetLabStopTrafficScenario))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
 	if err != nil {

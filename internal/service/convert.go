@@ -613,3 +613,89 @@ func operationToPB(op *model.Operation) *v1.Operation {
 
 	return pb
 }
+
+// --- Traffic ---
+
+func trafficAssertionsFromPB(pbs []*v1.TrafficAssertion) []model.TrafficAssertion {
+	assertions := make([]model.TrafficAssertion, 0, len(pbs))
+	for _, a := range pbs {
+		assertions = append(assertions, model.TrafficAssertion{
+			Metric: a.Metric, Comparator: a.Comparator, Threshold: a.Threshold,
+		})
+	}
+
+	return assertions
+}
+
+func trafficAssertionResultsToPB(results []model.TrafficAssertionResult) []*v1.TrafficAssertionResult {
+	pbs := make([]*v1.TrafficAssertionResult, 0, len(results))
+	for _, r := range results {
+		pbs = append(pbs, &v1.TrafficAssertionResult{
+			Metric: r.Metric, Comparator: r.Comparator, Threshold: r.Threshold,
+			Value: r.Value, Pass: r.Pass,
+		})
+	}
+
+	return pbs
+}
+
+// trafficPointToPB converts a point, or nil when it was never sampled
+// (a zero Ts would otherwise serialise as a large negative unix
+// timestamp).
+func trafficPointToPB(p model.TrafficPoint) *v1.TrafficPoint {
+	if p.Ts.IsZero() {
+		return nil
+	}
+
+	return &v1.TrafficPoint{
+		Ts:          p.Ts.Unix(),
+		Rate:        p.Rate,
+		SuccessRate: p.SuccessRate,
+		P50Us:       p.P50Us,
+		P95Us:       p.P95Us,
+		P99Us:       p.P99Us,
+	}
+}
+
+func trafficScenarioToPB(s *model.TrafficScenario) *v1.TrafficScenario {
+	return &v1.TrafficScenario{
+		Meta: metaToPB(s.Meta),
+		Spec: &v1.TrafficScenarioSpec{
+			LabId:            s.Spec.LabID,
+			SourceServerId:   s.Spec.SourceServerID,
+			SourceServerName: s.Spec.SourceServerName,
+			DestServerId:     s.Spec.DestServerID,
+			DestServerName:   s.Spec.DestServerName,
+			Protocol:         s.Spec.Protocol,
+			Port:             int32(s.Spec.Port),
+			Rate:             s.Spec.Rate,
+			Concurrency:      int32(s.Spec.Concurrency),
+			PayloadBytes:     int32(s.Spec.PayloadBytes),
+			DurationSeconds:  int32(s.Spec.Duration / time.Second),
+			Assertions:       trafficAssertionsToPB(s.Spec.Assertions),
+		},
+		Status: &v1.TrafficScenarioStatus{
+			Phase:             s.Status.Phase,
+			ServerProgramId:   s.Status.ServerProgramID,
+			ServerProgramName: s.Status.ServerProgramName,
+			ClientProgramId:   s.Status.ClientProgramID,
+			ClientProgramName: s.Status.ClientProgramName,
+			StartedAt:         timePB(s.Status.StartedAt),
+			LastPoint:         trafficPointToPB(s.Status.LastPoint),
+			Assertions:        trafficAssertionResultsToPB(s.Status.Assertions),
+			LastObserved:      timePB(s.Status.LastObserved),
+			LastError:         s.Status.LastError,
+		},
+	}
+}
+
+func trafficAssertionsToPB(assertions []model.TrafficAssertion) []*v1.TrafficAssertion {
+	pbs := make([]*v1.TrafficAssertion, 0, len(assertions))
+	for _, a := range assertions {
+		pbs = append(pbs, &v1.TrafficAssertion{
+			Metric: a.Metric, Comparator: a.Comparator, Threshold: a.Threshold,
+		})
+	}
+
+	return pbs
+}

@@ -10,6 +10,38 @@ import (
 	"log/slog"
 )
 
+// maxPayloadBytes bounds --payload-bytes for http/tcp clients, chosen
+// to keep the filler buffer and server-side scan buffers small.
+const maxPayloadBytes = 1 << 20 // 1 MiB
+
+// maxUDPPayloadBytes additionally bounds UDP, whose payload plus the
+// seq prefix must fit in a single datagram and the fixed-size
+// server/client read buffer.
+const maxUDPPayloadBytes = 60000
+
+// makePayload returns n bytes of filler content, or nil when n is 0;
+// it errors when n is negative or exceeds max.
+func makePayload(n int, max int) ([]byte, error) {
+	if n < 0 {
+		return nil, fmt.Errorf("payload-bytes must be >= 0, got %d", n)
+	}
+
+	if n > max {
+		return nil, fmt.Errorf("payload-bytes must be <= %d, got %d", max, n)
+	}
+
+	if n == 0 {
+		return nil, nil
+	}
+
+	buf := make([]byte, n)
+	for i := range buf {
+		buf[i] = 'x'
+	}
+
+	return buf, nil
+}
+
 // Mode runs one trafficgen mode until ctx is cancelled.
 type Mode func(ctx context.Context, log *slog.Logger, args []string) error
 

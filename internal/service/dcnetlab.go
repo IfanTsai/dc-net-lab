@@ -28,12 +28,13 @@ type DCNetLabService struct {
 	runtime  *biz.RuntimeUsecase
 	programs *biz.ProgramUsecase
 	packages *biz.PackageUsecase
+	traffic  *biz.TrafficUsecase
 	log      *slog.Logger
 }
 
 // NewDCNetLabService wires the protobuf service.
-func NewDCNetLabService(labs *biz.LabUsecase, topos *biz.TopologyUsecase, plans *biz.PlanUsecase, ops *biz.OperationUsecase, power *biz.PowerUsecase, rt *biz.RuntimeUsecase, programs *biz.ProgramUsecase, packages *biz.PackageUsecase, log *slog.Logger) *DCNetLabService {
-	return &DCNetLabService{labs: labs, topos: topos, plans: plans, ops: ops, power: power, runtime: rt, programs: programs, packages: packages, log: log}
+func NewDCNetLabService(labs *biz.LabUsecase, topos *biz.TopologyUsecase, plans *biz.PlanUsecase, ops *biz.OperationUsecase, power *biz.PowerUsecase, rt *biz.RuntimeUsecase, programs *biz.ProgramUsecase, packages *biz.PackageUsecase, traffic *biz.TrafficUsecase, log *slog.Logger) *DCNetLabService {
+	return &DCNetLabService{labs: labs, topos: topos, plans: plans, ops: ops, power: power, runtime: rt, programs: programs, packages: packages, traffic: traffic, log: log}
 }
 
 // asAPIError maps biz-layer errors onto Kratos errors so the HTTP
@@ -410,6 +411,92 @@ func (s *DCNetLabService) GetProgramLogs(ctx context.Context, req *v1.GetProgram
 	}
 
 	return &v1.ProgramLogs{Content: content}, nil
+}
+
+// --- Traffic ---
+
+func (s *DCNetLabService) CreateTrafficScenario(ctx context.Context, req *v1.CreateTrafficScenarioRequest) (*v1.TrafficScenario, error) {
+	spec := model.TrafficScenarioSpec{
+		SourceServerID: req.SourceServerId,
+		DestServerID:   req.DestServerId,
+		Protocol:       req.Protocol,
+		Port:           int(req.Port),
+		Rate:           req.Rate,
+		Concurrency:    int(req.Concurrency),
+		PayloadBytes:   int(req.PayloadBytes),
+		Duration:       time.Duration(req.DurationSeconds) * time.Second,
+		Assertions:     trafficAssertionsFromPB(req.Assertions),
+	}
+
+	sc, err := s.traffic.CreateTrafficScenario(req.LabId, req.Name, spec)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return trafficScenarioToPB(sc), nil
+}
+
+func (s *DCNetLabService) ListTrafficScenarios(ctx context.Context, req *v1.ListTrafficScenariosRequest) (*v1.ListTrafficScenariosReply, error) {
+	scenarios, err := s.traffic.ListTrafficScenarios(req.LabId)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	reply := &v1.ListTrafficScenariosReply{Scenarios: make([]*v1.TrafficScenario, 0, len(scenarios))}
+	for _, sc := range scenarios {
+		reply.Scenarios = append(reply.Scenarios, trafficScenarioToPB(sc))
+	}
+
+	return reply, nil
+}
+
+func (s *DCNetLabService) StartTrafficScenario(ctx context.Context, req *v1.TrafficScenarioOpRequest) (*v1.TrafficScenario, error) {
+	sc, err := s.traffic.StartTrafficScenario(ctx, req.LabId, req.Id)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return trafficScenarioToPB(sc), nil
+}
+
+func (s *DCNetLabService) StopTrafficScenario(ctx context.Context, req *v1.TrafficScenarioOpRequest) (*v1.TrafficScenario, error) {
+	sc, err := s.traffic.StopTrafficScenario(ctx, req.LabId, req.Id)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return trafficScenarioToPB(sc), nil
+}
+
+func (s *DCNetLabService) DeleteTrafficScenario(ctx context.Context, req *v1.TrafficScenarioOpRequest) (*v1.DeleteTrafficScenarioReply, error) {
+	if err := s.traffic.DeleteTrafficScenario(ctx, req.LabId, req.Id); err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return &v1.DeleteTrafficScenarioReply{}, nil
+}
+
+func (s *DCNetLabService) GetTrafficScenarioHistory(ctx context.Context, req *v1.GetTrafficScenarioHistoryRequest) (*v1.TrafficScenarioHistory, error) {
+	var start, end time.Time
+	if req.Start > 0 {
+		start = time.Unix(req.Start, 0).UTC()
+	}
+
+	if req.End > 0 {
+		end = time.Unix(req.End, 0).UTC()
+	}
+
+	points, err := s.traffic.TrafficScenarioHistory(req.LabId, req.Id, start, end)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	reply := &v1.TrafficScenarioHistory{Points: make([]*v1.TrafficPoint, 0, len(points))}
+	for _, p := range points {
+		reply.Points = append(reply.Points, trafficPointToPB(p))
+	}
+
+	return reply, nil
 }
 
 // --- Plans ---

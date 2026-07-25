@@ -9,8 +9,8 @@
 | Iteration 0 | 运行时验证：Controller 骨架、Vue 骨架、两节点拓扑 | ✅ 已完成 |
 | Iteration 1 | 物理网络闭环：Profile、IPAM、ASN、FRR 编译、Plan/Apply、Topology UI | ✅ 已完成，含真实部署验证 |
 | Iteration 2 | Server Program:Compute Server Container、Server Agent、trafficgen | ✅ 已完成，含 Package 制品部署 |
-| Iteration 3 | Daemon Framework | 🚧 进行中（Auto Start / Restart Policy / 存活 + 就绪检查 / 启动顺序已落地；剩就绪门控排序、配置渲染 + Provider、Daemon UI） |
-| Iteration 4 | Traffic | ⬜ 未开始 |
+| Iteration 3 | Daemon Framework | 🚧 进行中（Auto Start / Restart Policy / 存活 + 就绪检查 / 启动顺序已落地；剩就绪门控排序、配置渲染 + Provider、Daemon UI，留到接 Pingmesh 前再做） |
+| Iteration 4 | Traffic | ✅ 已完成，含真实环境验证 |
 | Iteration 5 | 原生抓包（AF_PACKET） | ⬜ 未开始 |
 | Iteration 6 | 故障实验 | ⬜ 未开始 |
 | Iteration 7 | 扩容和 Generation Rollback | ⬜ 未开始（Generation 快照已就绪） |
@@ -207,6 +207,17 @@ containerlab 依赖 Linux 内核（netlink、网络命名空间），Darwin 无�
 - **实现位置**：模型/API 开关（`TopologySpec.InternetAccess`）；FRR 编译器 `NeighborConfig.DefaultOriginate`；containerlab 编译器 `dcedgeExec` + `EdgeImage`；runtime `internal/runtime/internet.go`（建网/接入/找 WAN 口/配路由与 masquerade，全程幂等）；biz apply 流水线 `ConnectInternet` 步骤（noop runtime 跳过）。BGP 视图（GetNodeBGP）与部署共用同一编译器，default-originate 同步呈现。
 - **测试与验证**：编译器测试覆盖开关两态的产物差异；e2e 验证 traceroute 全路径穿 fabric、`apk add`/HTTPS 可用、dcedge SNAT 计数命中、pause dcedge 断外网且 unpause 自愈、未开启的 lab 保持气隙。
 
+### Traffic 子系统（设计 §15，Iteration 4）
+
+用户可以在两台 server 之间跑可度量的流量、设断言、看实时曲线（设计文档 Iteration 4 交付项：Traffic Scenario / HTTP·TCP·UDP Client / RPS·成功率·时延 / Traffic UI 全部达成）。路线上跳过了 Iteration 3 剩余项（就绪门控排序、GenericDaemonProvider），直接做 Traffic——trafficgen 已就绪、演示价值更高，前者留到接 Pingmesh 前再做。
+
+- **trafficgen 增强**（`serverapps/internal/trafficgen`）：延迟统计从单条 avg/max 升级为窗口内采样（`stats.go` 加锁存 slice）每 5 s 排序算 p50/p95/p99；http/tcp/udp 三个 client 都加 `--concurrency N`（每个 worker 独立 ticker + 连接，互不影响）与 `--payload-bytes N`（http 走 POST body；tcp 在 seq 行后追加 filler 字节，服务端 `bufio.Scanner` 缓冲区同步调大到 1 MiB 避免行截断；udp 追加到数据报，受 64 KB 报文上限约束单独限流 60000）。
+- **TrafficScenario 资源**（`internal/model/traffic.go` + biz/data/service 分层 + `pb` API，独立于 Program 与 Plan/Apply）：`Spec` 含源/目标 server、protocol（http/tcp/udp）、port（按协议给默认值 8080/9000）、rate（映射 client `--interval=1/rate`）、concurrency、payloadBytes、duration（0=一直跑到手动停止）、assertions（`[]{metric, comparator, threshold}`，metric ∈ rate/successRate/p50/p95/p99）；`Status` 含两个 Program 的 id/name、最新窗口指标、逐条断言实时 pass/fail。
+- **生命周期**：Start 复用现有 `ProgramUsecase.CreateProgram` 在目标 server 建 `<name>-server` Program、源 server 建 `<name>-client` Program（`RestartPolicy=Always`，target IP 用现成的 `node.Spec.Address.Addr()` 查询）；client 创建失败会回滚已建的 server Program，不留孤儿；Stop 只停两个 Program 不删（重启快，对齐 `programs` 页可见但非独立管理）；Delete 级联删两个 Program。**关键坑**：`dcnetlab-trafficgen` 是按 `os.Args[1]` 分发模式的多命令二进制（`http-server`/`http-client`/…），`Program.Spec.Args` 的第一个元素必须是模式名——上线前的真实环境验证抓到这个漏传（`serverArgs`/`clientArgs` 最初只拼了 flag，没拼模式，进程无限崩溃重启），修复后补了拆包级测试断言 `Args[0]`，光靠 flag 内容的测试断言不出这类问题。
+- **指标管道**（`internal/traffic`，独立于 `internal/metrics`）：`Collector` 每 5 s（贴合 trafficgen 自身打点间隔）轮询每个 Running scenario，复用现成的 `Agent.TailLogs` 拉 client 程序最近几行日志，按 JSON `msg=="stats"` 取最新一行，累计 total/failed 与上次基线做差得到窗口内 rate/successRate，直接透传 trafficgen 自带的 p50/p95/p99；首次采样只种基线不出点（避免生命周期起点的虚假瞬时值）；`duration` 到期由 Collector 反向调用 biz 层 `Stopper` 接口自动停止（`wire.Bind` 鸭子类型绑定，`internal/traffic` 不反向依赖 `biz`）。`History` 只保内存环形窗口（1 小时 @ 5 s），不落 JSONL——Scenario 是交互式短生命周期实验，重启/重部署后本就要重新 Start，不需要跨重启保留历史，区别于 server 监控。
+- **Traffic UI**：新页面（列表 3 s 轮询 / 创建对话框选源+目标 server、协议、速率/并发/负载/持续时间、动态加断言 / 启停删除 / 实时指标列 + 断言 pass/fail 角标 / 图表抽屉复用 `MetricsChart.vue` 展示成功率+速率+p50/p95/p99 三块，5 s 轮询贴合采集节奏）。
+- **真实环境验证**（dc1，25 容器）：Create → Start 在真实 server 上起两个 trafficgen 进程（`pid` 非零、无重启、无 lastError），日志确认 client 按 `--concurrency`/`--interval` 并发发请求；发现并修复了上面记录的模式参数漏传坑；受当前 dc1 环境的已知漂移（长期运行 + WSL2 容器重启导致的 veth 丢失，见「关键经验记录」第 3 条）影响，本轮验证到"进程正确起停 + Collector 正确采集并如实反映失败"为止（assertion 正确判定 successRate 未达标），完整穿透 fabric 的成功流量待下次 Plan/Apply 重部署后复验；测试场景创建/启动/停止/删除全流程无残留（programs 与 scenario 均清理干净）。
+
 ### 代码规范与工程化
 
 - [golang-style.md](golang-style.md) 为 Go 代码基线；golangci-lint（`.golangci.yml`，版本固定）+ 自研 `scripts/check-style.py`（空行语义）挂在 `make lint`，零告警纳入提交门禁。
@@ -222,6 +233,7 @@ containerlab 依赖 Linux 内核（netlink、网络命名空间），Darwin 无�
 6. **wire v0.7.0** 自带的 x/tools 解析不了新版本 Go，`init-tools.sh` 用临时模块升级 x/tools 后构建。
 7. **server 默认路由 exec 竞态**：`ip route replace default via <gw>` 在 zebra 尚未给 bond0 配地址时因 nexthop 不可达而失败（containerlab exec 与 FRR 启动并发），管理网默认路由反客为主、流量静默逃逸——加 `dev bond0 onlink` 让路由安装不依赖 nexthop 预先可达。
 8. **`docker network connect` 接口命名冲突**：Docker 按自身 endpoint 计数给新接口起名 `eth<n>`，不知道 containerlab 已把 veth 塞进命名空间占了 eth1+，撞名报 `file exists`；但失败会推进计数器，有界重试即可越过占用序号（Docker 28 的 `com.docker.network.endpoint.ifname` 选项可指定接口名，27 忽略之）。接口名不可假设，用 endpoint IP 反查。
+9. **多命令二进制的 `Program.Spec.Args` 必须自带模式名**：`dcnetlab-trafficgen` 按 `os.Args[1]` 分发子命令（`http-server`/`http-client`/…），只拼 flag（如 `--listen`/`--target`）会让进程立刻报 `unknown mode "--xxx"` 退出、RestartPolicy=Always 下无限崩溃重启——单测只断言了 flag 内容、没断言 `Args[0]`，这类"参数拼装漏了必需的第一位"问题必须在真实环境跑一次真实进程才会暴露，光靠 mock agent 的单测测不出来。
 
 ## 与设计文档的已知偏差
 
@@ -236,15 +248,15 @@ containerlab 依赖 Linux 内核（netlink、网络命名空间），Darwin 无�
 
 ### 迭代路线与排序
 
-原计划顺序为 It. 3 → It. 4 → It. 5 → It. 6，建议调整为 **It. 3 剩余 → It. 4 Traffic → It. 6 故障 → It. 5 抓包 → It. 8 Pingmesh → It. 7 扩容 / Rollback → It. 9/10 虚拟网络 / EIP**，理由：
+原计划顺序为 It. 3 → It. 4 → It. 5 → It. 6；实际执行时与用户对齐后调整为 **It. 4 Traffic（已完成）→ It. 6 故障 → It. 5 抓包 → It. 3 剩余 + It. 8 Pingmesh → It. 7 扩容 / Rollback → It. 9/10 虚拟网络 / EIP**，理由：
 
-- **Traffic（It. 4）依赖度低、演示价值高**：trafficgen 六模式与 JSON 打点已就绪，Traffic Scenario 本质是"一对 Program 的编排 + 指标汇聚"，而指标管道（controller 拉取 + 内存窗口 + JSONL 分片 + `/metrics` 出口）已在 Server 监控落成，可直接复用 `internal/metrics` 的 History/Collector 模式；主要新工作是 Scenario 资源模型、断言（Assertions）与 Traffic UI（P50/P95/P99 曲线）。
-- **故障实验（It. 6）紧跟 Traffic**：Node Stop 已有（pause/unpause），Link Down/Delay/Loss/Rate Limit 均为 netem/netlink 操作，"注入故障 → Traffic 曲线掉坑 → 恢复"是平台最核心的演示闭环。抓包（It. 5，AF_PACKET）为独立能力，后置不损失价值。设计 §17 要求"故障恢复基于故障前快照"，需引入 FaultSession 资源持有快照，是该迭代的建模重点。
+- **Traffic（It. 4）已提前于 It. 3 剩余项完成**：trafficgen 已就绪、演示价值高于就绪门控排序 / `GenericDaemonProvider`（两者暂无真实消费者，留到接 Pingmesh 前再做，避免为无消费者的抽象提前设计）。
+- **故障实验（It. 6）紧跟 Traffic**：Node Stop 已有（pause/unpause），Link Down/Delay/Loss/Rate Limit 均为 netem/netlink 操作，"注入故障 → Traffic 曲线掉坑 → 恢复"是平台最核心的演示闭环，Traffic 的指标管道已就绪可直接消费。抓包（It. 5，AF_PACKET）为独立能力，后置不损失价值。设计 §17 要求"故障恢复基于故障前快照"，需引入 FaultSession 资源持有快照，是该迭代的建模重点。
 - **Pingmesh（It. 8）提前到扩容之前**：它是 Daemon Framework 的首个真实消费者，尽早验证 DaemonProvider 接口设计是否成立；扩容 / Rollback（Generation 快照已就绪）不阻塞任何人，何时做都行。
 
 ### Iteration 3 剩余项拆解
 
-Auto Start 与 Restart Policy 已在"Program 的 systemd 化"一轮落地（`autoStart`、`RestartPolicy` 含指数退避、simple/oneshot 类型、agent 崩溃自愈），退出标准"Server 重启后 Required Daemon 自动恢复"的机制链路已全通，剩余：
+Auto Start 与 Restart Policy 已在"Program 的 systemd 化"一轮落地（`autoStart`、`RestartPolicy` 含指数退避、simple/oneshot 类型、agent 崩溃自愈），退出标准"Server 重启后 Required Daemon 自动恢复"的机制链路已全通，剩余（留到接 Pingmesh 前再做）：
 
 1. ~~**健康检查**（设计 §10.7）~~ ✅ 已落地：Process/TCP/HTTP 存活 + 就绪探测（详见上文「Program 存活检查」「Program 就绪检查与启动顺序」）。
 2. ~~**启动顺序**（§10.8）~~ 🚧 部分落地：`StartupOrder` 整数排序在 agent 开机与 `RestorePrograms` 两条路径生效（不做 `dependsOn` DAG）。**剩就绪门控排序**——"等前序 order 组 ready 再启后序"，就绪状态已就位作为门控信号；涉及开机时延与门控归属（agent 侧 vs controller 侧）取舍，待定后补。
@@ -255,7 +267,7 @@ Auto Start 与 Restart Policy 已在"Program 的 systemd 化"一轮落地（`aut
 
 ### 迭代外技术债
 
-1. **Operation 进度仍为 HTTP 轮询**：Traffic UI 与故障实验会加重实时推送需求，It. 4 做 Traffic UI 时是把 Operation/Traffic 指标统一迁到现有 WebSocket 通道的合适时机。
+1. **Operation 进度仍为 HTTP 轮询**：Traffic 页面这轮同样保持轮询（列表 3 s、图表 5 s），未迁入现有 WebSocket 通道；故障实验若需要更低延迟的曲线联动，是把 Operation/Traffic 指标统一迁到 WebSocket 的合适时机。
 2. **Package 格式扩展**：deb（需 Debian 系 server 镜像）与 OCI Image 作为 `format` 扩展位；随 It. 7 扩缩容触碰镜像与装机链路时引入"集成进镜像"的预装通道（第一个搬进镜像的是 agent）。
 3. **多 DC 互联**：dcedge 每 DC 独享、共享 external 骨干层；DC 间流量（目的 10/8）已在边界 NAT 规则中预留不做转换，对应真实 DCI 语义。
 4. **控制面 / 数据面分离（宿主侧 runtime agent）**：Controller 与 docker 宿主现有四处耦合——子进程直调 `containerlab`/`docker` CLI、编译产物以宿主绝对路径作 bind mount 源、经管理网直拨容器内 agent 的 gRPC、agent 按管理网网关地址回拉软件包（假设 Controller 就在网关侧）。`runtime.Driver` 接口已是天然切分缝隙，做多宿主 / 多 DC（上条）时引入宿主侧 runtime agent（产物传输 + exec 流代理 + 双向网络打通）即可分离；单机场景不提前拆。详见 [macos.md](macos.md)「为什么必须进虚机」。

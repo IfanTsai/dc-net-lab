@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { HealthCheck, Lab, Link, MetricsPoint, Node, NodeBGP, NodeBGPTable, NodeInventory, NodeMetrics, NodeRoutes, NodeRuntime, Operation, Package, Plan, ProfileInfo, Program, ProgramOpResult, ServerInstallResult, TopologySpec } from '../types/models'
+import type { HealthCheck, Lab, Link, MetricsPoint, Node, NodeBGP, NodeBGPTable, NodeInventory, NodeMetrics, NodeRoutes, NodeRuntime, Operation, Package, Plan, ProfileInfo, Program, ProgramOpResult, ServerInstallResult, TopologySpec, TrafficAssertion, TrafficPoint, TrafficScenario } from '../types/models'
 
 const base = '/api/v1'
 
@@ -74,6 +74,21 @@ export const labApi = {
     api.del<Record<string, never>>(`${base}/labs/${labId}/programs/${id}`),
   programLogs: (labId: string, id: string, tail = 200) =>
     api.get<{ content: string }>(`${base}/labs/${labId}/programs/${id}/logs?tail=${tail}`).then((r) => r.content),
+
+  trafficScenarios: (labId: string) =>
+    api.get<{ scenarios: TrafficScenario[] }>(`${base}/labs/${labId}/traffic-scenarios`).then((r) => r.scenarios ?? []),
+  createTrafficScenario: (labId: string, body: { name: string; sourceServerId: string; destServerId: string; protocol: string; port?: number; rate: number; concurrency: number; payloadBytes?: number; durationSeconds?: number; assertions?: TrafficAssertion[] }) =>
+    api.post<TrafficScenario>(`${base}/labs/${labId}/traffic-scenarios`, body),
+  startTrafficScenario: (labId: string, id: string) =>
+    api.post<TrafficScenario>(`${base}/labs/${labId}/traffic-scenarios/${id}/start`),
+  stopTrafficScenario: (labId: string, id: string) =>
+    api.post<TrafficScenario>(`${base}/labs/${labId}/traffic-scenarios/${id}/stop`),
+  deleteTrafficScenario: (labId: string, id: string) =>
+    api.del<Record<string, never>>(`${base}/labs/${labId}/traffic-scenarios/${id}`),
+  trafficScenarioHistory: (labId: string, id: string, startSec: number, endSec: number) =>
+    api.get<{ points?: TrafficPoint[] }>(
+      `${base}/labs/${labId}/traffic-scenarios/${id}/history?start=${startSec}&end=${endSec}`,
+    ).then((r) => r.points ?? []),
 
   createPlan: (id: string) => api.post<Plan>(`${base}/labs/${id}/plans`),
   getPlan: (planId: string) => api.get<Plan>(`${base}/plans/${planId}`),
