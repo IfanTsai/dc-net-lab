@@ -3,9 +3,11 @@ package observer
 import (
 	"context"
 	"log/slog"
+	"net"
 	"os"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/ifantsai/dcnetlab/internal/model"
 	"github.com/ifantsai/dcnetlab/internal/runtime"
@@ -43,6 +45,10 @@ type fakeDriver struct {
 
 	states map[string]string
 	exec   []byte
+	// addr, when set, is returned by NodeAddress (the noop default is
+	// ErrNotSupported); onExec observes every Exec call.
+	addr   string
+	onExec func(nodeName string, cmd []string)
 }
 
 func (d *fakeDriver) NodeStates(ctx context.Context, labName string, names []string) (map[string]string, error) {
@@ -60,7 +66,19 @@ func (d *fakeDriver) NodeStates(ctx context.Context, labName string, names []str
 }
 
 func (d *fakeDriver) Exec(ctx context.Context, labName, nodeName string, cmd []string) ([]byte, error) {
+	if d.onExec != nil {
+		d.onExec(nodeName, cmd)
+	}
+
 	return d.exec, nil
+}
+
+func (d *fakeDriver) NodeAddress(ctx context.Context, labName, nodeName string) (string, error) {
+	if d.addr == "" {
+		return d.NoopDriver.NodeAddress(ctx, labName, nodeName)
+	}
+
+	return d.addr, nil
 }
 
 func testLab(phase model.ResourcePhase) *model.Lab {
@@ -209,4 +227,84 @@ func TestSubscribeReceivesSweeps(t *testing.T) {
 	default:
 		t.Fatal("no observation broadcast")
 	}
+}
+
+// serverNode builds a deployed server node for agent-probe tests.
+func serverNode(name string, phase model.ResourcePhase) *model.Node {
+	n := testNode(name, phase)
+	n.Spec.Role = model.RoleServer
+
+	return n
+}
+
+func TestSweepReportsAgentReachability(t *testing.T) {
+	store := &fakeStore{
+		labs:  []*model.Lab{testLab(model.PhaseRunning)},
+		nodes: map[string][]*model.Node{"lab-1": {serverNode("server-1", model.PhaseRunning)}},
+	}
+
+	drv := &fakeDriver{
+		states: map[string]string{"server-1": "running"},
+		exec:   []byte(deepOutput),
+		addr:   "127.0.0.1",
+	}
+
+	o := New(store, drv, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
+	// No listener yet: the sweep probes, fails, tries a revive (exec)
+	// and reports Down.
+	revived := 0
+	drv.onExec = func(_ string, cmd []string) {
+		if len(cmd) == 3 && cmd[0] == "sh" {
+			revived++
+		}
+	}
+
+	o.agentPort = freePort(t)
+	o.sweep(context.Background())
+
+	server := store.nodes["lab-1"][0]
+	if server.Status.AgentState != model.AgentDown {
+		t.Fatalf("agent state = %q, want Down", server.Status.AgentState)
+	}
+
+	if revived == 0 {
+		t.Fatal("dead agent was not revived")
+	}
+
+	// With a listener on the agent port the next deep sweep reports Up.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() { _ = ln.Close() }()
+
+	o.agentPort = ln.Addr().(*net.TCPAddr).Port
+	o.lastDeep = map[string]time.Time{} // force the next deep sweep
+	o.sweep(context.Background())
+
+	if server.Status.AgentState != model.AgentUp {
+		t.Fatalf("agent state = %q, want Up", server.Status.AgentState)
+	}
+
+	// The broadcast carries the verdict too.
+	if obs := o.Latest("lab-1"); len(obs) != 1 || obs[0].AgentState != model.AgentUp {
+		t.Fatalf("broadcast agent state: %+v", obs)
+	}
+}
+
+// freePort reserves a TCP port and releases it, so dialing it fails.
+func freePort(t *testing.T) int {
+	t.Helper()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	_ = ln.Close()
+
+	return port
 }

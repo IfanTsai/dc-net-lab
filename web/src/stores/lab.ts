@@ -92,6 +92,7 @@ export const useLabStore = defineStore('lab', {
             interfacesTotal: o.interfacesTotal,
             interfaces: o.interfaces,
             vrrpState: o.vrrpState,
+            agentState: o.agentState,
             lastObserved: o.lastObserved,
           },
         }

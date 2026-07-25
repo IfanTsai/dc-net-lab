@@ -96,6 +96,9 @@ function nodeBadge(n: Node): string {
   if (s.runtimeState === 'Stopped') return 'stopped'
   if (s.runtimeState !== 'Running') return 'failed'
   if (s.bgpConfigured > 0 && s.bgpEstablished < s.bgpConfigured) return 'warn'
+  // A running server whose node-agent is unreachable cannot run
+  // programs — surface it as degraded, not healthy.
+  if (s.agentState === 'Down') return 'warn'
   return 'ok'
 }
 

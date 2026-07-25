@@ -17,6 +17,11 @@ const busy = ref<Record<string, boolean>>({})
 
 const servers = computed(() => store.nodes.filter((n) => n.spec.role === 'server'))
 const deployed = computed(() => (store.currentLab?.meta.generation ?? '0') !== '0')
+// Servers whose node-agent the observer reports unreachable: program
+// operations against them will fail until the lab is redeployed.
+const agentDownServers = computed(() =>
+  servers.value.filter((n) => n.status?.agentState === 'Down').map((n) => n.meta.name),
+)
 
 // trafficgen modes are presets that become the first program argument.
 const trafficgenModes = ['http-server', 'http-client', 'tcp-server', 'tcp-client', 'udp-server', 'udp-client']
@@ -318,6 +323,13 @@ function healthTag(health: string): string {
     </div>
 
     <el-alert v-if="!deployed" type="info" :closable="false" :title="t('programs.needDeploy')" class="hint" />
+    <el-alert
+      v-if="agentDownServers.length"
+      type="warning"
+      :closable="false"
+      :title="t('programs.agentDown', { servers: agentDownServers.join(', ') })"
+      class="hint"
+    />
 
     <div v-if="selected.length" class="batch-bar">
       <span class="batch-count">{{ t('programs.batchSelected', { count: selected.length }) }}</span>

@@ -901,8 +901,12 @@ type NodeStatus struct {
 	LastObserved    *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=last_observed,json=lastObserved,proto3" json:"last_observed,omitempty"`
 	// vrrp_state is the VRRP gateway role of a leaf: Master, Backup or
 	// empty for nodes without VRRP.
-	VrrpState     string             `protobuf:"bytes,9,opt,name=vrrp_state,json=vrrpState,proto3" json:"vrrp_state,omitempty"`
-	Interfaces    []*InterfaceStatus `protobuf:"bytes,10,rep,name=interfaces,proto3" json:"interfaces,omitempty"`
+	VrrpState  string             `protobuf:"bytes,9,opt,name=vrrp_state,json=vrrpState,proto3" json:"vrrp_state,omitempty"`
+	Interfaces []*InterfaceStatus `protobuf:"bytes,10,rep,name=interfaces,proto3" json:"interfaces,omitempty"`
+	// agent_state is the node-agent reachability of a running server as
+	// probed by the observer: Up, Down, or empty for non-servers or
+	// before the first probe.
+	AgentState    string `protobuf:"bytes,11,opt,name=agent_state,json=agentState,proto3" json:"agent_state,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1005,6 +1009,13 @@ func (x *NodeStatus) GetInterfaces() []*InterfaceStatus {
 		return x.Interfaces
 	}
 	return nil
+}
+
+func (x *NodeStatus) GetAgentState() string {
+	if x != nil {
+		return x.AgentState
+	}
+	return ""
 }
 
 // Node is one device in the fabric: router, switch or server.
@@ -7242,7 +7253,7 @@ const file_dcnetlab_v1_dcnetlab_proto_rawDesc = "" +
 	"\tbgp_peers\x18\x12 \x03(\tR\bbgpPeers\"5\n" +
 	"\x0fInterfaceStatus\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x0e\n" +
-	"\x02up\x18\x02 \x01(\bR\x02up\"\xb3\x03\n" +
+	"\x02up\x18\x02 \x01(\bR\x02up\"\xd4\x03\n" +
 	"\n" +
 	"NodeStatus\x12#\n" +
 	"\rruntime_state\x18\x01 \x01(\tR\fruntimeState\x12!\n" +
@@ -7259,7 +7270,9 @@ const file_dcnetlab_v1_dcnetlab_proto_rawDesc = "" +
 	"\n" +
 	"interfaces\x18\n" +
 	" \x03(\v2\x1c.dcnetlab.v1.InterfaceStatusR\n" +
-	"interfaces\"\x91\x01\n" +
+	"interfaces\x12\x1f\n" +
+	"\vagent_state\x18\v \x01(\tR\n" +
+	"agentState\"\x91\x01\n" +
 	"\x04Node\x12-\n" +
 	"\x04meta\x18\x01 \x01(\v2\x19.dcnetlab.v1.ResourceMetaR\x04meta\x12)\n" +
 	"\x04spec\x18\x02 \x01(\v2\x15.dcnetlab.v1.NodeSpecR\x04spec\x12/\n" +

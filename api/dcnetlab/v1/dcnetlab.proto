@@ -366,6 +366,10 @@ message NodeStatus {
   // empty for nodes without VRRP.
   string vrrp_state = 9;
   repeated InterfaceStatus interfaces = 10;
+  // agent_state is the node-agent reachability of a running server as
+  // probed by the observer: Up, Down, or empty for non-servers or
+  // before the first probe.
+  string agent_state = 11;
 }
 
 // Node is one device in the fabric: router, switch or server.

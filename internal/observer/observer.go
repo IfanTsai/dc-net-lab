@@ -42,7 +42,10 @@ type Observation struct {
 	InterfacesTotal int                     `json:"interfacesTotal"`
 	Interfaces      []model.InterfaceStatus `json:"interfaces"`
 	VRRPState       string                  `json:"vrrpState"`
-	LastObserved    time.Time               `json:"lastObserved"`
+	// AgentState is the node-agent reachability of a running server
+	// (Up/Down); empty for non-servers or before the first deep sweep.
+	AgentState   string    `json:"agentState"`
+	LastObserved time.Time `json:"lastObserved"`
 }
 
 // Sweep cadence: container state is one cheap docker ps per tick;
@@ -62,6 +65,10 @@ type Observer struct {
 	driver runtime.Driver
 	log    *slog.Logger
 
+	// agentPort is the node-agent gRPC port probed by the deep sweep;
+	// tests override it to point at a local listener.
+	agentPort int
+
 	stop chan struct{}
 	done chan struct{}
 
@@ -69,6 +76,7 @@ type Observer struct {
 	subs     map[string]map[chan []Observation]struct{}
 	latest   map[string][]Observation
 	deep     map[string]map[string]deepMetrics // labID → node name → metrics
+	agent    map[string]map[string]string      // labID → server name → model.AgentUp/AgentDown
 	lastDeep map[string]time.Time
 }
 
@@ -83,15 +91,17 @@ type deepMetrics struct {
 // New wires the observer.
 func New(store Store, driver runtime.Driver, log *slog.Logger) *Observer {
 	return &Observer{
-		store:    store,
-		driver:   driver,
-		log:      log,
-		stop:     make(chan struct{}),
-		done:     make(chan struct{}),
-		subs:     make(map[string]map[chan []Observation]struct{}),
-		latest:   make(map[string][]Observation),
-		deep:     make(map[string]map[string]deepMetrics),
-		lastDeep: make(map[string]time.Time),
+		store:     store,
+		driver:    driver,
+		log:       log,
+		agentPort: agentapi.DefaultPort,
+		stop:      make(chan struct{}),
+		done:      make(chan struct{}),
+		subs:      make(map[string]map[chan []Observation]struct{}),
+		latest:    make(map[string][]Observation),
+		deep:      make(map[string]map[string]deepMetrics),
+		agent:     make(map[string]map[string]string),
+		lastDeep:  make(map[string]time.Time),
 	}
 }
 
@@ -248,6 +258,7 @@ func (o *Observer) lastDeepAt(labID string) time.Time {
 func (o *Observer) reconcile(lab *model.Lab, nodes []*model.Node, states map[string]string) {
 	o.mu.Lock()
 	deep := o.deep[lab.Meta.ID]
+	agent := o.agent[lab.Meta.ID]
 	o.mu.Unlock()
 
 	running, stopped := 0, 0
@@ -269,6 +280,12 @@ func (o *Observer) reconcile(lab *model.Lab, nodes []*model.Node, states map[str
 			next.Interfaces = m.interfaces
 			next.InterfacesUp, next.InterfacesTotal = countUp(m.interfaces)
 			next.VRRPState = m.vrrpState
+		}
+
+		// Agent reachability only means something for a running server;
+		// paused or dead containers fall back to "no verdict".
+		if n.Spec.Role == model.RoleServer {
+			next.AgentState = agent[n.Meta.Name]
 		}
 
 		if n.Meta.Phase == phase && next.Equal(n.Status) {
@@ -310,21 +327,24 @@ func (o *Observer) reconcile(lab *model.Lab, nodes []*model.Node, states map[str
 // script re-executed. The revived agent restores its auto-start and
 // previously running programs from local state, so this sweep is the
 // platform's "server boot" path; it shares the script with the
-// deploy-time exec so the two cannot drift.
+// deploy-time exec so the two cannot drift. Each server's probed
+// reachability is recorded for reconcile to surface (a successful
+// revive re-probes right away, so it reads Up within the same sweep).
 func (o *Observer) healAgents(ctx context.Context, lab *model.Lab, nodes []*model.Node, states map[string]string) {
+	reachability := make(map[string]string)
 	for _, n := range nodes {
 		if n.Spec.Role != model.RoleServer || states[n.Meta.Name] != "running" {
 			continue
 		}
 
+		reachability[n.Meta.Name] = model.AgentDown
 		addr, err := o.driver.NodeAddress(ctx, lab.Meta.Name, n.Meta.Name)
 		if err != nil {
 			continue
 		}
 
-		conn, err := net.DialTimeout("tcp", net.JoinHostPort(addr, strconv.Itoa(agentapi.DefaultPort)), agentDialTimeout)
-		if err == nil {
-			_ = conn.Close()
+		if o.agentReachable(addr) {
+			reachability[n.Meta.Name] = model.AgentUp
 
 			continue
 		}
@@ -332,8 +352,30 @@ func (o *Observer) healAgents(ctx context.Context, lab *model.Lab, nodes []*mode
 		o.log.Info("observer: reviving node-agent", "lab", lab.Meta.Name, "server", n.Meta.Name)
 		if _, err := o.driver.Exec(ctx, lab.Meta.Name, n.Meta.Name, []string{"sh", "-c", agentapi.StartAgentScript}); err != nil {
 			o.log.Warn("observer: revive node-agent", "server", n.Meta.Name, "error", err)
+
+			continue
+		}
+
+		if o.agentReachable(addr) {
+			reachability[n.Meta.Name] = model.AgentUp
 		}
 	}
+
+	o.mu.Lock()
+	o.agent[lab.Meta.ID] = reachability
+	o.mu.Unlock()
+}
+
+// agentReachable probes the node-agent port of one server.
+func (o *Observer) agentReachable(addr string) bool {
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(addr, strconv.Itoa(o.agentPort)), agentDialTimeout)
+	if err != nil {
+		return false
+	}
+
+	_ = conn.Close()
+
+	return true
 }
 
 // phaseFor maps a docker container state onto phase and runtime state.
@@ -366,6 +408,7 @@ func (o *Observer) broadcast(labID string, nodes []*model.Node) {
 			InterfacesTotal: n.Status.InterfacesTotal,
 			Interfaces:      n.Status.Interfaces,
 			VRRPState:       n.Status.VRRPState,
+			AgentState:      n.Status.AgentState,
 			LastObserved:    now,
 		})
 	}

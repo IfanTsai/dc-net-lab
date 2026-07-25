@@ -79,7 +79,8 @@ Create Lab（Micro/Standard Profile）→ Plan（资源分配预览）→ Apply�
 - **管理视角按需查询**：`GET /api/v1/labs/{labId}/nodes/{nodeId}/runtime`（`biz.RuntimeUsecase`）返回底层容器状态与全部内核接口（名称/状态/MAC/地址，含实现层管道），只在打开时 exec，不进周期采集。
 - **漂移自动纠正**（有意突破"Observer 只写 Observed"原则）：容器实际状态映射 node phase（running→Running / paused→Stopped / 其它→Failed），lab phase 由设备推导（全开 Running / 全停 Stopped / 混合 Degraded），Planning 等过渡态不碰；手动 `docker pause`、宿主机重启等漂移在一个采集周期内自动收敛。
 - **WebSocket 推送**：`GET /ws/v1/labs/{labId}/topology`，连接即发最新快照、每次采集全量推送；慢消费者跳帧不阻塞。`lastObserved` 语义为"数据最后变化时间"——仅观测值变化时落库，稳态零写放大。
-- 单测覆盖漂移纠正、稳态零写、未部署跳过、订阅广播与解析函数。
+- **Agent 可达性上报**（治"假 Running 无信号"）：深度巡检的 agent 探测结果落入 `NodeStatus.AgentState`（`Up`/`Down`，仅 running 的 server 有值），随节点 REST 与 WebSocket 推送透出；自愈成功当轮复测即回 `Up`，无假 Down 窗口。UI 三处消费：拓扑图 server 角标在 agent 不可达时转橙、节点抽屉实时观测区显示"Node agent 可达/不可达"（不可达附恢复提示）、Programs 页顶部对 agent 不可达的 server 显示警告条。自愈失败的持久 Down（如虚机重启后挂载丢失）由此对用户可见，不再只能靠操作报错发现。
+- 单测覆盖漂移纠正、稳态零写、未部署跳过、订阅广播与解析函数、agent 探测 Down/自愈复活 Up 与广播携带。
 
 ### Web UI(Vue 3 + TypeScript + Pinia + Element Plus + Cytoscape.js)
 

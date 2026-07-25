@@ -543,6 +543,14 @@ function linkKindLabel(l: Link): string {
                     {{ selectedNode.status.vrrpState }}
                   </el-tag>
                 </el-descriptions-item>
+                <el-descriptions-item :label="t('topology.agentState')" v-if="selectedNode.status.agentState">
+                  <el-tag size="small" :type="selectedNode.status.agentState === 'Up' ? 'success' : 'danger'">
+                    {{ selectedNode.status.agentState === 'Up' ? t('topology.agentUp') : t('topology.agentDown') }}
+                  </el-tag>
+                  <span v-if="selectedNode.status.agentState === 'Down'" class="agent-down-hint">
+                    {{ t('topology.agentDownHint') }}
+                  </span>
+                </el-descriptions-item>
                 <el-descriptions-item :label="t('topology.lastObserved')">
                   {{ new Date(selectedNode.status.lastObserved).toLocaleTimeString() }}
                 </el-descriptions-item>
@@ -993,5 +1001,6 @@ h4 { margin: 16px 0 8px; }
    screens don't stretch the charts. */
 .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); column-gap: 20px; align-items: start; }
 .page :deep(.el-drawer) { max-width: 900px; }
+.agent-down-hint { margin-left: 8px; font-size: 12px; color: var(--el-color-danger); }
 .flags { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
 </style>

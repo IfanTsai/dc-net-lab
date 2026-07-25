@@ -78,6 +78,8 @@ export interface Node {
     interfaces?: InterfaceStatus[]
     // VRRP gateway role of a leaf: Master / Backup / '' (no VRRP).
     vrrpState?: string
+    // Node-agent reachability of a running server: Up / Down / ''.
+    agentState?: string
     lastObserved?: string
   }
 }
@@ -178,6 +180,7 @@ export interface Observation {
   interfacesTotal: number
   interfaces?: InterfaceStatus[]
   vrrpState?: string
+  agentState?: string
   lastObserved: string
 }
 

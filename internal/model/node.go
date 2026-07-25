@@ -98,8 +98,17 @@ type NodeStatus struct {
 	InterfacesTotal int               `json:"interfacesTotal"`
 	Interfaces      []InterfaceStatus `json:"interfaces,omitempty"`
 	VRRPState       string            `json:"vrrpState,omitempty"`
-	LastObserved    time.Time         `json:"lastObserved,omitzero"`
+	// AgentState is the node-agent reachability of a running server:
+	// AgentUp / AgentDown, empty for non-servers or when unknown.
+	AgentState   string    `json:"agentState,omitempty"`
+	LastObserved time.Time `json:"lastObserved,omitzero"`
 }
+
+// Node-agent reachability as probed by the observer's deep sweep.
+const (
+	AgentUp   = "Up"
+	AgentDown = "Down"
+)
 
 // Equal reports whether two observed states match; the Interfaces
 // slice makes NodeStatus non-comparable with ==.
@@ -113,6 +122,7 @@ func (s NodeStatus) Equal(o NodeStatus) bool {
 		s.InterfacesTotal == o.InterfacesTotal &&
 		slices.Equal(s.Interfaces, o.Interfaces) &&
 		s.VRRPState == o.VRRPState &&
+		s.AgentState == o.AgentState &&
 		s.LastObserved.Equal(o.LastObserved)
 }
 

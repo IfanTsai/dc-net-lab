@@ -184,6 +184,7 @@ func nodeToPB(n *model.Node) *v1.Node {
 		InterfacesUp:    int32(n.Status.InterfacesUp),
 		InterfacesTotal: int32(n.Status.InterfacesTotal),
 		VrrpState:       n.Status.VRRPState,
+		AgentState:      n.Status.AgentState,
 		LastObserved:    timePB(n.Status.LastObserved),
 	}
 

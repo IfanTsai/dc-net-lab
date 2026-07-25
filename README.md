@@ -41,7 +41,7 @@ Apply  编译 FRR 配置 + Containerlab 拓扑 → 写入 Generation 快照 → 
 
 **服务器工作负载（模拟软件交付）**
 
-- 每台 server 内置 `node-agent` 进程监督，程序语义参考 systemd：`simple`/`oneshot` 类型、开机自启（enable）、重启策略与退避、存活 / 就绪探测（process/tcp/http，存活失败按策略重启）、启动顺序；agent 掉线由平台自动拉起（自愈即"开机"）。
+- 每台 server 内置 `node-agent` 进程监督，程序语义参考 systemd：`simple`/`oneshot` 类型、开机自启（enable）、重启策略与退避、存活 / 就绪探测（process/tcp/http，存活失败按策略重启）、启动顺序；agent 掉线由平台自动拉起（自愈即"开机"），agent 可达性实时上报拓扑与程序页。
 - tar.gz 制品库 + 内部源拉取分发（SHA-256 校验、多版本共存、升级/回滚不重复下载），内置 `trafficgen` 流量应用（http/tcp/udp 六模式）；安装与部署支持按 dc/pod/rack/自选 范围批量下发。
 - UI 与容器内 CLI 语义一致：`pkg` 像发行版包管理器一样操作制品库，`program` 管理节点本地程序；拓扑上点击 server 实时查看该机安装的包与运行的程序。
 
