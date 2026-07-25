@@ -164,13 +164,15 @@ func TestCleanupExpiredShards(t *testing.T) {
 func TestShardRollover(t *testing.T) {
 	h, dir := testHistory(t)
 
-	// Two sweeps in different hours land in different shards.
-	t1 := time.Date(2026, 7, 12, 10, 59, 50, 0, time.UTC)
-	t2 := time.Date(2026, 7, 12, 11, 0, 5, 0, time.UTC)
+	// Two sweeps in different hours land in different shards. Both
+	// stay within retention of the real clock, so cleanup won't prune
+	// them away as it would for a shard stamped on a fixed past date.
+	t2 := time.Now().UTC()
+	t1 := t2.Add(-time.Hour)
 	h.AppendSweep("lab-1", "dc1", t1, map[string]model.MetricsPoint{"server-1": pointAt(t1, 1)})
 	h.AppendSweep("lab-1", "dc1", t2, map[string]model.MetricsPoint{"server-1": pointAt(t2, 2)})
 
-	for _, hour := range []string{"2026071210", "2026071211"} {
+	for _, hour := range []string{t1.Format(shardHourFmt), t2.Format(shardHourFmt)} {
 		if _, err := os.Stat(filepath.Join(dir, "labs", "lab-1", "metrics", hour+".jsonl")); err != nil {
 			t.Errorf("shard %s: %v", hour, err)
 		}
