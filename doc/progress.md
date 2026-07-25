@@ -207,7 +207,7 @@ Create Lab（Micro/Standard Profile）→ Plan（资源分配预览）→ Apply�
 
 1. **Kratos 默认 1s 请求超时**会杀死挂在 `r.Context()` 上的长会话（docker exec 终端），WebSocket handler 须用 `context.WithoutCancel`，生命周期显式管理。
 2. **Element Plus 抽屉**（即使 `:modal="false"`）有全屏包裹层拦截指针事件，需 CSS `pointer-events: none`（仅面板可交互）才能实现非模态。
-3. **WSL2/Docker daemon 重启后**容器被自动重启，containerlab 建的 veth 对全部丢失（只剩 eth0），表面 Running 实际断网——需到代次目录 `containerlab deploy --reconfigure` 恢复（未来可做成"修复/重部署"操作；Observer 能暴露此类假 Running）。
+3. **WSL2/Docker daemon 重启后**容器被自动重启，containerlab 建的 veth 对全部丢失（只剩 eth0），表面 Running 实际断网——需到代次目录 `containerlab deploy --reconfigure` 恢复（未来可做成"修复/重部署"操作；Observer 能暴露此类假 Running）。**OrbStack 虚机重启是同场景的加重版**：docker 先于 `/Users` 共享就绪拉起容器，server 容器的单文件 bind mount（node-agent 二进制）挂成空目录，Observer 的 agent 自愈（重放启动脚本）因此永远失败（agent.log 反复 `nohup: can't execute`），程序操作报 `connection refused`——挂载丢失自愈救不了，唯一恢复路径是 UI 上重新 Plan/Apply（`RestorePrograms` 会把包与程序全部装回并按期望状态启动）。空挂载根因已由 `orb-setup` 安装的 docker drop-in 堵住（等 `/Users` 挂载就绪再启 docker），但 veth 丢失仍需重新部署恢复。
 4. **WSL2 内核限制**：macvlan 不支持 `addrgenmode random`（仅 IPv6 相关，已规避）；VRRP macvlan 需显式 `up` 且 VIP 用 /32，否则 vrrpd 不发通告、双 Master。
 5. **vtysh JSON 输出**：缺 `/etc/frr/vtysh.conf` 时警告会混入 stdout，产物绑定 vtysh.conf + 解析时跳到首个 `{` 双保险。
 6. **wire v0.7.0** 自带的 x/tools 解析不了新版本 Go，`init-tools.sh` 用临时模块升级 x/tools 后构建。

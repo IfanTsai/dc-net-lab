@@ -47,6 +47,27 @@ else
   run sudo usermod -aG docker "$(run whoami)"
 fi
 
+# OrbStack mounts the macOS /Users share (virtiofs) asynchronously
+# after the machine boots, outside systemd's view, while docker
+# restarts lab containers immediately; a bind mount whose source is
+# not there yet silently materialises as an empty directory, leaving
+# node agents unable to ever start again. Hold docker until the share
+# is up — bounded, so a machine without the share still boots.
+DROPIN=/etc/systemd/system/docker.service.d/10-dcnetlab-wait-mac.conf
+if run test -f "$DROPIN"; then
+  echo "docker /Users ordering: already configured"
+else
+  echo "delaying docker start until the /Users share is mounted..."
+  run sudo mkdir -p /etc/systemd/system/docker.service.d
+  printf '%s\n' \
+    '# dcnetlab: lab containers bind-mount binaries from the macOS /Users' \
+    '# share; docker must not restart them before virtiofs is mounted.' \
+    '[Service]' \
+    "ExecStartPre=-/usr/bin/timeout 60 /bin/sh -c 'until mountpoint -q /Users; do sleep 0.5; done'" \
+    | run sudo tee "$DROPIN" >/dev/null
+  run sudo systemctl daemon-reload
+fi
+
 if has containerlab; then
   echo "containerlab: already installed"
 else
