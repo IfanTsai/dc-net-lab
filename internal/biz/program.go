@@ -2,6 +2,7 @@ package biz
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -307,11 +308,30 @@ func (uc *ProgramUsecase) createOne(lab *model.Lab, name string, spec model.Prog
 	return p, nil
 }
 
+// agentAddr resolves a server's management address, translating the
+// noop-runtime sentinel into actionable guidance: reaching it means
+// the controller runs without containerlab (on macOS, outside the
+// OrbStack machine) and cannot talk to node agents at all.
+func (uc *ProgramUsecase) agentAddr(ctx context.Context, labName, serverName string) (string, error) {
+	addr, err := uc.driver.NodeAddress(ctx, labName, serverName)
+	if errors.Is(err, runtime.ErrNotSupported) {
+		return "", fmt.Errorf("%w; the active runtime cannot manage node agents — "+
+			"install containerlab, or on macOS run 'make orb-setup' once and restart "+
+			"with 'make down && make up' to deploy inside the OrbStack machine", err)
+	}
+
+	if err != nil {
+		return "", err
+	}
+
+	return addr, nil
+}
+
 // deployCreated installs a freshly created program on its agent and,
 // when start is set, launches it. Failures are logged and surfaced in
 // the returned status without aborting creation.
 func (uc *ProgramUsecase) deployCreated(ctx context.Context, lab *model.Lab, p *model.Program, start bool) model.ProgramStatus {
-	addr, err := uc.driver.NodeAddress(ctx, lab.Meta.Name, p.Spec.ServerName)
+	addr, err := uc.agentAddr(ctx, lab.Meta.Name, p.Spec.ServerName)
 	if err != nil {
 		uc.log.Warn("resolve agent address", "program", p.Meta.Name, "server", p.Spec.ServerName, "error", err)
 
@@ -358,7 +378,7 @@ func (uc *ProgramUsecase) NodeInventory(ctx context.Context, labID, nodeID strin
 		return nil, fmt.Errorf("lab %q has no deployed generation; apply a plan first", lab.Meta.Name)
 	}
 
-	addr, err := uc.driver.NodeAddress(ctx, lab.Meta.Name, server.Meta.Name)
+	addr, err := uc.agentAddr(ctx, lab.Meta.Name, server.Meta.Name)
 	if err != nil {
 		return nil, fmt.Errorf("resolve agent address: %w", err)
 	}
@@ -412,7 +432,7 @@ func (uc *ProgramUsecase) NodeMetrics(ctx context.Context, labID, nodeID string)
 		return nil, fmt.Errorf("lab %q has no deployed generation; apply a plan first", lab.Meta.Name)
 	}
 
-	addr, err := uc.driver.NodeAddress(ctx, lab.Meta.Name, server.Meta.Name)
+	addr, err := uc.agentAddr(ctx, lab.Meta.Name, server.Meta.Name)
 	if err != nil {
 		return nil, fmt.Errorf("resolve agent address: %w", err)
 	}
@@ -548,7 +568,7 @@ func (uc *ProgramUsecase) UpgradeProgram(ctx context.Context, labID, id, version
 	p.Spec.Entrypoint = pkg.Spec.Entrypoint
 
 	if lab.Meta.Generation > 0 {
-		addr, err := uc.driver.NodeAddress(ctx, lab.Meta.Name, p.Spec.ServerName)
+		addr, err := uc.agentAddr(ctx, lab.Meta.Name, p.Spec.ServerName)
 		if err != nil {
 			return nil, fmt.Errorf("resolve agent address: %w", err)
 		}
@@ -760,7 +780,7 @@ func (uc *ProgramUsecase) RestorePrograms(ctx context.Context, lab *model.Lab, n
 // when desired, starts it), retrying while the exec-started agent is
 // still coming up.
 func (uc *ProgramUsecase) restoreOne(ctx context.Context, lab *model.Lab, p *model.Program) error {
-	addr, err := uc.driver.NodeAddress(ctx, lab.Meta.Name, p.Spec.ServerName)
+	addr, err := uc.agentAddr(ctx, lab.Meta.Name, p.Spec.ServerName)
 	if err != nil {
 		return fmt.Errorf("resolve agent address: %w", err)
 	}
@@ -898,7 +918,7 @@ func (uc *ProgramUsecase) InstallPackageOnServers(ctx context.Context, labID, na
 
 // deliverPackage pushes one package version onto one server's agent.
 func (uc *ProgramUsecase) deliverPackage(ctx context.Context, lab *model.Lab, serverName, name, version string) error {
-	addr, err := uc.driver.NodeAddress(ctx, lab.Meta.Name, serverName)
+	addr, err := uc.agentAddr(ctx, lab.Meta.Name, serverName)
 	if err != nil {
 		return fmt.Errorf("resolve agent address: %w", err)
 	}
@@ -1004,7 +1024,7 @@ func (uc *ProgramUsecase) programAgent(ctx context.Context, labID, id string) (*
 		return p, "", fmt.Errorf("lab %q has no deployed generation; apply a plan first", lab.Meta.Name)
 	}
 
-	addr, err := uc.driver.NodeAddress(ctx, lab.Meta.Name, p.Spec.ServerName)
+	addr, err := uc.agentAddr(ctx, lab.Meta.Name, p.Spec.ServerName)
 	if err != nil {
 		return p, "", fmt.Errorf("resolve agent address: %w", err)
 	}

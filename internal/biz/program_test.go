@@ -2,6 +2,7 @@ package biz
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -409,6 +410,29 @@ func TestInstallPackageOnServers(t *testing.T) {
 
 		if remaining, _ := uc.repo.ListPrograms("lab-1"); len(remaining) != 0 {
 			t.Errorf("programs after batch delete = %d, want 0", len(remaining))
+		}
+	})
+
+	t.Run("noop runtime explains the fix", func(t *testing.T) {
+		uc, _ := testProgramUsecase(t, deployedLab(), nodes)
+		spec := model.ProgramSpec{PackageName: "web", PackageVersion: "1.0.0", RestartPolicy: "Always"}
+
+		programs, _, err := uc.CreateProgram("lab-1", "svc", spec, []string{"n-1"}, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Swap in the noop driver: agent operations must fail with
+		// guidance (orb-setup on macOS), not the bare driver sentinel.
+		uc.driver = runtime.NoopDriver{}
+
+		_, err = uc.StartProgram(context.Background(), "lab-1", programs[0].Meta.ID)
+		if !errors.Is(err, runtime.ErrNotSupported) {
+			t.Fatalf("err = %v, want to wrap ErrNotSupported", err)
+		}
+
+		if !strings.Contains(err.Error(), "orb-setup") {
+			t.Errorf("err = %v, want actionable orb-setup hint", err)
 		}
 	})
 
