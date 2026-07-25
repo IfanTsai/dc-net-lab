@@ -79,6 +79,22 @@ message InUseVersion {
   repeated string programs = 2;
 }
 
+// HealthCheck probes a running program periodically. type is process
+// (the supervised process exists), tcp (a local port accepts a
+// connection) or http (a GET returns a 2xx/3xx status). The probe
+// targets loopback inside the server; port and path apply to tcp/http.
+message HealthCheck {
+  string type = 1;
+  int32 port = 2;
+  string path = 3;
+  // interval_seconds is the probe period, timeout_seconds bounds one
+  // probe, failure_threshold is the consecutive failures that mark
+  // the program unhealthy.
+  int32 interval_seconds = 4;
+  int32 timeout_seconds = 5;
+  int32 failure_threshold = 6;
+}
+
 // ProgramSpec is the agent-side program definition: an entrypoint of
 // an installed package version plus its arguments.
 message ProgramSpec {
@@ -96,6 +112,14 @@ message ProgramSpec {
   // auto_start marks the program enabled: the agent starts it on
   // every boot of its own process (systemd: systemctl enable).
   bool auto_start = 8;
+  // liveness_check, when set, restarts the program (per restart_policy)
+  // once it fails failure_threshold consecutive probes.
+  HealthCheck liveness_check = 9;
+  // readiness_check, when set, reports whether the program is serving;
+  // unlike the liveness check it never restarts, it only gates ready.
+  HealthCheck readiness_check = 10;
+  // startup_order sequences boot: programs start in ascending order.
+  int32 startup_order = 11;
 }
 
 message InstallRequest {
@@ -117,6 +141,12 @@ message ProgramInfo {
   // started_at is the unix time of the last successful start, 0 when
   // never started.
   int64 started_at = 6;
+  // health is the last liveness verdict: Unknown (no check or not yet
+  // probed), Healthy or Unhealthy.
+  string health = 7;
+  // ready reflects the readiness check (true when it has no readiness
+  // check but is running, or the probe last passed).
+  bool ready = 8;
 }
 
 message RemoveReply {}

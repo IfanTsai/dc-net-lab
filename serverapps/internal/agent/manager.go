@@ -47,6 +47,15 @@ type Spec struct {
 	RestartPolicy  string   `json:"restartPolicy"`
 	Type           string   `json:"type"`
 	AutoStart      bool     `json:"autoStart"`
+	// LivenessCheck, when set, restarts the program (per RestartPolicy)
+	// once it fails FailureThreshold consecutive probes.
+	LivenessCheck *HealthCheck `json:"livenessCheck,omitempty"`
+	// ReadinessCheck, when set, gates Ready; unlike the liveness check
+	// it never restarts the program.
+	ReadinessCheck *HealthCheck `json:"readinessCheck,omitempty"`
+	// StartupOrder sequences boot: programs start in ascending order
+	// (ties by name). Default 0.
+	StartupOrder int `json:"startupOrder,omitempty"`
 }
 
 // Info is a point-in-time snapshot of one program.
@@ -56,6 +65,8 @@ type Info struct {
 	PID       int
 	Restarts  int
 	LastError string
+	Health    string
+	Ready     bool
 	StartedAt time.Time
 }
 
@@ -74,6 +85,8 @@ type program struct {
 	pid       int
 	restarts  int
 	lastErr   string
+	health    string // agentapi.Health*, empty until a liveness probe runs
+	ready     bool   // readiness verdict; true when running without a readiness check
 	startedAt time.Time
 	desired   string
 
@@ -111,6 +124,11 @@ func NewManager(dir string, log *slog.Logger) (*Manager, error) {
 		return nil, fmt.Errorf("read state dir: %w", err)
 	}
 
+	// Load every definition first, killing any orphan process from the
+	// previous agent life, then start what boot semantics demand in
+	// StartupOrder — so a program can rely on lower-order ones having
+	// been launched before it.
+	var toStart []*program
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
@@ -130,22 +148,40 @@ func NewManager(dir string, log *slog.Logger) (*Manager, error) {
 			_ = syscall.Kill(-mt.PID, syscall.SIGKILL)
 		}
 
+		p := &program{spec: mt.Spec, state: agentapi.StateConfigured, desired: mt.Desired}
+		m.programs[mt.Spec.Name] = p
+
 		// Boot semantics: what was running comes back, and enabled
 		// (auto-start) programs start regardless — systemd starts
 		// enabled units at every boot, oneshots included.
-		p := &program{spec: mt.Spec, state: agentapi.StateConfigured, desired: mt.Desired}
-		m.programs[mt.Spec.Name] = p
 		if mt.Desired == agentapi.StateRunning || mt.Spec.AutoStart {
-			p.desired = agentapi.StateRunning
-			if err := m.startLocked(p); err != nil {
-				log.Warn("restore program", "name", mt.Spec.Name, "error", err)
-			}
-
-			_ = m.persistLocked(p)
+			toStart = append(toStart, p)
 		}
 	}
 
+	sortByStartupOrder(toStart)
+	for _, p := range toStart {
+		p.desired = agentapi.StateRunning
+		if err := m.startLocked(p); err != nil {
+			log.Warn("restore program", "name", p.spec.Name, "error", err)
+		}
+
+		_ = m.persistLocked(p)
+	}
+
 	return m, nil
+}
+
+// sortByStartupOrder orders programs by ascending StartupOrder, ties
+// broken by name for a deterministic boot sequence.
+func sortByStartupOrder(programs []*program) {
+	sort.Slice(programs, func(i, j int) bool {
+		if programs[i].spec.StartupOrder != programs[j].spec.StartupOrder {
+			return programs[i].spec.StartupOrder < programs[j].spec.StartupOrder
+		}
+
+		return programs[i].spec.Name < programs[j].spec.Name
+	})
 }
 
 // Install registers or replaces a program definition; a running
@@ -174,6 +210,15 @@ func (m *Manager) Install(spec Spec) (Info, error) {
 
 	if spec.Type == agentapi.TypeOneshot && spec.RestartPolicy == agentapi.RestartAlways {
 		return Info{}, fmt.Errorf("oneshot programs cannot use the Always restart policy")
+	}
+
+	var err error
+	if spec.LivenessCheck, err = normaliseCheck(spec.LivenessCheck); err != nil {
+		return Info{}, fmt.Errorf("liveness check: %w", err)
+	}
+
+	if spec.ReadinessCheck, err = normaliseCheck(spec.ReadinessCheck); err != nil {
+		return Info{}, fmt.Errorf("readiness check: %w", err)
 	}
 
 	if _, err := m.entrypointPath(spec); err != nil {
@@ -379,13 +424,130 @@ func (m *Manager) startLocked(p *program) error {
 	p.state = agentapi.StateRunning
 	p.restarts = 0
 	p.lastErr = ""
+	p.health = agentapi.HealthUnknown
+	// A program with no readiness check is ready as soon as it runs
+	// (like a systemd Type=simple unit); one with a check starts not
+	// ready until its first successful probe.
+	p.ready = p.spec.ReadinessCheck == nil
 	p.pid = cmd.Process.Pid
 	p.startedAt = time.Now().UTC()
 
 	m.log.Info("program started", "name", p.spec.Name, "pid", p.pid)
 	go m.supervise(ctx, p, cmd, logFile)
+	if p.spec.LivenessCheck != nil {
+		go m.monitorLiveness(ctx, p, *p.spec.LivenessCheck)
+	}
+
+	if p.spec.ReadinessCheck != nil {
+		go m.monitorReadiness(ctx, p, *p.spec.ReadinessCheck)
+	}
 
 	return nil
+}
+
+// monitorReadiness probes a running program on its check interval and
+// tracks whether it is serving. Unlike the liveness monitor it never
+// restarts: readiness only reflects the latest verdict, and falls back
+// to not-ready whenever the program is not running.
+func (m *Manager) monitorReadiness(ctx context.Context, p *program, check HealthCheck) {
+	ticker := time.NewTicker(check.Interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+
+		m.mu.Lock()
+		pid, running := p.pid, p.state == agentapi.StateRunning
+		m.mu.Unlock()
+
+		if !running || pid == 0 {
+			m.setReady(p, false)
+
+			continue
+		}
+
+		m.setReady(p, check.probe(ctx, pid))
+	}
+}
+
+// setReady records the latest readiness verdict, but only while the
+// program is running: a probe racing a stop must not resurrect Ready.
+func (m *Manager) setReady(p *program, ready bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if p.state == agentapi.StateRunning {
+		p.ready = ready
+	}
+}
+
+// monitorLiveness probes a running program on its check interval and,
+// after FailureThreshold consecutive failures, kills the current
+// process so the supervision loop restarts it per the restart policy.
+// It lives for one supervision context (across restarts): the failure
+// count resets whenever a new incarnation appears, and it never probes
+// while the program is not running.
+func (m *Manager) monitorLiveness(ctx context.Context, p *program, check HealthCheck) {
+	ticker := time.NewTicker(check.Interval)
+	defer ticker.Stop()
+
+	failures := 0
+	monitored := 0
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+
+		m.mu.Lock()
+		pid, running := p.pid, p.state == agentapi.StateRunning
+		m.mu.Unlock()
+
+		if !running || pid == 0 {
+			failures, monitored = 0, 0
+
+			continue
+		}
+
+		if pid != monitored {
+			monitored, failures = pid, 0
+		}
+
+		if check.probe(ctx, pid) {
+			failures = 0
+			m.setHealth(p, agentapi.HealthHealthy)
+
+			continue
+		}
+
+		failures++
+		if failures < check.FailureThreshold {
+			continue
+		}
+
+		m.setHealth(p, agentapi.HealthUnhealthy)
+		m.log.Warn("liveness check failed; restarting program",
+			"name", p.spec.Name, "pid", pid, "failures", failures)
+		_ = syscall.Kill(-pid, syscall.SIGTERM)
+		failures, monitored = 0, 0
+	}
+}
+
+// setHealth records the latest liveness verdict, but only while the
+// program is still running: a probe racing a stop must not overwrite
+// the terminal health reset.
+func (m *Manager) setHealth(p *program, health string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if p.state == agentapi.StateRunning {
+		p.health = health
+	}
 }
 
 // spawn launches one process instance with its output appended to
@@ -430,6 +592,8 @@ func (m *Manager) supervise(ctx context.Context, p *program, cmd *exec.Cmd, logF
 
 		m.mu.Lock()
 		p.pid = 0
+		p.health = agentapi.HealthUnknown // no live process to probe
+		p.ready = false
 		restart := false
 		switch {
 		case ctx.Err() != nil || p.desired != agentapi.StateRunning:
@@ -490,6 +654,9 @@ func (m *Manager) supervise(ctx context.Context, p *program, cmd *exec.Cmd, logF
 		p.pid = next.Process.Pid
 		p.startedAt = time.Now().UTC()
 		p.state = agentapi.StateRunning
+		// A fresh incarnation is ready at once without a readiness check,
+		// or not ready until its probe passes again.
+		p.ready = p.spec.ReadinessCheck == nil
 		_ = m.persistLocked(p)
 		m.mu.Unlock()
 
@@ -585,6 +752,8 @@ func (p *program) info() Info {
 		PID:       p.pid,
 		Restarts:  p.restarts,
 		LastError: p.lastErr,
+		Health:    p.health,
+		Ready:     p.ready,
 		StartedAt: p.startedAt,
 	}
 }

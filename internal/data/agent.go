@@ -85,10 +85,30 @@ func (a *programAgent) Install(ctx context.Context, addr string, p *model.Progra
 			RestartPolicy:  p.Spec.RestartPolicy,
 			Type:           p.Spec.Type,
 			AutoStart:      p.Spec.AutoStart,
+			LivenessCheck:  healthCheckToPB(p.Spec.LivenessCheck),
+			ReadinessCheck: healthCheckToPB(p.Spec.ReadinessCheck),
+			StartupOrder:   int32(p.Spec.StartupOrder),
 		}})
 
 		return err
 	})
+}
+
+// healthCheckToPB maps a model liveness check onto the agent wire type;
+// nil stays nil (unmonitored).
+func healthCheckToPB(hc *model.HealthCheck) *pb.HealthCheck {
+	if hc == nil {
+		return nil
+	}
+
+	return &pb.HealthCheck{
+		Type:             hc.Type,
+		Port:             int32(hc.Port),
+		Path:             hc.Path,
+		IntervalSeconds:  int32(hc.Interval / time.Second),
+		TimeoutSeconds:   int32(hc.Timeout / time.Second),
+		FailureThreshold: int32(hc.FailureThreshold),
+	}
 }
 
 func (a *programAgent) Start(ctx context.Context, addr, name string) (model.ProgramStatus, error) {
@@ -172,6 +192,8 @@ func (a *programAgent) ListPrograms(ctx context.Context, addr string) ([]model.N
 				PID:            int(info.Pid),
 				Restarts:       int(info.Restarts),
 				LastError:      info.LastError,
+				Health:         info.Health,
+				Ready:          info.Ready,
 			})
 		}
 
@@ -223,6 +245,8 @@ func statusFromPB(info *pb.ProgramInfo) model.ProgramStatus {
 		PID:       int(info.Pid),
 		Restarts:  int(info.Restarts),
 		LastError: info.LastError,
+		Health:    info.Health,
+		Ready:     info.Ready,
 	}
 
 	if info.StartedAt > 0 {

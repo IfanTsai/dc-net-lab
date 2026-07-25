@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"time"
 
 	pb "github.com/ifantsai/dcnetlab/pb/nodeagent/v1"
 )
@@ -148,6 +149,39 @@ func specFromPB(spec *pb.ProgramSpec) Spec {
 		RestartPolicy:  spec.RestartPolicy,
 		Type:           spec.Type,
 		AutoStart:      spec.AutoStart,
+		LivenessCheck:  healthCheckFromPB(spec.LivenessCheck),
+		ReadinessCheck: healthCheckFromPB(spec.ReadinessCheck),
+		StartupOrder:   int(spec.StartupOrder),
+	}
+}
+
+func healthCheckFromPB(hc *pb.HealthCheck) *HealthCheck {
+	if hc == nil {
+		return nil
+	}
+
+	return &HealthCheck{
+		Type:             hc.Type,
+		Port:             int(hc.Port),
+		Path:             hc.Path,
+		Interval:         time.Duration(hc.IntervalSeconds) * time.Second,
+		Timeout:          time.Duration(hc.TimeoutSeconds) * time.Second,
+		FailureThreshold: int(hc.FailureThreshold),
+	}
+}
+
+func healthCheckToPB(hc *HealthCheck) *pb.HealthCheck {
+	if hc == nil {
+		return nil
+	}
+
+	return &pb.HealthCheck{
+		Type:             hc.Type,
+		Port:             int32(hc.Port),
+		Path:             hc.Path,
+		IntervalSeconds:  int32(hc.Interval / time.Second),
+		TimeoutSeconds:   int32(hc.Timeout / time.Second),
+		FailureThreshold: int32(hc.FailureThreshold),
 	}
 }
 
@@ -162,11 +196,16 @@ func infoToPB(info Info) *pb.ProgramInfo {
 			RestartPolicy:  info.Spec.RestartPolicy,
 			Type:           info.Spec.Type,
 			AutoStart:      info.Spec.AutoStart,
+			LivenessCheck:  healthCheckToPB(info.Spec.LivenessCheck),
+			ReadinessCheck: healthCheckToPB(info.Spec.ReadinessCheck),
+			StartupOrder:   int32(info.Spec.StartupOrder),
 		},
 		State:     info.State,
 		Pid:       int32(info.PID),
 		Restarts:  int32(info.Restarts),
 		LastError: info.LastError,
+		Health:    info.Health,
+		Ready:     info.Ready,
 	}
 
 	if !info.StartedAt.IsZero() {

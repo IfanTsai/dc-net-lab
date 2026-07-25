@@ -68,9 +68,22 @@ async function onLabChange(id: string) {
 
 // --- create dialog ---
 const dialogVisible = ref(false)
-const form = ref({ name: '', serverIds: [] as string[], packageName: '', packageVersion: '', mode: 'http-server', args: '', type: 'simple', autoStart: false, restartPolicy: 'Always' })
+const emptyForm = () => ({
+  name: '', serverIds: [] as string[], packageName: '', packageVersion: '',
+  mode: 'http-server', args: '', type: 'simple', autoStart: false, restartPolicy: 'Always',
+  livenessType: 'none', livenessPort: undefined as number | undefined, livenessPath: '/',
+  livenessInterval: 10, livenessThreshold: 3,
+  readinessType: 'none', readinessPort: undefined as number | undefined, readinessPath: '/',
+  readinessInterval: 10, startupOrder: 0,
+})
+const form = ref(emptyForm())
 
 const isTrafficgen = computed(() => form.value.packageName === 'trafficgen')
+// A liveness check restarts the program (per restart policy) once it
+// stops passing its probe; a readiness check only reports "serving".
+// tcp/http need a port, http adds a path.
+const livenessNeedsPort = computed(() => form.value.livenessType === 'tcp' || form.value.livenessType === 'http')
+const readinessNeedsPort = computed(() => form.value.readinessType === 'tcp' || form.value.readinessType === 'http')
 
 // Oneshot rejects Always, like systemd Restart=always with Type=oneshot.
 const restartChoices = computed(() =>
@@ -84,17 +97,7 @@ function onTypeChange(type: string) {
 async function openCreate() {
   await refreshPackages()
   const pkg = packageNames.value.includes('trafficgen') ? 'trafficgen' : (packageNames.value[0] ?? '')
-  form.value = {
-    name: '',
-    serverIds: [],
-    packageName: pkg,
-    packageVersion: versionsOf(pkg)[0] ?? '',
-    mode: 'http-server',
-    args: '',
-    type: 'simple',
-    autoStart: false,
-    restartPolicy: 'Always',
-  }
+  form.value = { ...emptyForm(), packageName: pkg, packageVersion: versionsOf(pkg)[0] ?? '' }
   dialogVisible.value = true
 }
 
@@ -105,6 +108,19 @@ function onPackageChange(name: string) {
 async function submitCreate() {
   const extra = form.value.args.trim() === '' ? [] : form.value.args.trim().split(/\s+/)
   const args = isTrafficgen.value ? [form.value.mode, ...extra] : extra
+  const livenessCheck = form.value.livenessType === 'none' ? undefined : {
+    type: form.value.livenessType,
+    port: livenessNeedsPort.value ? form.value.livenessPort : undefined,
+    path: form.value.livenessType === 'http' ? form.value.livenessPath : undefined,
+    intervalSeconds: form.value.livenessInterval || undefined,
+    failureThreshold: form.value.livenessThreshold || undefined,
+  }
+  const readinessCheck = form.value.readinessType === 'none' ? undefined : {
+    type: form.value.readinessType,
+    port: readinessNeedsPort.value ? form.value.readinessPort : undefined,
+    path: form.value.readinessType === 'http' ? form.value.readinessPath : undefined,
+    intervalSeconds: form.value.readinessInterval || undefined,
+  }
   try {
     const reply = await labApi.createProgram(store.currentLabId, {
       name: form.value.name,
@@ -115,6 +131,9 @@ async function submitCreate() {
       type: form.value.type,
       autoStart: form.value.autoStart,
       restartPolicy: form.value.restartPolicy,
+      livenessCheck,
+      readinessCheck,
+      startupOrder: form.value.startupOrder || undefined,
     })
     dialogVisible.value = false
     ElMessage.success(t('programs.created', { name: form.value.name, count: reply.programs.length }))
@@ -219,6 +238,17 @@ function stateTag(state: string): string {
       return 'info'
   }
 }
+
+function healthTag(health: string): string {
+  switch (health) {
+    case 'Healthy':
+      return 'success'
+    case 'Unhealthy':
+      return 'danger'
+    default:
+      return 'info'
+  }
+}
 </script>
 
 <template>
@@ -255,9 +285,25 @@ function stateTag(state: string): string {
           <code>{{ row.spec.entrypoint }} {{ (row.spec.args ?? []).join(' ') }}</code>
         </template>
       </el-table-column>
-      <el-table-column :label="t('programs.state')" width="140">
+      <el-table-column :label="t('programs.state')" width="160">
         <template #default="{ row }">
           <el-tag size="small" :type="stateTag(row.status.state)">{{ row.status.state }}</el-tag>
+          <el-tag
+            v-if="row.status.state === 'Running' && row.status.health && row.status.health !== 'Unknown'"
+            size="small"
+            class="health-tag"
+            :type="healthTag(row.status.health)"
+          >
+            {{ row.status.health === 'Healthy' ? t('programs.healthy') : t('programs.unhealthy') }}
+          </el-tag>
+          <el-tag
+            v-if="row.status.state === 'Running' && row.spec.readinessCheck"
+            size="small"
+            class="health-tag"
+            :type="row.status.ready ? 'success' : 'info'"
+          >
+            {{ row.status.ready ? t('programs.ready') : t('programs.notReady') }}
+          </el-tag>
           <div class="sub" v-if="row.status.state === 'Running'">
             pid {{ row.status.pid }} · ↻{{ row.status.restarts ?? 0 }}
           </div>
@@ -268,6 +314,7 @@ function stateTag(state: string): string {
         <template #default="{ row }">
           <span>{{ row.spec.type === 'oneshot' ? t('programs.typeOneshot') : t('programs.typeSimple') }}</span>
           <div class="sub" v-if="row.spec.autoStart">{{ t('programs.autoStart') }}</div>
+          <div class="sub" v-if="row.spec.startupOrder">{{ t('programs.orderShort', { n: row.spec.startupOrder }) }}</div>
         </template>
       </el-table-column>
       <el-table-column prop="spec.restartPolicy" :label="t('programs.restartPolicy')" width="105" />
@@ -332,12 +379,60 @@ function stateTag(state: string): string {
             <el-option v-for="p in restartChoices" :key="p" :label="p" :value="p" />
           </el-select>
         </el-form-item>
+        <el-form-item :label="t('programs.liveness')">
+          <el-select v-model="form.livenessType" style="width: 100%">
+            <el-option :label="t('programs.livenessNone')" value="none" />
+            <el-option label="process" value="process" />
+            <el-option label="tcp" value="tcp" />
+            <el-option label="http" value="http" />
+          </el-select>
+          <span class="form-hint">{{ t('programs.livenessHint') }}</span>
+        </el-form-item>
+        <el-form-item v-if="livenessNeedsPort" :label="t('programs.livenessPort')">
+          <el-input-number v-model="form.livenessPort" :min="1" :max="65535" controls-position="right" />
+        </el-form-item>
+        <el-form-item v-if="form.livenessType === 'http'" :label="t('programs.livenessPath')">
+          <el-input v-model="form.livenessPath" placeholder="/healthz" />
+        </el-form-item>
+        <el-form-item v-if="form.livenessType !== 'none'" :label="t('programs.livenessTiming')">
+          <div class="liveness-timing">
+            <el-input-number v-model="form.livenessInterval" :min="1" :max="3600" controls-position="right" />
+            <span class="form-hint">{{ t('programs.livenessIntervalUnit') }}</span>
+            <el-input-number v-model="form.livenessThreshold" :min="1" :max="20" controls-position="right" />
+            <span class="form-hint">{{ t('programs.livenessThresholdUnit') }}</span>
+          </div>
+        </el-form-item>
+        <el-form-item :label="t('programs.readiness')">
+          <el-select v-model="form.readinessType" style="width: 100%">
+            <el-option :label="t('programs.livenessNone')" value="none" />
+            <el-option label="process" value="process" />
+            <el-option label="tcp" value="tcp" />
+            <el-option label="http" value="http" />
+          </el-select>
+          <span class="form-hint">{{ t('programs.readinessHint') }}</span>
+        </el-form-item>
+        <el-form-item v-if="readinessNeedsPort" :label="t('programs.livenessPort')">
+          <el-input-number v-model="form.readinessPort" :min="1" :max="65535" controls-position="right" />
+        </el-form-item>
+        <el-form-item v-if="form.readinessType === 'http'" :label="t('programs.livenessPath')">
+          <el-input v-model="form.readinessPath" placeholder="/ready" />
+        </el-form-item>
+        <el-form-item v-if="form.readinessType !== 'none'" :label="t('programs.livenessTiming')">
+          <div class="liveness-timing">
+            <el-input-number v-model="form.readinessInterval" :min="1" :max="3600" controls-position="right" />
+            <span class="form-hint">{{ t('programs.livenessIntervalUnit') }}</span>
+          </div>
+        </el-form-item>
+        <el-form-item :label="t('programs.startupOrder')">
+          <el-input-number v-model="form.startupOrder" :min="0" :max="999" controls-position="right" />
+          <span class="form-hint">{{ t('programs.startupOrderHint') }}</span>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">{{ t('common.cancel') }}</el-button>
         <el-button
           type="primary"
-          :disabled="!form.name || form.serverIds.length === 0 || !form.packageName || !form.packageVersion"
+          :disabled="!form.name || form.serverIds.length === 0 || !form.packageName || !form.packageVersion || (livenessNeedsPort && !form.livenessPort) || (readinessNeedsPort && !form.readinessPort)"
           @click="submitCreate"
         >
           {{ t('common.create') }}
@@ -397,6 +492,8 @@ function stateTag(state: string): string {
 .form-hint { margin-left: 10px; font-size: 12px; color: var(--el-text-color-secondary); }
 .sub { font-size: 11px; color: var(--el-text-color-secondary); }
 .sub.error { color: var(--el-color-danger); }
+.health-tag { margin-left: 6px; }
+.liveness-timing { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .log-toolbar { display: flex; justify-content: flex-end; margin-bottom: 8px; }
 .log {
   background: var(--el-fill-color-light);

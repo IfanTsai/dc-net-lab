@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"regexp"
+	"sort"
 	"strconv"
 	"time"
 
@@ -18,6 +19,28 @@ import (
 
 // programNameRE mirrors the agent's program name constraint.
 var programNameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+
+// validateHealthCheck rejects a malformed liveness/readiness check
+// before it reaches the agent; the agent applies the timing defaults.
+// A nil check means the program is unmonitored. kind labels the check
+// in error messages.
+func validateHealthCheck(kind string, hc *model.HealthCheck) error {
+	if hc == nil {
+		return nil
+	}
+
+	switch hc.Type {
+	case agentapi.CheckProcess:
+	case agentapi.CheckTCP, agentapi.CheckHTTP:
+		if hc.Port <= 0 || hc.Port > 65535 {
+			return fmt.Errorf("%s check port %d out of range", kind, hc.Port)
+		}
+	default:
+		return fmt.Errorf("invalid %s check type %q", kind, hc.Type)
+	}
+
+	return nil
+}
 
 // agentRestoreTimeout bounds how long RestorePrograms waits for the
 // freshly exec-started agents to accept connections after a deploy.
@@ -165,6 +188,14 @@ func (uc *ProgramUsecase) CreateProgram(labID, name string, spec model.ProgramSp
 
 	if spec.Type == agentapi.TypeOneshot && spec.RestartPolicy == agentapi.RestartAlways {
 		return nil, nil, fmt.Errorf("oneshot programs cannot use the Always restart policy")
+	}
+
+	if err := validateHealthCheck("liveness", spec.LivenessCheck); err != nil {
+		return nil, nil, err
+	}
+
+	if err := validateHealthCheck("readiness", spec.ReadinessCheck); err != nil {
+		return nil, nil, err
 	}
 
 	lab, err := uc.repo.GetLab(labID)
@@ -587,6 +618,17 @@ func (uc *ProgramUsecase) RestorePrograms(ctx context.Context, lab *model.Lab, n
 	if len(programs) == 0 {
 		return nil
 	}
+
+	// Redeploy is a boot: start programs in StartupOrder (ties by
+	// name) so a program's lower-order dependencies are launched
+	// before it, matching the agent's own boot sequencing.
+	sort.Slice(programs, func(i, j int) bool {
+		if programs[i].Spec.StartupOrder != programs[j].Spec.StartupOrder {
+			return programs[i].Spec.StartupOrder < programs[j].Spec.StartupOrder
+		}
+
+		return programs[i].Meta.Name < programs[j].Meta.Name
+	})
 
 	// Every plan rebuilds the topology with fresh node IDs; the
 	// stable server identity across generations is its name, so

@@ -37,6 +37,20 @@ deploy flags:
   --auto-start                start on every server boot (systemd enable)
   --restart-policy <p>        Never | OnFailure | Always (default Never;
                               oneshot rejects Always)
+  --liveness <t>              liveness probe: process | tcp | http; on
+                              repeated failure the program is restarted
+                              per the restart policy
+  --liveness-port <n>         probe port (tcp/http)
+  --liveness-path <p>         probe path (http, default /)
+  --liveness-interval <s>     probe period in seconds (default 10)
+  --liveness-threshold <n>    consecutive failures before restart (default 3)
+  --readiness <t>             readiness probe: process | tcp | http; it
+                              reports whether the program is serving but
+                              never restarts it
+  --readiness-port <n>        probe port (tcp/http)
+  --readiness-path <p>        probe path (http, default /)
+  --readiness-interval <s>    probe period in seconds (default 10)
+  --startup-order <n>         boot order, ascending (default 0)
 
 flags (before the command):
   --repo <url>    repository base URL (default: $DCNETLAB_REPO, the
@@ -107,7 +121,7 @@ func (c *cliCtx) programList() error {
 	}
 
 	tw := tabwriter.NewWriter(c.out, 2, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "NAME\tPACKAGE\tTYPE\tAUTOSTART\tRESTART\tSTATE\tPID\tRESTARTS")
+	_, _ = fmt.Fprintln(tw, "NAME\tPACKAGE\tTYPE\tAUTOSTART\tRESTART\tSTATE\tHEALTH\tREADY\tPID\tRESTARTS")
 	for _, info := range reply.Programs {
 		if info.Spec == nil {
 			continue
@@ -118,17 +132,36 @@ func (c *cliCtx) programList() error {
 			autoStart = "enabled"
 		}
 
+		health := "-"
+		if info.Health != "" {
+			health = info.Health
+		}
+
+		ready := "-"
+		if info.State == agentapi.StateRunning {
+			ready = boolYesNo(info.Ready)
+		}
+
 		pid := "-"
 		if info.Pid > 0 {
 			pid = fmt.Sprint(info.Pid)
 		}
 
-		_, _ = fmt.Fprintf(tw, "%s\t%s@%s\t%s\t%s\t%s\t%s\t%s\t%d\n",
+		_, _ = fmt.Fprintf(tw, "%s\t%s@%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\n",
 			info.Spec.Name, info.Spec.PackageName, info.Spec.PackageVersion,
-			info.Spec.Type, autoStart, info.Spec.RestartPolicy, info.State, pid, info.Restarts)
+			info.Spec.Type, autoStart, info.Spec.RestartPolicy, info.State, health, ready, pid, info.Restarts)
 	}
 
 	return tw.Flush()
+}
+
+// boolYesNo renders a readiness flag for the program table.
+func boolYesNo(b bool) string {
+	if b {
+		return "yes"
+	}
+
+	return "no"
 }
 
 // programDeploy registers a program: the package version is resolved
@@ -142,6 +175,16 @@ func (c *cliCtx) programDeploy(args []string) error {
 	typ := fs.String("type", agentapi.TypeSimple, "simple or oneshot")
 	autoStart := fs.Bool("auto-start", false, "start on every server boot")
 	policy := fs.String("restart-policy", agentapi.RestartNever, "Never, OnFailure or Always")
+	liveness := fs.String("liveness", "", "process, tcp or http")
+	livenessPort := fs.Int("liveness-port", 0, "probe port (tcp/http)")
+	livenessPath := fs.String("liveness-path", "", "probe path (http)")
+	livenessInterval := fs.Int("liveness-interval", 0, "probe period in seconds")
+	livenessThreshold := fs.Int("liveness-threshold", 0, "failures before restart")
+	readiness := fs.String("readiness", "", "process, tcp or http")
+	readinessPort := fs.Int("readiness-port", 0, "probe port (tcp/http)")
+	readinessPath := fs.String("readiness-path", "", "probe path (http)")
+	readinessInterval := fs.Int("readiness-interval", 0, "probe period in seconds")
+	startupOrder := fs.Int("startup-order", 0, "boot order, ascending")
 
 	// Flags may come before or after the two positional arguments.
 	positional, flagArgs := splitPositional(args, 2)
@@ -177,6 +220,25 @@ func (c *cliCtx) programDeploy(args []string) error {
 		RestartPolicy:  *policy,
 		Type:           *typ,
 		AutoStart:      *autoStart,
+		StartupOrder:   int32(*startupOrder),
+	}
+	if *liveness != "" {
+		spec.LivenessCheck = &pb.HealthCheck{
+			Type:             *liveness,
+			Port:             int32(*livenessPort),
+			Path:             *livenessPath,
+			IntervalSeconds:  int32(*livenessInterval),
+			FailureThreshold: int32(*livenessThreshold),
+		}
+	}
+
+	if *readiness != "" {
+		spec.ReadinessCheck = &pb.HealthCheck{
+			Type:            *readiness,
+			Port:            int32(*readinessPort),
+			Path:            *readinessPath,
+			IntervalSeconds: int32(*readinessInterval),
+		}
 	}
 	err = c.callAgent(pkgCallTimeout, func(ctx context.Context, client pb.NodeAgentClient) error {
 		_, err := client.Install(ctx, &pb.InstallRequest{Spec: spec})
@@ -305,7 +367,9 @@ func splitPositional(args []string, max int) (positional, flags []string) {
 // splitPositional keeps the value token with it).
 func isValueFlag(flagToken string) bool {
 	switch strings.TrimLeft(flagToken, "-") {
-	case "type", "restart-policy", "n":
+	case "type", "restart-policy", "n",
+		"liveness", "liveness-port", "liveness-path", "liveness-interval", "liveness-threshold",
+		"readiness", "readiness-port", "readiness-path", "readiness-interval", "startup-order":
 		return true
 	}
 

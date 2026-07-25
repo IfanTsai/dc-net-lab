@@ -54,12 +54,29 @@
 | `type: oneshot` | `Type=oneshot` | 一次性任务；正常退出进入终态 `Exited`（区别于 Stopped/Failed），期望状态自动落回 Stopped；拒绝 `Always` 重启策略 |
 | `autoStart` | `systemctl enable` | 每次"开机"自动启动，无论此前是否在跑 |
 | `restartPolicy` | `Restart=` | `Never` / `OnFailure` / `Always`，重启退避 1 s 起倍增、封顶 15 s |
+| `livenessCheck` | k8s liveness probe | 周期探测运行中的程序，连续失败达阈值即杀进程交由 `restartPolicy` 重启 |
+| `readinessCheck` | k8s readiness probe | 周期探测，只报告是否可服务（`ready`），**不**触发重启 |
+| `startupOrder` | — | 开机 / 重部署时按升序启动（同序按名称），默认 0 |
 | 状态 | — | `Configured` / `Running` / `Stopped` / `Failed` / `Exited` |
+| 健康 | — | `Unknown`（无检查或尚未探测）/ `Healthy` / `Unhealthy`（最近一次存活探测结论） |
+| 就绪 | — | `ready` 布尔：无就绪检查时运行即就绪，有则以最近一次探测为准 |
+
+存活 / 就绪检查共享三种探测类型，探测目标固定为容器内回环 `127.0.0.1`：
+
+| `type` | 判定 | 参数 |
+|---|---|---|
+| `process` | 被监督进程仍存在（`kill -0`，`EPERM` 视为存活） | — |
+| `tcp` | 回环端口接受 TCP 连接 | `port` |
+| `http` | 回环端点 GET 返回 2xx/3xx | `port` / `path`（默认 `/`） |
+
+时序参数：`intervalSeconds`（探测周期，默认 10 s，下限 1 s）、`timeoutSeconds`（单次超时，默认 1 s，钳到 interval 之下保证同一时刻至多一个探测在飞）、`failureThreshold`（连续失败阈值，默认 3，仅存活检查用）。spec 随 `meta.json` 持久化，agent 重启后恢复监督即恢复探测。
 
 ## 运行逻辑
 
-- **启动恢复（boot 语义）**：agent 启动时逐个读取 `programs/*/meta.json`，先对上一世的 PID 整组补 SIGKILL（防孤儿进程与新监督并存），然后拉起 `desired == Running` **或** `autoStart` 的程序——前者对应"监督者重启不改变运行中的服务"，后者对应"enabled 单元开机自启"（oneshot 也随每次开机重跑）。
+- **启动恢复（boot 语义）**：agent 启动时逐个读取 `programs/*/meta.json`，先对上一世的 PID 整组补 SIGKILL（防孤儿进程与新监督并存），然后拉起 `desired == Running` **或** `autoStart` 的程序——前者对应"监督者重启不改变运行中的服务"，后者对应"enabled 单元开机自启"（oneshot 也随每次开机重跑）。拉起前按 `startupOrder` 升序排序（同序按名称），使低序程序先于依赖它的高序程序启动；重部署路径（Controller 的 `RestorePrograms`）同样按 `startupOrder` 排序下发。（当前只保证启动**顺序**，尚未做"等前序 ready 再启后序"的就绪门控——见 [progress.md](progress.md) 后续项。）
 - **监督循环**：每个运行中的程序一个 goroutine，`Setpgid` 自成进程组；退出后按顺序判定：用户已 Stop → `Stopped`；`Always` → 重启；`OnFailure` 且失败 → 重启；失败 → `Failed`；oneshot 正常退出 → `Exited`；否则 → `Stopped`。
+- **存活探测**：配了 `livenessCheck` 的程序再起一个 goroutine（与监督循环共享 context，跨重启存活），按 interval 探测当前实例；连续失败达 `failureThreshold` 即向进程组发 SIGTERM——探测本身不重启，只是"制造一次退出"，由监督循环按 `restartPolicy` 决定是否拉起（故 `Never` 下探测失败使程序进 `Failed`）。进程不在运行、或重启换了新 PID 时失败计数清零，避免对退避窗口里的空 PID 误杀。健康值只在程序运行时被探测结论覆盖，进程一停即回落 `Unknown`。
+- **就绪探测**：配了 `readinessCheck` 的程序另起一个 goroutine，语义同存活探测但**从不重启**——只把每次探测结论写进 `ready`；程序不在运行时 `ready` 恒为 false。无就绪检查的程序一进入 Running 即 `ready`（对应 `Type=simple` 无需就绪门）。
 - **优雅退出**：agent 收 SIGTERM 只杀进程、**不改动持久化的期望状态**，下一世按 boot 语义恢复原样（systemd 重启自身不会 disable 任何服务）。
 - **包存储单写者**：所有包安装/删除（无论来自 Controller 还是 CLI）都经本机 daemon 的 gRPC 走同一条下载/校验/解包链路；GC 在每次安装后保留最近 3 个未被程序引用的版本。
 - **托管与非托管**：Controller 创建的程序期望状态存中心库,重部署由 apply 的 `RestorePrograms` 步骤恢复；容器终端里用 `program` 命令自建的程序是**节点本地**的——agent 重启/开机自启语义齐全,但 Controller 不管理、重部署不恢复（对应真实世界绕过配置管理手写 unit），在拓扑图 server 抽屉的"程序"页可见并标注"非托管"。
@@ -92,7 +109,7 @@ program remove <name>               停止并删除定义与日志
 program logs <name> [-n <lines>]    查看程序日志尾部
 ```
 
-deploy 标志：`--type simple|oneshot`（默认 simple）、`--auto-start`（开机自启）、`--restart-policy Never|OnFailure|Always`（默认 Never；oneshot 拒绝 Always）。程序参数放在 `--` 之后原样传入。
+deploy 标志：`--type simple|oneshot`（默认 simple）、`--auto-start`（开机自启）、`--restart-policy Never|OnFailure|Always`（默认 Never；oneshot 拒绝 Always）、`--liveness process|tcp|http`（存活探测，配 `--liveness-port` / `--liveness-path` / `--liveness-interval` / `--liveness-threshold`）、`--readiness process|tcp|http`（就绪探测，配 `--readiness-port` / `--readiness-path` / `--readiness-interval`）、`--startup-order N`（开机启动顺序）。程序参数放在 `--` 之后原样传入。
 
 示例：
 

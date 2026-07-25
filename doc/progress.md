@@ -9,7 +9,7 @@
 | Iteration 0 | 运行时验证：Controller 骨架、Vue 骨架、两节点拓扑 | ✅ 已完成 |
 | Iteration 1 | 物理网络闭环：Profile、IPAM、ASN、FRR 编译、Plan/Apply、Topology UI | ✅ 已完成，含真实部署验证 |
 | Iteration 2 | Server Program:Compute Server Container、Server Agent、trafficgen | ✅ 已完成，含 Package 制品部署 |
-| Iteration 3 | Daemon Framework | ⬜ 未开始 |
+| Iteration 3 | Daemon Framework | 🚧 进行中（Auto Start / Restart Policy / 存活 + 就绪检查 / 启动顺序已落地；剩就绪门控排序、配置渲染 + Provider、Daemon UI） |
 | Iteration 4 | Traffic | ⬜ 未开始 |
 | Iteration 5 | 原生抓包（AF_PACKET） | ⬜ 未开始 |
 | Iteration 6 | 故障实验 | ⬜ 未开始 |
@@ -127,6 +127,26 @@ Create Lab（Micro/Standard Profile）→ Plan（资源分配预览）→ Apply�
 - **agent 崩溃自愈**：Observer 深度巡检（6s）对 running 状态的 server 容器探测 agent 端口（500ms TCP dial），拒连即通过 `Driver.Exec` 重放启动脚本拉起 agent——脚本收敛为 `agentapi.StartAgentScript` 单一来源，部署时的 containerlab exec 与自愈路径共用，杜绝漂移。复活的 agent 从本地 `meta.json` 恢复 desired Running 与 autoStart 的程序，自愈即"服务器开机"。覆盖场景：agent 被 OOM/误杀、宿主机挂起唤醒、容器被平台外重启（此时数据面 veth 仍需重部署恢复，但包/程序管理即刻可用）。
 - **接线**：`api/nodeagent/v1` 与 `api/dcnetlab/v1` 的 `ProgramSpec` 增加 `type`/`auto_start`；存量程序 type 为空视同 simple，无需迁移。agent 新增单测：graceful shutdown 后恢复 Running、autoStart 冷启动拉起、oneshot 全生命周期（Exited、不重跑、Always 拒绝）。
 
+### Program 存活检查（Iteration 3，Liveness Probe）
+
+参考 systemd 健康检查 / k8s liveness probe，为 Program 补上"进程活着但不干活"这块语义——探测失败即按 `RestartPolicy` 重启，让 Running 状态从"进程在"升级为"服务可用"。Iteration 3 的健康检查交付项达成，Auto Start / Restart Policy 已在上一轮 systemd 化落地，本轮补齐存活探测。
+
+- **三种探测**（`serverapps/internal/agent/health.go`）：`process`（被监督进程存在，`kill -0`，`EPERM` 视为存活）/ `tcp`（回环端口接受连接）/ `http`（回环 GET 返回 2xx/3xx），探测目标固定容器内 `127.0.0.1`；时序默认 interval 10 s（下限 1 s）、timeout 1 s（钳到 interval 之下保证同一时刻至多一个探测在飞）、failureThreshold 3。`normalise` 纯函数补默认 + 校验，表驱动测试。
+- **监督语义**：配了 `livenessCheck` 的程序在 `startLocked` 里另起一个 goroutine，与监督循环共享 context（跨重启存活）；连续失败达阈值即向进程组发 SIGTERM——探测本身不重启，只"制造一次退出"，交由既有监督循环按 `RestartPolicy` 决定拉起（故 `Never` 下探测失败进 `Failed`）。进程不在运行或换了新 PID 时失败计数清零，避免对退避窗口空 PID 误杀；健康值只在运行时被探测结论覆盖，进程一停回落 `Unknown`。spec 随 `meta.json` 持久化，agent 重启恢复监督即恢复探测。
+- **健康状态**：`ProgramStatus.Health` 为 `Unknown`（无检查 / 尚未探测）/ `Healthy` / `Unhealthy`，逐层透出（agent → `ProgramInfo.health` → controller model → API → UI）。
+- **全链路接线**：`agentapi` 增加探测类型与健康态常量；`api/nodeagent/v1` 与 `api/dcnetlab/v1` 的 `ProgramSpec` 增加 `HealthCheck liveness_check`、状态增加 `health`；biz 层 `validateLivenessCheck` 在下发前挡掉非法类型 / 缺端口；data/service 双向转换（秒 ↔ `time.Duration`）。Programs 页创建对话框加"存活检查"配置（类型 / 端口 / 路径 / 周期 / 失败阈值），列表 State 列旁显示健康角标；容器内 `program deploy` 加 `--liveness*` 一组标志、`program list` 加 HEALTH 列，与 UI 对齐。
+- **测试**：agent 侧覆盖 normalise 默认与校验、tcp/http/process 探测命中与失败、存活程序标 Healthy 且不重启、卡死程序（进程在但不监听）被探测重启；biz 侧覆盖非法探测拒绝与合法探测持久化。
+
+### Program 就绪检查与启动顺序（Iteration 3，Readiness + StartupOrder）
+
+在存活检查之上补齐设计 §10.7 的就绪探测与 §10.8 的启动顺序：就绪只报告"是否可服务"、不重启；启动顺序让"配置写入器先于依赖它的守护进程"这类关系在开机 / 重部署时成立。就绪探测复用存活的探测器（`process` / `tcp` / `http`，同一 `HealthCheck`）。
+
+- **就绪探测**：`ProgramSpec.ReadinessCheck` 配了就起 `monitorReadiness` goroutine，语义同存活但**从不重启**——只把每次探测结论写进 `ready`（运行时被覆盖，进程一停回落 false）；无就绪检查的程序一进 Running 即 `ready`（对应 `Type=simple` 无就绪门）。`ProgramStatus.Ready` 逐层透出到 UI。
+- **启动顺序**：`ProgramSpec.StartupOrder`（默认 0）。agent 的 `NewManager` 改为两段——先加载全部定义（并杀上一世孤儿），再把要启动的（desired running 或 autoStart）按 `StartupOrder` 升序（同序按名称）依次 `startLocked`；Controller 的 `RestorePrograms` 同样先按 `StartupOrder` 排序再逐个下发，重部署与 agent 开机路径口径一致。
+- **本轮范围界定**：只做启动**顺序**（低序先于高序被启动），**尚未做**"等前序 ready 再启后序"的就绪门控——就绪门控涉及开机时延与门控归属（agent 侧 vs controller 侧）的取舍，作为紧接的后续项单列；就绪状态已就位，正是门控的消费信号。
+- **全链路接线**：两份 `ProgramSpec` 增加 `readiness_check` / `startup_order`、状态增加 `ready`；biz 层校验器泛化为 `validateHealthCheck`（存活 / 就绪共用）；data/service 双向透传。Programs 页创建对话框加"就绪检查"配置与"启动顺序"输入，列表 State 列加就绪角标、Type 列显示启动顺序；`program deploy` 加 `--readiness*` / `--startup-order`、`program list` 加 READY 列。
+- **测试**：agent 侧覆盖就绪程序报告 ready 且端口关闭后回落、无检查程序运行即就绪、开机按 `StartupOrder` 顺序拉起（`StartedAt` 递增）；biz 侧覆盖就绪校验与顺序持久化。
+
 ### 批量交付与节点视角（范围选择 / 库存 / program CLI）
 
 把"往一台 server 上装东西"扩展成面向机群的交付操作，并补齐"这台机器上到底有什么"的节点视角。
@@ -191,11 +211,33 @@ Create Lab（Micro/Standard Profile）→ Plan（资源分配预览）→ Apply�
 3. **Observer 会纠正 phase**：突破设计"Observer 只写 Observed 状态"的原则，漂移时自动改写 node/lab phase（有意为之，换取免人工干预的状态收敛）。
 4. **采集周期**：设计 §13 的 2/3/5s 分表合并为 2s（容器状态）+ 6s（BGP/路由/接口）两档。
 5. **Operation 进度仍为 HTTP 轮询**：WebSocket 目前只覆盖拓扑观测，Operation 推送后续可迁移。
+6. **Daemon 未建独立资源**（设计 §9.7 的 `DaemonSpec` 内嵌 `ProgramSpec`）：存活 / 就绪检查、启动顺序等 Daemon 语义作为字段增量落在 `ProgramSpec` 上，"Daemon"即一种带健康检查的 simple Program——API、存储、agent 协议、UI 全部复用，迁移成本为零（有意为之，见"下一步计划"的建模决策）。
 
 ## 下一步计划（按优先级）
 
-1. **Daemon Framework**（Iteration 3）：在 Program 之上加受控子类型（启动顺序、就绪/存活检查、配置模板），为 Pingmesh 等常驻探测打底。
-2. **Package 格式扩展**：deb（需 Debian 系 server 镜像）与 OCI Image 作为 `format` 扩展位；server 扩缩容迭代时引入"集成进镜像"的装机预装通道（第一个搬进镜像的是 agent）。
+### 迭代路线与排序
+
+原计划顺序为 It. 3 → It. 4 → It. 5 → It. 6，建议调整为 **It. 3 剩余 → It. 4 Traffic → It. 6 故障 → It. 5 抓包 → It. 8 Pingmesh → It. 7 扩容 / Rollback → It. 9/10 虚拟网络 / EIP**，理由：
+
+- **Traffic（It. 4）依赖度低、演示价值高**：trafficgen 六模式与 JSON 打点已就绪，Traffic Scenario 本质是"一对 Program 的编排 + 指标汇聚"，而指标管道（controller 拉取 + 内存窗口 + JSONL 分片 + `/metrics` 出口）已在 Server 监控落成，可直接复用 `internal/metrics` 的 History/Collector 模式；主要新工作是 Scenario 资源模型、断言（Assertions）与 Traffic UI（P50/P95/P99 曲线）。
+- **故障实验（It. 6）紧跟 Traffic**：Node Stop 已有（pause/unpause），Link Down/Delay/Loss/Rate Limit 均为 netem/netlink 操作，"注入故障 → Traffic 曲线掉坑 → 恢复"是平台最核心的演示闭环。抓包（It. 5，AF_PACKET）为独立能力，后置不损失价值。设计 §17 要求"故障恢复基于故障前快照"，需引入 FaultSession 资源持有快照，是该迭代的建模重点。
+- **Pingmesh（It. 8）提前到扩容之前**：它是 Daemon Framework 的首个真实消费者，尽早验证 DaemonProvider 接口设计是否成立；扩容 / Rollback（Generation 快照已就绪）不阻塞任何人，何时做都行。
+
+### Iteration 3 剩余项拆解
+
+Auto Start 与 Restart Policy 已在"Program 的 systemd 化"一轮落地（`autoStart`、`RestartPolicy` 含指数退避、simple/oneshot 类型、agent 崩溃自愈），退出标准"Server 重启后 Required Daemon 自动恢复"的机制链路已全通，剩余：
+
+1. ~~**健康检查**（设计 §10.7）~~ ✅ 已落地：Process/TCP/HTTP 存活 + 就绪探测（详见上文「Program 存活检查」「Program 就绪检查与启动顺序」）。
+2. ~~**启动顺序**（§10.8）~~ 🚧 部分落地：`StartupOrder` 整数排序在 agent 开机与 `RestorePrograms` 两条路径生效（不做 `dependsOn` DAG）。**剩就绪门控排序**——"等前序 order 组 ready 再启后序"，就绪状态已就位作为门控信号；涉及开机时延与门控归属（agent 侧 vs controller 侧）取舍，待定后补。
+3. **配置渲染 + `GenericDaemonProvider`**（§10.9）：Pingmesh 的地基；RenderedFile 下发建议走现有包安装通道的旁路（agent 增加写配置文件能力，配置与包一样带校验和、幂等），不开新协议。
+4. **Daemon UI**（§14.2）：倾向在 Programs 页面增加类型维度与健康状态列（健康 / 就绪角标、启动顺序已加），不新建独立页面。
+
+**建模决策**：`DaemonSpec` 内嵌 `ProgramSpec`（§9.7），但 `type`/`autoStart` 已进 `ProgramSpec`。建议不引入独立 Daemon 资源，继续在 Program 上增量加字段（healthCheck、startupOrder、required、providerType），"Daemon"退化为一种带健康检查的 simple Program——API、存储、agent 协议、UI 全部复用，迁移成本为零；代价是与设计文档资源模型有出入，落地时需在设计文档或"与设计文档的已知偏差"一节正式确认。
+
+### 迭代外技术债
+
+1. **Operation 进度仍为 HTTP 轮询**：Traffic UI 与故障实验会加重实时推送需求，It. 4 做 Traffic UI 时是把 Operation/Traffic 指标统一迁到现有 WebSocket 通道的合适时机。
+2. **Package 格式扩展**：deb（需 Debian 系 server 镜像）与 OCI Image 作为 `format` 扩展位；随 It. 7 扩缩容触碰镜像与装机链路时引入"集成进镜像"的预装通道（第一个搬进镜像的是 agent）。
 3. **多 DC 互联**：dcedge 每 DC 独享、共享 external 骨干层；DC 间流量（目的 10/8）已在边界 NAT 规则中预留不做转换，对应真实 DCI 语义。
 
 ## 环境备注

@@ -351,6 +351,97 @@ func (x *InUseVersion) GetPrograms() []string {
 	return nil
 }
 
+// HealthCheck probes a running program periodically. type is process
+// (the supervised process exists), tcp (a local port accepts a
+// connection) or http (a GET returns a 2xx/3xx status). The probe
+// targets loopback inside the server; port and path apply to tcp/http.
+type HealthCheck struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Type  string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
+	Port  int32                  `protobuf:"varint,2,opt,name=port,proto3" json:"port,omitempty"`
+	Path  string                 `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
+	// interval_seconds is the probe period, timeout_seconds bounds one
+	// probe, failure_threshold is the consecutive failures that mark
+	// the program unhealthy.
+	IntervalSeconds  int32 `protobuf:"varint,4,opt,name=interval_seconds,json=intervalSeconds,proto3" json:"interval_seconds,omitempty"`
+	TimeoutSeconds   int32 `protobuf:"varint,5,opt,name=timeout_seconds,json=timeoutSeconds,proto3" json:"timeout_seconds,omitempty"`
+	FailureThreshold int32 `protobuf:"varint,6,opt,name=failure_threshold,json=failureThreshold,proto3" json:"failure_threshold,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *HealthCheck) Reset() {
+	*x = HealthCheck{}
+	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HealthCheck) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HealthCheck) ProtoMessage() {}
+
+func (x *HealthCheck) ProtoReflect() protoreflect.Message {
+	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HealthCheck.ProtoReflect.Descriptor instead.
+func (*HealthCheck) Descriptor() ([]byte, []int) {
+	return file_nodeagent_v1_nodeagent_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *HealthCheck) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *HealthCheck) GetPort() int32 {
+	if x != nil {
+		return x.Port
+	}
+	return 0
+}
+
+func (x *HealthCheck) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *HealthCheck) GetIntervalSeconds() int32 {
+	if x != nil {
+		return x.IntervalSeconds
+	}
+	return 0
+}
+
+func (x *HealthCheck) GetTimeoutSeconds() int32 {
+	if x != nil {
+		return x.TimeoutSeconds
+	}
+	return 0
+}
+
+func (x *HealthCheck) GetFailureThreshold() int32 {
+	if x != nil {
+		return x.FailureThreshold
+	}
+	return 0
+}
+
 // ProgramSpec is the agent-side program definition: an entrypoint of
 // an installed package version plus its arguments.
 type ProgramSpec struct {
@@ -368,14 +459,22 @@ type ProgramSpec struct {
 	Type string `protobuf:"bytes,7,opt,name=type,proto3" json:"type,omitempty"`
 	// auto_start marks the program enabled: the agent starts it on
 	// every boot of its own process (systemd: systemctl enable).
-	AutoStart     bool `protobuf:"varint,8,opt,name=auto_start,json=autoStart,proto3" json:"auto_start,omitempty"`
+	AutoStart bool `protobuf:"varint,8,opt,name=auto_start,json=autoStart,proto3" json:"auto_start,omitempty"`
+	// liveness_check, when set, restarts the program (per restart_policy)
+	// once it fails failure_threshold consecutive probes.
+	LivenessCheck *HealthCheck `protobuf:"bytes,9,opt,name=liveness_check,json=livenessCheck,proto3" json:"liveness_check,omitempty"`
+	// readiness_check, when set, reports whether the program is serving;
+	// unlike the liveness check it never restarts, it only gates ready.
+	ReadinessCheck *HealthCheck `protobuf:"bytes,10,opt,name=readiness_check,json=readinessCheck,proto3" json:"readiness_check,omitempty"`
+	// startup_order sequences boot: programs start in ascending order.
+	StartupOrder  int32 `protobuf:"varint,11,opt,name=startup_order,json=startupOrder,proto3" json:"startup_order,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ProgramSpec) Reset() {
 	*x = ProgramSpec{}
-	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[6]
+	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -387,7 +486,7 @@ func (x *ProgramSpec) String() string {
 func (*ProgramSpec) ProtoMessage() {}
 
 func (x *ProgramSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[6]
+	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -400,7 +499,7 @@ func (x *ProgramSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProgramSpec.ProtoReflect.Descriptor instead.
 func (*ProgramSpec) Descriptor() ([]byte, []int) {
-	return file_nodeagent_v1_nodeagent_proto_rawDescGZIP(), []int{6}
+	return file_nodeagent_v1_nodeagent_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ProgramSpec) GetName() string {
@@ -459,6 +558,27 @@ func (x *ProgramSpec) GetAutoStart() bool {
 	return false
 }
 
+func (x *ProgramSpec) GetLivenessCheck() *HealthCheck {
+	if x != nil {
+		return x.LivenessCheck
+	}
+	return nil
+}
+
+func (x *ProgramSpec) GetReadinessCheck() *HealthCheck {
+	if x != nil {
+		return x.ReadinessCheck
+	}
+	return nil
+}
+
+func (x *ProgramSpec) GetStartupOrder() int32 {
+	if x != nil {
+		return x.StartupOrder
+	}
+	return 0
+}
+
 type InstallRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Spec          *ProgramSpec           `protobuf:"bytes,1,opt,name=spec,proto3" json:"spec,omitempty"`
@@ -468,7 +588,7 @@ type InstallRequest struct {
 
 func (x *InstallRequest) Reset() {
 	*x = InstallRequest{}
-	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[7]
+	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -480,7 +600,7 @@ func (x *InstallRequest) String() string {
 func (*InstallRequest) ProtoMessage() {}
 
 func (x *InstallRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[7]
+	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -493,7 +613,7 @@ func (x *InstallRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstallRequest.ProtoReflect.Descriptor instead.
 func (*InstallRequest) Descriptor() ([]byte, []int) {
-	return file_nodeagent_v1_nodeagent_proto_rawDescGZIP(), []int{7}
+	return file_nodeagent_v1_nodeagent_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *InstallRequest) GetSpec() *ProgramSpec {
@@ -512,7 +632,7 @@ type ProgramRef struct {
 
 func (x *ProgramRef) Reset() {
 	*x = ProgramRef{}
-	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[8]
+	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -524,7 +644,7 @@ func (x *ProgramRef) String() string {
 func (*ProgramRef) ProtoMessage() {}
 
 func (x *ProgramRef) ProtoReflect() protoreflect.Message {
-	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[8]
+	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -537,7 +657,7 @@ func (x *ProgramRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProgramRef.ProtoReflect.Descriptor instead.
 func (*ProgramRef) Descriptor() ([]byte, []int) {
-	return file_nodeagent_v1_nodeagent_proto_rawDescGZIP(), []int{8}
+	return file_nodeagent_v1_nodeagent_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ProgramRef) GetName() string {
@@ -558,14 +678,20 @@ type ProgramInfo struct {
 	LastError string                 `protobuf:"bytes,5,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`
 	// started_at is the unix time of the last successful start, 0 when
 	// never started.
-	StartedAt     int64 `protobuf:"varint,6,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	StartedAt int64 `protobuf:"varint,6,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	// health is the last liveness verdict: Unknown (no check or not yet
+	// probed), Healthy or Unhealthy.
+	Health string `protobuf:"bytes,7,opt,name=health,proto3" json:"health,omitempty"`
+	// ready reflects the readiness check (true when it has no readiness
+	// check but is running, or the probe last passed).
+	Ready         bool `protobuf:"varint,8,opt,name=ready,proto3" json:"ready,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ProgramInfo) Reset() {
 	*x = ProgramInfo{}
-	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[9]
+	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -577,7 +703,7 @@ func (x *ProgramInfo) String() string {
 func (*ProgramInfo) ProtoMessage() {}
 
 func (x *ProgramInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[9]
+	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -590,7 +716,7 @@ func (x *ProgramInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProgramInfo.ProtoReflect.Descriptor instead.
 func (*ProgramInfo) Descriptor() ([]byte, []int) {
-	return file_nodeagent_v1_nodeagent_proto_rawDescGZIP(), []int{9}
+	return file_nodeagent_v1_nodeagent_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ProgramInfo) GetSpec() *ProgramSpec {
@@ -635,6 +761,20 @@ func (x *ProgramInfo) GetStartedAt() int64 {
 	return 0
 }
 
+func (x *ProgramInfo) GetHealth() string {
+	if x != nil {
+		return x.Health
+	}
+	return ""
+}
+
+func (x *ProgramInfo) GetReady() bool {
+	if x != nil {
+		return x.Ready
+	}
+	return false
+}
+
 type RemoveReply struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -643,7 +783,7 @@ type RemoveReply struct {
 
 func (x *RemoveReply) Reset() {
 	*x = RemoveReply{}
-	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[10]
+	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -655,7 +795,7 @@ func (x *RemoveReply) String() string {
 func (*RemoveReply) ProtoMessage() {}
 
 func (x *RemoveReply) ProtoReflect() protoreflect.Message {
-	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[10]
+	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -668,7 +808,7 @@ func (x *RemoveReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveReply.ProtoReflect.Descriptor instead.
 func (*RemoveReply) Descriptor() ([]byte, []int) {
-	return file_nodeagent_v1_nodeagent_proto_rawDescGZIP(), []int{10}
+	return file_nodeagent_v1_nodeagent_proto_rawDescGZIP(), []int{11}
 }
 
 type ListRequest struct {
@@ -679,7 +819,7 @@ type ListRequest struct {
 
 func (x *ListRequest) Reset() {
 	*x = ListRequest{}
-	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[11]
+	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -691,7 +831,7 @@ func (x *ListRequest) String() string {
 func (*ListRequest) ProtoMessage() {}
 
 func (x *ListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[11]
+	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -704,7 +844,7 @@ func (x *ListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRequest.ProtoReflect.Descriptor instead.
 func (*ListRequest) Descriptor() ([]byte, []int) {
-	return file_nodeagent_v1_nodeagent_proto_rawDescGZIP(), []int{11}
+	return file_nodeagent_v1_nodeagent_proto_rawDescGZIP(), []int{12}
 }
 
 type ListReply struct {
@@ -716,7 +856,7 @@ type ListReply struct {
 
 func (x *ListReply) Reset() {
 	*x = ListReply{}
-	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[12]
+	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -728,7 +868,7 @@ func (x *ListReply) String() string {
 func (*ListReply) ProtoMessage() {}
 
 func (x *ListReply) ProtoReflect() protoreflect.Message {
-	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[12]
+	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -741,7 +881,7 @@ func (x *ListReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListReply.ProtoReflect.Descriptor instead.
 func (*ListReply) Descriptor() ([]byte, []int) {
-	return file_nodeagent_v1_nodeagent_proto_rawDescGZIP(), []int{12}
+	return file_nodeagent_v1_nodeagent_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ListReply) GetPrograms() []*ProgramInfo {
@@ -759,7 +899,7 @@ type ListPackagesRequest struct {
 
 func (x *ListPackagesRequest) Reset() {
 	*x = ListPackagesRequest{}
-	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[13]
+	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -771,7 +911,7 @@ func (x *ListPackagesRequest) String() string {
 func (*ListPackagesRequest) ProtoMessage() {}
 
 func (x *ListPackagesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[13]
+	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -784,7 +924,7 @@ func (x *ListPackagesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPackagesRequest.ProtoReflect.Descriptor instead.
 func (*ListPackagesRequest) Descriptor() ([]byte, []int) {
-	return file_nodeagent_v1_nodeagent_proto_rawDescGZIP(), []int{13}
+	return file_nodeagent_v1_nodeagent_proto_rawDescGZIP(), []int{14}
 }
 
 // InstalledPackage is one complete package version in the local
@@ -800,7 +940,7 @@ type InstalledPackage struct {
 
 func (x *InstalledPackage) Reset() {
 	*x = InstalledPackage{}
-	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[14]
+	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -812,7 +952,7 @@ func (x *InstalledPackage) String() string {
 func (*InstalledPackage) ProtoMessage() {}
 
 func (x *InstalledPackage) ProtoReflect() protoreflect.Message {
-	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[14]
+	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -825,7 +965,7 @@ func (x *InstalledPackage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstalledPackage.ProtoReflect.Descriptor instead.
 func (*InstalledPackage) Descriptor() ([]byte, []int) {
-	return file_nodeagent_v1_nodeagent_proto_rawDescGZIP(), []int{14}
+	return file_nodeagent_v1_nodeagent_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *InstalledPackage) GetName() string {
@@ -858,7 +998,7 @@ type ListPackagesReply struct {
 
 func (x *ListPackagesReply) Reset() {
 	*x = ListPackagesReply{}
-	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[15]
+	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -870,7 +1010,7 @@ func (x *ListPackagesReply) String() string {
 func (*ListPackagesReply) ProtoMessage() {}
 
 func (x *ListPackagesReply) ProtoReflect() protoreflect.Message {
-	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[15]
+	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -883,7 +1023,7 @@ func (x *ListPackagesReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPackagesReply.ProtoReflect.Descriptor instead.
 func (*ListPackagesReply) Descriptor() ([]byte, []int) {
-	return file_nodeagent_v1_nodeagent_proto_rawDescGZIP(), []int{15}
+	return file_nodeagent_v1_nodeagent_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ListPackagesReply) GetPackages() []*InstalledPackage {
@@ -905,7 +1045,7 @@ type TailLogsRequest struct {
 
 func (x *TailLogsRequest) Reset() {
 	*x = TailLogsRequest{}
-	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[16]
+	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -917,7 +1057,7 @@ func (x *TailLogsRequest) String() string {
 func (*TailLogsRequest) ProtoMessage() {}
 
 func (x *TailLogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[16]
+	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -930,7 +1070,7 @@ func (x *TailLogsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TailLogsRequest.ProtoReflect.Descriptor instead.
 func (*TailLogsRequest) Descriptor() ([]byte, []int) {
-	return file_nodeagent_v1_nodeagent_proto_rawDescGZIP(), []int{16}
+	return file_nodeagent_v1_nodeagent_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *TailLogsRequest) GetName() string {
@@ -956,7 +1096,7 @@ type TailLogsReply struct {
 
 func (x *TailLogsReply) Reset() {
 	*x = TailLogsReply{}
-	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[17]
+	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -968,7 +1108,7 @@ func (x *TailLogsReply) String() string {
 func (*TailLogsReply) ProtoMessage() {}
 
 func (x *TailLogsReply) ProtoReflect() protoreflect.Message {
-	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[17]
+	mi := &file_nodeagent_v1_nodeagent_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -981,7 +1121,7 @@ func (x *TailLogsReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TailLogsReply.ProtoReflect.Descriptor instead.
 func (*TailLogsReply) Descriptor() ([]byte, []int) {
-	return file_nodeagent_v1_nodeagent_proto_rawDescGZIP(), []int{17}
+	return file_nodeagent_v1_nodeagent_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *TailLogsReply) GetContent() string {
@@ -1016,7 +1156,14 @@ const file_nodeagent_v1_nodeagent_proto_rawDesc = "" +
 	"\x06in_use\x18\x02 \x03(\v2\x1a.nodeagent.v1.InUseVersionR\x05inUse\"D\n" +
 	"\fInUseVersion\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x1a\n" +
-	"\bprograms\x18\x02 \x03(\tR\bprograms\"\xfb\x01\n" +
+	"\bprograms\x18\x02 \x03(\tR\bprograms\"\xca\x01\n" +
+	"\vHealthCheck\x12\x12\n" +
+	"\x04type\x18\x01 \x01(\tR\x04type\x12\x12\n" +
+	"\x04port\x18\x02 \x01(\x05R\x04port\x12\x12\n" +
+	"\x04path\x18\x03 \x01(\tR\x04path\x12)\n" +
+	"\x10interval_seconds\x18\x04 \x01(\x05R\x0fintervalSeconds\x12'\n" +
+	"\x0ftimeout_seconds\x18\x05 \x01(\x05R\x0etimeoutSeconds\x12+\n" +
+	"\x11failure_threshold\x18\x06 \x01(\x05R\x10failureThreshold\"\xa6\x03\n" +
 	"\vProgramSpec\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12!\n" +
 	"\fpackage_name\x18\x02 \x01(\tR\vpackageName\x12'\n" +
@@ -1028,12 +1175,16 @@ const file_nodeagent_v1_nodeagent_proto_rawDesc = "" +
 	"\x0erestart_policy\x18\x06 \x01(\tR\rrestartPolicy\x12\x12\n" +
 	"\x04type\x18\a \x01(\tR\x04type\x12\x1d\n" +
 	"\n" +
-	"auto_start\x18\b \x01(\bR\tautoStart\"?\n" +
+	"auto_start\x18\b \x01(\bR\tautoStart\x12@\n" +
+	"\x0eliveness_check\x18\t \x01(\v2\x19.nodeagent.v1.HealthCheckR\rlivenessCheck\x12B\n" +
+	"\x0freadiness_check\x18\n" +
+	" \x01(\v2\x19.nodeagent.v1.HealthCheckR\x0ereadinessCheck\x12#\n" +
+	"\rstartup_order\x18\v \x01(\x05R\fstartupOrder\"?\n" +
 	"\x0eInstallRequest\x12-\n" +
 	"\x04spec\x18\x01 \x01(\v2\x19.nodeagent.v1.ProgramSpecR\x04spec\" \n" +
 	"\n" +
 	"ProgramRef\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\"\xbe\x01\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\"\xec\x01\n" +
 	"\vProgramInfo\x12-\n" +
 	"\x04spec\x18\x01 \x01(\v2\x19.nodeagent.v1.ProgramSpecR\x04spec\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x12\x10\n" +
@@ -1042,7 +1193,9 @@ const file_nodeagent_v1_nodeagent_proto_rawDesc = "" +
 	"\n" +
 	"last_error\x18\x05 \x01(\tR\tlastError\x12\x1d\n" +
 	"\n" +
-	"started_at\x18\x06 \x01(\x03R\tstartedAt\"\r\n" +
+	"started_at\x18\x06 \x01(\x03R\tstartedAt\x12\x16\n" +
+	"\x06health\x18\a \x01(\tR\x06health\x12\x14\n" +
+	"\x05ready\x18\b \x01(\bR\x05ready\"\r\n" +
 	"\vRemoveReply\"\r\n" +
 	"\vListRequest\"B\n" +
 	"\tListReply\x125\n" +
@@ -1082,7 +1235,7 @@ func file_nodeagent_v1_nodeagent_proto_rawDescGZIP() []byte {
 	return file_nodeagent_v1_nodeagent_proto_rawDescData
 }
 
-var file_nodeagent_v1_nodeagent_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_nodeagent_v1_nodeagent_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_nodeagent_v1_nodeagent_proto_goTypes = []any{
 	(*PackageRef)(nil),            // 0: nodeagent.v1.PackageRef
 	(*InstallPackageRequest)(nil), // 1: nodeagent.v1.InstallPackageRequest
@@ -1090,49 +1243,52 @@ var file_nodeagent_v1_nodeagent_proto_goTypes = []any{
 	(*RemovePackageRequest)(nil),  // 3: nodeagent.v1.RemovePackageRequest
 	(*RemovePackageReply)(nil),    // 4: nodeagent.v1.RemovePackageReply
 	(*InUseVersion)(nil),          // 5: nodeagent.v1.InUseVersion
-	(*ProgramSpec)(nil),           // 6: nodeagent.v1.ProgramSpec
-	(*InstallRequest)(nil),        // 7: nodeagent.v1.InstallRequest
-	(*ProgramRef)(nil),            // 8: nodeagent.v1.ProgramRef
-	(*ProgramInfo)(nil),           // 9: nodeagent.v1.ProgramInfo
-	(*RemoveReply)(nil),           // 10: nodeagent.v1.RemoveReply
-	(*ListRequest)(nil),           // 11: nodeagent.v1.ListRequest
-	(*ListReply)(nil),             // 12: nodeagent.v1.ListReply
-	(*ListPackagesRequest)(nil),   // 13: nodeagent.v1.ListPackagesRequest
-	(*InstalledPackage)(nil),      // 14: nodeagent.v1.InstalledPackage
-	(*ListPackagesReply)(nil),     // 15: nodeagent.v1.ListPackagesReply
-	(*TailLogsRequest)(nil),       // 16: nodeagent.v1.TailLogsRequest
-	(*TailLogsReply)(nil),         // 17: nodeagent.v1.TailLogsReply
+	(*HealthCheck)(nil),           // 6: nodeagent.v1.HealthCheck
+	(*ProgramSpec)(nil),           // 7: nodeagent.v1.ProgramSpec
+	(*InstallRequest)(nil),        // 8: nodeagent.v1.InstallRequest
+	(*ProgramRef)(nil),            // 9: nodeagent.v1.ProgramRef
+	(*ProgramInfo)(nil),           // 10: nodeagent.v1.ProgramInfo
+	(*RemoveReply)(nil),           // 11: nodeagent.v1.RemoveReply
+	(*ListRequest)(nil),           // 12: nodeagent.v1.ListRequest
+	(*ListReply)(nil),             // 13: nodeagent.v1.ListReply
+	(*ListPackagesRequest)(nil),   // 14: nodeagent.v1.ListPackagesRequest
+	(*InstalledPackage)(nil),      // 15: nodeagent.v1.InstalledPackage
+	(*ListPackagesReply)(nil),     // 16: nodeagent.v1.ListPackagesReply
+	(*TailLogsRequest)(nil),       // 17: nodeagent.v1.TailLogsRequest
+	(*TailLogsReply)(nil),         // 18: nodeagent.v1.TailLogsReply
 }
 var file_nodeagent_v1_nodeagent_proto_depIdxs = []int32{
 	0,  // 0: nodeagent.v1.InstallPackageRequest.package:type_name -> nodeagent.v1.PackageRef
 	5,  // 1: nodeagent.v1.RemovePackageReply.in_use:type_name -> nodeagent.v1.InUseVersion
-	6,  // 2: nodeagent.v1.InstallRequest.spec:type_name -> nodeagent.v1.ProgramSpec
-	6,  // 3: nodeagent.v1.ProgramInfo.spec:type_name -> nodeagent.v1.ProgramSpec
-	9,  // 4: nodeagent.v1.ListReply.programs:type_name -> nodeagent.v1.ProgramInfo
-	14, // 5: nodeagent.v1.ListPackagesReply.packages:type_name -> nodeagent.v1.InstalledPackage
-	1,  // 6: nodeagent.v1.NodeAgent.InstallPackage:input_type -> nodeagent.v1.InstallPackageRequest
-	3,  // 7: nodeagent.v1.NodeAgent.RemovePackage:input_type -> nodeagent.v1.RemovePackageRequest
-	7,  // 8: nodeagent.v1.NodeAgent.Install:input_type -> nodeagent.v1.InstallRequest
-	8,  // 9: nodeagent.v1.NodeAgent.Start:input_type -> nodeagent.v1.ProgramRef
-	8,  // 10: nodeagent.v1.NodeAgent.Stop:input_type -> nodeagent.v1.ProgramRef
-	8,  // 11: nodeagent.v1.NodeAgent.Remove:input_type -> nodeagent.v1.ProgramRef
-	11, // 12: nodeagent.v1.NodeAgent.List:input_type -> nodeagent.v1.ListRequest
-	13, // 13: nodeagent.v1.NodeAgent.ListPackages:input_type -> nodeagent.v1.ListPackagesRequest
-	16, // 14: nodeagent.v1.NodeAgent.TailLogs:input_type -> nodeagent.v1.TailLogsRequest
-	2,  // 15: nodeagent.v1.NodeAgent.InstallPackage:output_type -> nodeagent.v1.InstallPackageReply
-	4,  // 16: nodeagent.v1.NodeAgent.RemovePackage:output_type -> nodeagent.v1.RemovePackageReply
-	9,  // 17: nodeagent.v1.NodeAgent.Install:output_type -> nodeagent.v1.ProgramInfo
-	9,  // 18: nodeagent.v1.NodeAgent.Start:output_type -> nodeagent.v1.ProgramInfo
-	9,  // 19: nodeagent.v1.NodeAgent.Stop:output_type -> nodeagent.v1.ProgramInfo
-	10, // 20: nodeagent.v1.NodeAgent.Remove:output_type -> nodeagent.v1.RemoveReply
-	12, // 21: nodeagent.v1.NodeAgent.List:output_type -> nodeagent.v1.ListReply
-	15, // 22: nodeagent.v1.NodeAgent.ListPackages:output_type -> nodeagent.v1.ListPackagesReply
-	17, // 23: nodeagent.v1.NodeAgent.TailLogs:output_type -> nodeagent.v1.TailLogsReply
-	15, // [15:24] is the sub-list for method output_type
-	6,  // [6:15] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	6,  // 2: nodeagent.v1.ProgramSpec.liveness_check:type_name -> nodeagent.v1.HealthCheck
+	6,  // 3: nodeagent.v1.ProgramSpec.readiness_check:type_name -> nodeagent.v1.HealthCheck
+	7,  // 4: nodeagent.v1.InstallRequest.spec:type_name -> nodeagent.v1.ProgramSpec
+	7,  // 5: nodeagent.v1.ProgramInfo.spec:type_name -> nodeagent.v1.ProgramSpec
+	10, // 6: nodeagent.v1.ListReply.programs:type_name -> nodeagent.v1.ProgramInfo
+	15, // 7: nodeagent.v1.ListPackagesReply.packages:type_name -> nodeagent.v1.InstalledPackage
+	1,  // 8: nodeagent.v1.NodeAgent.InstallPackage:input_type -> nodeagent.v1.InstallPackageRequest
+	3,  // 9: nodeagent.v1.NodeAgent.RemovePackage:input_type -> nodeagent.v1.RemovePackageRequest
+	8,  // 10: nodeagent.v1.NodeAgent.Install:input_type -> nodeagent.v1.InstallRequest
+	9,  // 11: nodeagent.v1.NodeAgent.Start:input_type -> nodeagent.v1.ProgramRef
+	9,  // 12: nodeagent.v1.NodeAgent.Stop:input_type -> nodeagent.v1.ProgramRef
+	9,  // 13: nodeagent.v1.NodeAgent.Remove:input_type -> nodeagent.v1.ProgramRef
+	12, // 14: nodeagent.v1.NodeAgent.List:input_type -> nodeagent.v1.ListRequest
+	14, // 15: nodeagent.v1.NodeAgent.ListPackages:input_type -> nodeagent.v1.ListPackagesRequest
+	17, // 16: nodeagent.v1.NodeAgent.TailLogs:input_type -> nodeagent.v1.TailLogsRequest
+	2,  // 17: nodeagent.v1.NodeAgent.InstallPackage:output_type -> nodeagent.v1.InstallPackageReply
+	4,  // 18: nodeagent.v1.NodeAgent.RemovePackage:output_type -> nodeagent.v1.RemovePackageReply
+	10, // 19: nodeagent.v1.NodeAgent.Install:output_type -> nodeagent.v1.ProgramInfo
+	10, // 20: nodeagent.v1.NodeAgent.Start:output_type -> nodeagent.v1.ProgramInfo
+	10, // 21: nodeagent.v1.NodeAgent.Stop:output_type -> nodeagent.v1.ProgramInfo
+	11, // 22: nodeagent.v1.NodeAgent.Remove:output_type -> nodeagent.v1.RemoveReply
+	13, // 23: nodeagent.v1.NodeAgent.List:output_type -> nodeagent.v1.ListReply
+	16, // 24: nodeagent.v1.NodeAgent.ListPackages:output_type -> nodeagent.v1.ListPackagesReply
+	18, // 25: nodeagent.v1.NodeAgent.TailLogs:output_type -> nodeagent.v1.TailLogsReply
+	17, // [17:26] is the sub-list for method output_type
+	8,  // [8:17] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_nodeagent_v1_nodeagent_proto_init() }
@@ -1146,7 +1302,7 @@ func file_nodeagent_v1_nodeagent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_nodeagent_v1_nodeagent_proto_rawDesc), len(file_nodeagent_v1_nodeagent_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   18,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

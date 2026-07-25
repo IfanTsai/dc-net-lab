@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { Lab, Link, MetricsPoint, Node, NodeBGP, NodeBGPTable, NodeInventory, NodeMetrics, NodeRoutes, NodeRuntime, Operation, Package, Plan, ProfileInfo, Program, ServerInstallResult, TopologySpec } from '../types/models'
+import type { HealthCheck, Lab, Link, MetricsPoint, Node, NodeBGP, NodeBGPTable, NodeInventory, NodeMetrics, NodeRoutes, NodeRuntime, Operation, Package, Plan, ProfileInfo, Program, ServerInstallResult, TopologySpec } from '../types/models'
 
 const base = '/api/v1'
 
@@ -50,7 +50,7 @@ export const labApi = {
 
   programs: (labId: string) =>
     api.get<{ programs: Program[] }>(`${base}/labs/${labId}/programs`).then((r) => r.programs),
-  createProgram: (labId: string, body: { name: string; serverIds: string[]; packageName: string; packageVersion: string; args?: string[]; type?: string; autoStart?: boolean; restartPolicy: string }) =>
+  createProgram: (labId: string, body: { name: string; serverIds: string[]; packageName: string; packageVersion: string; args?: string[]; type?: string; autoStart?: boolean; restartPolicy: string; livenessCheck?: HealthCheck; readinessCheck?: HealthCheck; startupOrder?: number }) =>
     api.post<{ programs?: Program[]; failures?: ServerInstallResult[] }>(`${base}/labs/${labId}/programs`, body)
       .then((r) => ({ programs: r.programs ?? [], failures: r.failures ?? [] })),
   nodeInventory: (labId: string, nodeId: string) =>

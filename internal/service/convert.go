@@ -340,6 +340,8 @@ func programToPB(p *model.Program) *v1.Program {
 		Pid:          int32(p.Status.PID),
 		Restarts:     int32(p.Status.Restarts),
 		LastError:    p.Status.LastError,
+		Health:       p.Status.Health,
+		Ready:        p.Status.Ready,
 		StartedAt:    timePB(p.Status.StartedAt),
 		LastObserved: timePB(p.Status.LastObserved),
 	}
@@ -358,8 +360,45 @@ func programToPB(p *model.Program) *v1.Program {
 			Type:           p.Spec.Type,
 			AutoStart:      p.Spec.AutoStart,
 			DesiredState:   p.Spec.DesiredState,
+			LivenessCheck:  healthCheckToPB(p.Spec.LivenessCheck),
+			ReadinessCheck: healthCheckToPB(p.Spec.ReadinessCheck),
+			StartupOrder:   int32(p.Spec.StartupOrder),
 		},
 		Status: status,
+	}
+}
+
+// healthCheckToPB maps a model liveness check onto the API type; nil
+// stays nil (unmonitored).
+func healthCheckToPB(hc *model.HealthCheck) *v1.HealthCheck {
+	if hc == nil {
+		return nil
+	}
+
+	return &v1.HealthCheck{
+		Type:             hc.Type,
+		Port:             int32(hc.Port),
+		Path:             hc.Path,
+		IntervalSeconds:  int32(hc.Interval / time.Second),
+		TimeoutSeconds:   int32(hc.Timeout / time.Second),
+		FailureThreshold: int32(hc.FailureThreshold),
+	}
+}
+
+// healthCheckFromPB maps an API liveness check onto the model type;
+// nil stays nil (unmonitored).
+func healthCheckFromPB(hc *v1.HealthCheck) *model.HealthCheck {
+	if hc == nil {
+		return nil
+	}
+
+	return &model.HealthCheck{
+		Type:             hc.Type,
+		Port:             int(hc.Port),
+		Path:             hc.Path,
+		Interval:         time.Duration(hc.IntervalSeconds) * time.Second,
+		Timeout:          time.Duration(hc.TimeoutSeconds) * time.Second,
+		FailureThreshold: int(hc.FailureThreshold),
 	}
 }
 
@@ -399,6 +438,8 @@ func inventoryToPB(inv *model.NodeInventory) *v1.NodeInventory {
 			Pid:            int32(p.PID),
 			Restarts:       int32(p.Restarts),
 			LastError:      p.LastError,
+			Health:         p.Health,
+			Ready:          p.Ready,
 			Managed:        p.Managed,
 		})
 	}

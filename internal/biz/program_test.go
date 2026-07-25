@@ -250,6 +250,48 @@ func TestInstallPackageOnServers(t *testing.T) {
 		}
 	})
 
+	t.Run("liveness check validated", func(t *testing.T) {
+		uc, _ := testProgramUsecase(t, deployedLab(), nodes)
+
+		bad := model.ProgramSpec{PackageName: "web", PackageVersion: "1.0.0",
+			LivenessCheck: &model.HealthCheck{Type: "tcp"}} // tcp without a port
+		if _, _, err := uc.CreateProgram("lab-1", "probed", bad, []string{"n-1"}); err == nil {
+			t.Fatal("tcp liveness check without a port should be rejected")
+		}
+
+		good := model.ProgramSpec{PackageName: "web", PackageVersion: "1.0.0",
+			LivenessCheck: &model.HealthCheck{Type: "http", Port: 8080, Path: "/healthz"}}
+		programs, _, err := uc.CreateProgram("lab-1", "probed", good, []string{"n-1"})
+		if err != nil {
+			t.Fatalf("valid liveness check rejected: %v", err)
+		}
+
+		if len(programs) != 1 || programs[0].Spec.LivenessCheck == nil {
+			t.Fatalf("liveness check not persisted on the program: %+v", programs)
+		}
+	})
+
+	t.Run("readiness check and startup order", func(t *testing.T) {
+		uc, _ := testProgramUsecase(t, deployedLab(), nodes)
+
+		bad := model.ProgramSpec{PackageName: "web", PackageVersion: "1.0.0",
+			ReadinessCheck: &model.HealthCheck{Type: "http"}} // http without a port
+		if _, _, err := uc.CreateProgram("lab-1", "gated", bad, []string{"n-1"}); err == nil {
+			t.Fatal("http readiness check without a port should be rejected")
+		}
+
+		good := model.ProgramSpec{PackageName: "web", PackageVersion: "1.0.0",
+			ReadinessCheck: &model.HealthCheck{Type: "tcp", Port: 9090}, StartupOrder: 5}
+		programs, _, err := uc.CreateProgram("lab-1", "gated", good, []string{"n-1"})
+		if err != nil {
+			t.Fatalf("valid readiness check rejected: %v", err)
+		}
+
+		if len(programs) != 1 || programs[0].Spec.ReadinessCheck == nil || programs[0].Spec.StartupOrder != 5 {
+			t.Fatalf("readiness/order not persisted: %+v", programs)
+		}
+	})
+
 	tests := []struct {
 		name      string
 		labID     string

@@ -16,6 +16,18 @@ const (
 	ProgramStateUnknown    = "Unknown"
 )
 
+// HealthCheck probes a running program periodically. Type is
+// process/tcp/http; Port and Path apply to tcp/http; the probe targets
+// loopback inside the server container. A nil check means unmonitored.
+type HealthCheck struct {
+	Type             string        `json:"type"`
+	Port             int           `json:"port,omitempty"`
+	Path             string        `json:"path,omitempty"`
+	Interval         time.Duration `json:"interval"`
+	Timeout          time.Duration `json:"timeout"`
+	FailureThreshold int           `json:"failureThreshold"`
+}
+
 // Program is a supervised process on one lab server, managed by
 // dcnetlab-node-agent; it runs the entrypoint of an installed
 // Package version. Meta.Name doubles as the agent-side program name.
@@ -44,6 +56,15 @@ type ProgramSpec struct {
 	Type           string   `json:"type"`
 	AutoStart      bool     `json:"autoStart"`
 	DesiredState   string   `json:"desiredState"`
+	// LivenessCheck, when set, restarts the program (per RestartPolicy)
+	// after it fails FailureThreshold consecutive probes.
+	LivenessCheck *HealthCheck `json:"livenessCheck,omitempty"`
+	// ReadinessCheck, when set, reports whether the program is serving;
+	// unlike the liveness check it never restarts, it only gates Ready.
+	ReadinessCheck *HealthCheck `json:"readinessCheck,omitempty"`
+	// StartupOrder sequences boot: on every server boot and redeploy
+	// programs start in ascending order (ties by name). Default 0.
+	StartupOrder int `json:"startupOrder,omitempty"`
 }
 
 // ProgramStatus is the agent-observed state of a program.
@@ -52,6 +73,8 @@ type ProgramStatus struct {
 	PID          int       `json:"pid,omitempty"`
 	Restarts     int       `json:"restarts"`
 	LastError    string    `json:"lastError,omitempty"`
+	Health       string    `json:"health,omitempty"`
+	Ready        bool      `json:"ready,omitempty"`
 	StartedAt    time.Time `json:"startedAt,omitzero"`
 	LastObserved time.Time `json:"lastObserved,omitzero"`
 }
@@ -73,6 +96,8 @@ type NodeProgram struct {
 	PID            int      `json:"pid,omitempty"`
 	Restarts       int      `json:"restarts"`
 	LastError      string   `json:"lastError,omitempty"`
+	Health         string   `json:"health,omitempty"`
+	Ready          bool     `json:"ready,omitempty"`
 	Managed        bool     `json:"managed"`
 }
 

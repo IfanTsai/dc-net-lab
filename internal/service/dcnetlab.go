@@ -274,6 +274,9 @@ func (s *DCNetLabService) CreateProgram(ctx context.Context, req *v1.CreateProgr
 		RestartPolicy:  req.RestartPolicy,
 		Type:           req.Type,
 		AutoStart:      req.AutoStart,
+		LivenessCheck:  healthCheckFromPB(req.LivenessCheck),
+		ReadinessCheck: healthCheckFromPB(req.ReadinessCheck),
+		StartupOrder:   int(req.StartupOrder),
 	}
 
 	programs, failures, err := s.programs.CreateProgram(req.LabId, req.Name, spec, req.ServerIds)

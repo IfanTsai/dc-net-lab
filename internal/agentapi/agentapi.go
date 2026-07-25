@@ -42,6 +42,24 @@ const (
 	TypeOneshot = "oneshot"
 )
 
+// Liveness check types (systemd health-check / k8s probe semantics).
+// Process is alive as long as the supervised process exists; tcp
+// dials a local port; http issues a GET and expects a 2xx/3xx status.
+const (
+	CheckProcess = "process"
+	CheckTCP     = "tcp"
+	CheckHTTP    = "http"
+)
+
+// Program liveness states reported by the agent. Unknown means no
+// liveness check is configured or none has run yet; Healthy and
+// Unhealthy are the last probe verdict of a running program.
+const (
+	HealthUnknown   = "Unknown"
+	HealthHealthy   = "Healthy"
+	HealthUnhealthy = "Unhealthy"
+)
+
 // In-container paths of the bind-mounted agent binaries; the compiler
 // mounts them there and the start script links them into PATH.
 const (

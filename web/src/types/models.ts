@@ -381,13 +381,38 @@ export interface Program {
     type?: 'simple' | 'oneshot' | string
     autoStart?: boolean
     desiredState: string
+    // livenessCheck, when set, restarts the program (per restartPolicy)
+    // once it stops passing its probe.
+    livenessCheck?: HealthCheck
+    // readinessCheck, when set, reports whether the program is serving;
+    // it never restarts, it only gates ready.
+    readinessCheck?: HealthCheck
+    // startupOrder sequences boot: programs start in ascending order.
+    startupOrder?: number
   }
   status: {
     state: 'Configured' | 'Running' | 'Stopped' | 'Failed' | 'Exited' | 'Unknown' | string
     pid?: number
     restarts?: number
     lastError?: string
+    // health is the last liveness verdict: Unknown, Healthy or Unhealthy.
+    health?: 'Unknown' | 'Healthy' | 'Unhealthy' | string
+    // ready reflects the readiness check.
+    ready?: boolean
     startedAt?: string
     lastObserved?: string
   }
+}
+
+// HealthCheck probes a running program periodically. type is process
+// (the supervised process exists), tcp (a local port accepts a
+// connection) or http (a GET returns 2xx/3xx); the probe targets
+// loopback inside the server. port/path apply to tcp/http.
+export interface HealthCheck {
+  type: 'process' | 'tcp' | 'http' | string
+  port?: number
+  path?: string
+  intervalSeconds?: number
+  timeoutSeconds?: number
+  failureThreshold?: number
 }
