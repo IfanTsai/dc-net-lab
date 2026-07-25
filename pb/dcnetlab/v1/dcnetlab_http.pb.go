@@ -20,6 +20,7 @@ var _ = binding.EncodeURL
 const _ = http.SupportPackageIsVersion1
 
 const OperationDCNetLabApplyPlan = "/dcnetlab.v1.DCNetLab/ApplyPlan"
+const OperationDCNetLabBatchProgramOp = "/dcnetlab.v1.DCNetLab/BatchProgramOp"
 const OperationDCNetLabCreateLab = "/dcnetlab.v1.DCNetLab/CreateLab"
 const OperationDCNetLabCreatePlan = "/dcnetlab.v1.DCNetLab/CreatePlan"
 const OperationDCNetLabCreateProgram = "/dcnetlab.v1.DCNetLab/CreateProgram"
@@ -60,6 +61,10 @@ const OperationDCNetLabUploadPackage = "/dcnetlab.v1.DCNetLab/UploadPackage"
 
 type DCNetLabHTTPServer interface {
 	ApplyPlan(context.Context, *ApplyPlanRequest) (*OperationRef, error)
+	// BatchProgramOp BatchProgramOp starts, stops or deletes several programs at once
+	// (op is start|stop|delete); each id is applied best-effort and its
+	// outcome is reported, so one failure does not abort the rest.
+	BatchProgramOp(context.Context, *BatchProgramRequest) (*BatchProgramReply, error)
 	// CreateLab --- Labs ---
 	CreateLab(context.Context, *CreateLabRequest) (*Lab, error)
 	// CreatePlan --- Plans ---
@@ -178,6 +183,7 @@ func RegisterDCNetLabHTTPServer(s *http.Server, srv DCNetLabHTTPServer) {
 	r.POST("/api/v1/labs/{lab_id}/programs/{id}/stop", _DCNetLab_StopProgram0_HTTP_Handler(srv))
 	r.POST("/api/v1/labs/{lab_id}/programs/{id}/upgrade", _DCNetLab_UpgradeProgram0_HTTP_Handler(srv))
 	r.DELETE("/api/v1/labs/{lab_id}/programs/{id}", _DCNetLab_DeleteProgram0_HTTP_Handler(srv))
+	r.POST("/api/v1/labs/{lab_id}/programs/batch", _DCNetLab_BatchProgramOp0_HTTP_Handler(srv))
 	r.GET("/api/v1/labs/{lab_id}/programs/{id}/logs", _DCNetLab_GetProgramLogs0_HTTP_Handler(srv))
 	r.POST("/api/v1/labs/{lab_id}/plans", _DCNetLab_CreatePlan0_HTTP_Handler(srv))
 	r.GET("/api/v1/plans/{id}", _DCNetLab_GetPlan0_HTTP_Handler(srv))
@@ -848,6 +854,31 @@ func _DCNetLab_DeleteProgram0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http
 	}
 }
 
+func _DCNetLab_BatchProgramOp0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in BatchProgramRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabBatchProgramOp)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.BatchProgramOp(ctx, req.(*BatchProgramRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*BatchProgramReply)
+		return ctx.Result(200, reply)
+	}
+}
+
 func _DCNetLab_GetProgramLogs0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
 	return func(ctx http.Context) error {
 		var in GetProgramLogsRequest
@@ -1048,6 +1079,10 @@ func _DCNetLab_Healthz0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Conte
 
 type DCNetLabHTTPClient interface {
 	ApplyPlan(ctx context.Context, req *ApplyPlanRequest, opts ...http.CallOption) (rsp *OperationRef, err error)
+	// BatchProgramOp BatchProgramOp starts, stops or deletes several programs at once
+	// (op is start|stop|delete); each id is applied best-effort and its
+	// outcome is reported, so one failure does not abort the rest.
+	BatchProgramOp(ctx context.Context, req *BatchProgramRequest, opts ...http.CallOption) (rsp *BatchProgramReply, err error)
 	// CreateLab --- Labs ---
 	CreateLab(ctx context.Context, req *CreateLabRequest, opts ...http.CallOption) (rsp *Lab, err error)
 	// CreatePlan --- Plans ---
@@ -1148,6 +1183,22 @@ func (c *DCNetLabHTTPClientImpl) ApplyPlan(ctx context.Context, in *ApplyPlanReq
 	pattern := "/api/v1/plans/{id}/apply"
 	path := binding.EncodeURL(pattern, in, false)
 	opts = append(opts, http.Operation(OperationDCNetLabApplyPlan))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// BatchProgramOp BatchProgramOp starts, stops or deletes several programs at once
+// (op is start|stop|delete); each id is applied best-effort and its
+// outcome is reported, so one failure does not abort the rest.
+func (c *DCNetLabHTTPClientImpl) BatchProgramOp(ctx context.Context, in *BatchProgramRequest, opts ...http.CallOption) (*BatchProgramReply, error) {
+	var out BatchProgramReply
+	pattern := "/api/v1/labs/{lab_id}/programs/batch"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationDCNetLabBatchProgramOp))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
 	if err != nil {

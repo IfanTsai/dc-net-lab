@@ -404,6 +404,14 @@ export interface Program {
   }
 }
 
+// ProgramOpResult is the per-program outcome of a batch start/stop/
+// delete; error is empty on success.
+export interface ProgramOpResult {
+  id: string
+  name: string
+  error?: string
+}
+
 // HealthCheck probes a running program periodically. type is process
 // (the supervised process exists), tcp (a local port accepts a
 // connection) or http (a GET returns 2xx/3xx); the probe targets

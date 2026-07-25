@@ -44,6 +44,28 @@ func (r *fakeProgramRepo) UpdateProgram(*model.Program) error { return nil }
 
 func (r *fakeProgramRepo) ListPrograms(string) ([]*model.Program, error) { return r.programs, nil }
 
+func (r *fakeProgramRepo) GetProgram(id string) (*model.Program, error) {
+	for _, p := range r.programs {
+		if p.Meta.ID == id {
+			return p, nil
+		}
+	}
+
+	return nil, ErrNotFound
+}
+
+func (r *fakeProgramRepo) DeleteProgram(id string) error {
+	for i, p := range r.programs {
+		if p.Meta.ID == id {
+			r.programs = append(r.programs[:i], r.programs[i+1:]...)
+
+			return nil
+		}
+	}
+
+	return ErrNotFound
+}
+
 // fakeAgent records package installs and fails for listed servers
 // (keyed by agent address, which the fake driver derives from the
 // node name).
@@ -51,6 +73,9 @@ type fakeAgent struct {
 	ProgramAgent
 
 	installs []string // "addr name@version"
+	started  []string // program names passed to Start
+	stopped  []string // program names passed to Stop
+	removed  []string // program names passed to Remove
 	failFor  map[string]bool
 }
 
@@ -65,6 +90,24 @@ func (a *fakeAgent) InstallPackage(_ context.Context, addr string, pkg AgentPack
 }
 
 func (a *fakeAgent) Install(_ context.Context, _ string, _ *model.Program) error { return nil }
+
+func (a *fakeAgent) Start(_ context.Context, _, name string) (model.ProgramStatus, error) {
+	a.started = append(a.started, name)
+
+	return model.ProgramStatus{State: model.ProgramStateRunning, PID: 1}, nil
+}
+
+func (a *fakeAgent) Stop(_ context.Context, _, name string) (model.ProgramStatus, error) {
+	a.stopped = append(a.stopped, name)
+
+	return model.ProgramStatus{State: model.ProgramStateStopped}, nil
+}
+
+func (a *fakeAgent) Remove(_ context.Context, _, name string) error {
+	a.removed = append(a.removed, name)
+
+	return nil
+}
 
 func (a *fakeAgent) Metrics(_ context.Context, addr string) (*model.NodeMetrics, error) {
 	if a.failFor[addr] {
@@ -211,7 +254,7 @@ func TestInstallPackageOnServers(t *testing.T) {
 		uc, _ := testProgramUsecase(t, deployedLab(), nodes)
 		spec := model.ProgramSpec{PackageName: "web", PackageVersion: "1.0.0", RestartPolicy: "Always"}
 
-		programs, failures, err := uc.CreateProgram("lab-1", "svc", spec, []string{"n-1", "n-3"})
+		programs, failures, err := uc.CreateProgram("lab-1", "svc", spec, []string{"n-1", "n-3"}, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -225,12 +268,12 @@ func TestInstallPackageOnServers(t *testing.T) {
 		}
 
 		// A duplicate as the only target aborts the whole call.
-		programs, _, err = uc.CreateProgram("lab-1", "svc", spec, []string{"n-1"})
+		programs, _, err = uc.CreateProgram("lab-1", "svc", spec, []string{"n-1"}, false)
 		if err == nil || len(programs) != 0 {
 			t.Fatalf("duplicate on a single server should fail: programs=%d err=%v", len(programs), err)
 		}
 
-		_, failures, err = uc.CreateProgram("lab-1", "svc2", spec, []string{"n-1", "nosuch"})
+		_, failures, err = uc.CreateProgram("lab-1", "svc2", spec, []string{"n-1", "nosuch"}, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -245,7 +288,7 @@ func TestInstallPackageOnServers(t *testing.T) {
 		spec := model.ProgramSpec{PackageName: "web", PackageVersion: "1.0.0",
 			Type: "oneshot", RestartPolicy: "Always"}
 
-		if _, _, err := uc.CreateProgram("lab-1", "task", spec, []string{"n-1"}); err == nil {
+		if _, _, err := uc.CreateProgram("lab-1", "task", spec, []string{"n-1"}, false); err == nil {
 			t.Fatal("expected error")
 		}
 	})
@@ -255,13 +298,13 @@ func TestInstallPackageOnServers(t *testing.T) {
 
 		bad := model.ProgramSpec{PackageName: "web", PackageVersion: "1.0.0",
 			LivenessCheck: &model.HealthCheck{Type: "tcp"}} // tcp without a port
-		if _, _, err := uc.CreateProgram("lab-1", "probed", bad, []string{"n-1"}); err == nil {
+		if _, _, err := uc.CreateProgram("lab-1", "probed", bad, []string{"n-1"}, false); err == nil {
 			t.Fatal("tcp liveness check without a port should be rejected")
 		}
 
 		good := model.ProgramSpec{PackageName: "web", PackageVersion: "1.0.0",
 			LivenessCheck: &model.HealthCheck{Type: "http", Port: 8080, Path: "/healthz"}}
-		programs, _, err := uc.CreateProgram("lab-1", "probed", good, []string{"n-1"})
+		programs, _, err := uc.CreateProgram("lab-1", "probed", good, []string{"n-1"}, false)
 		if err != nil {
 			t.Fatalf("valid liveness check rejected: %v", err)
 		}
@@ -271,18 +314,116 @@ func TestInstallPackageOnServers(t *testing.T) {
 		}
 	})
 
+	t.Run("create with start launches immediately", func(t *testing.T) {
+		uc, agent := testProgramUsecase(t, deployedLab(), nodes)
+		spec := model.ProgramSpec{PackageName: "web", PackageVersion: "1.0.0", RestartPolicy: "Always"}
+
+		programs, _, err := uc.CreateProgram("lab-1", "svc", spec, []string{"n-1", "n-3"}, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(programs) != 2 {
+			t.Fatalf("programs = %d, want 2", len(programs))
+		}
+
+		for _, p := range programs {
+			if p.Spec.DesiredState != model.ProgramDesiredRunning || p.Status.State != model.ProgramStateRunning {
+				t.Errorf("program %s not started: desired=%s state=%s",
+					p.Meta.Name, p.Spec.DesiredState, p.Status.State)
+			}
+		}
+
+		if len(agent.started) != 2 {
+			t.Errorf("agent.Start calls = %d, want 2", len(agent.started))
+		}
+	})
+
+	t.Run("create oneshot with start keeps desire stopped", func(t *testing.T) {
+		uc, agent := testProgramUsecase(t, deployedLab(), nodes)
+		spec := model.ProgramSpec{PackageName: "web", PackageVersion: "1.0.0",
+			Type: "oneshot", RestartPolicy: "Never"}
+
+		programs, _, err := uc.CreateProgram("lab-1", "task", spec, []string{"n-1"}, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// A oneshot runs once now, but its standing desire stays stopped
+		// so a redeploy does not re-run it (only auto-start would).
+		if programs[0].Spec.DesiredState != model.ProgramDesiredStopped {
+			t.Errorf("oneshot desired = %s, want Stopped", programs[0].Spec.DesiredState)
+		}
+
+		if len(agent.started) != 1 {
+			t.Errorf("oneshot should still run once: Start calls = %d", len(agent.started))
+		}
+	})
+
+	t.Run("batch start, stop and delete", func(t *testing.T) {
+		uc, agent := testProgramUsecase(t, deployedLab(), nodes)
+		spec := model.ProgramSpec{PackageName: "web", PackageVersion: "1.0.0", RestartPolicy: "Always"}
+
+		programs, _, err := uc.CreateProgram("lab-1", "svc", spec, []string{"n-1", "n-3"}, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		ids := []string{programs[0].Meta.ID, programs[1].Meta.ID}
+
+		// An invalid op is rejected outright.
+		if _, err := uc.BatchProgramOp(context.Background(), "lab-1", "restart", ids); err == nil {
+			t.Fatal("invalid op should be rejected")
+		}
+
+		// Start both plus one unknown id: the unknown fails, the rest go
+		// through (best-effort, not aborted).
+		outcomes, err := uc.BatchProgramOp(context.Background(), "lab-1", BatchOpStart, append(ids, "nosuch"))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(outcomes) != 3 || outcomes[0].Err != nil || outcomes[1].Err != nil || outcomes[2].Err == nil {
+			t.Fatalf("outcomes = %+v, want first two ok and the last failed", outcomes)
+		}
+
+		if len(agent.started) != 2 {
+			t.Errorf("agent.Start calls = %d, want 2", len(agent.started))
+		}
+
+		if _, err := uc.BatchProgramOp(context.Background(), "lab-1", BatchOpStop, ids); err != nil {
+			t.Fatal(err)
+		}
+
+		if len(agent.stopped) != 2 {
+			t.Errorf("agent.Stop calls = %d, want 2", len(agent.stopped))
+		}
+
+		if _, err := uc.BatchProgramOp(context.Background(), "lab-1", BatchOpDelete, ids); err != nil {
+			t.Fatal(err)
+		}
+
+		if len(agent.removed) != 2 {
+			t.Errorf("agent.Remove calls = %d, want 2", len(agent.removed))
+		}
+
+		if remaining, _ := uc.repo.ListPrograms("lab-1"); len(remaining) != 0 {
+			t.Errorf("programs after batch delete = %d, want 0", len(remaining))
+		}
+	})
+
 	t.Run("readiness check and startup order", func(t *testing.T) {
 		uc, _ := testProgramUsecase(t, deployedLab(), nodes)
 
 		bad := model.ProgramSpec{PackageName: "web", PackageVersion: "1.0.0",
 			ReadinessCheck: &model.HealthCheck{Type: "http"}} // http without a port
-		if _, _, err := uc.CreateProgram("lab-1", "gated", bad, []string{"n-1"}); err == nil {
+		if _, _, err := uc.CreateProgram("lab-1", "gated", bad, []string{"n-1"}, false); err == nil {
 			t.Fatal("http readiness check without a port should be rejected")
 		}
 
 		good := model.ProgramSpec{PackageName: "web", PackageVersion: "1.0.0",
 			ReadinessCheck: &model.HealthCheck{Type: "tcp", Port: 9090}, StartupOrder: 5}
-		programs, _, err := uc.CreateProgram("lab-1", "gated", good, []string{"n-1"})
+		programs, _, err := uc.CreateProgram("lab-1", "gated", good, []string{"n-1"}, false)
 		if err != nil {
 			t.Fatalf("valid readiness check rejected: %v", err)
 		}

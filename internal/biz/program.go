@@ -152,11 +152,11 @@ func repoPortOf(addr string, log *slog.Logger) int {
 
 // CreateProgram validates one program definition and creates it on
 // every requested server (one Program resource per server, like a
-// daemonset over the selection). Programs start stopped; Start
-// launches them. Per-server problems (duplicate name, non-server
-// target) are reported in the failures slice without aborting the
-// rest.
-func (uc *ProgramUsecase) CreateProgram(labID, name string, spec model.ProgramSpec, serverIDs []string) ([]*model.Program, []ServerInstall, error) {
+// daemonset over the selection). Programs start stopped unless start
+// is set, which launches each right away (a oneshot runs once). Per-
+// server problems (duplicate name, non-server target) are reported in
+// the failures slice without aborting the rest.
+func (uc *ProgramUsecase) CreateProgram(labID, name string, spec model.ProgramSpec, serverIDs []string, start bool) ([]*model.Program, []ServerInstall, error) {
 	if !programNameRE.MatchString(name) {
 		return nil, nil, fmt.Errorf("invalid program name %q (lowercase letters, digits, dashes)", name)
 	}
@@ -251,7 +251,7 @@ func (uc *ProgramUsecase) CreateProgram(labID, name string, spec model.ProgramSp
 		}
 
 		taken[server.Meta.Name] = true
-		p, err := uc.createOne(lab, name, spec, server, pkg)
+		p, err := uc.createOne(lab, name, spec, server, pkg, start)
 		if err != nil {
 			return programs, failures, err
 		}
@@ -267,10 +267,13 @@ func (uc *ProgramUsecase) CreateProgram(labID, name string, spec model.ProgramSp
 }
 
 // createOne persists one program bound to one server and installs it
-// on the agent right away when the lab is deployed; an undeployed
-// lab gets it at RestorePrograms time.
+// on the agent right away when the lab is deployed; an undeployed lab
+// gets it at RestorePrograms time. start launches it immediately (on a
+// deployed lab) and, for a simple program, records the standing desire
+// to run so a later redeploy restores it; a oneshot's start is a
+// single run, so its desired state stays stopped.
 func (uc *ProgramUsecase) createOne(lab *model.Lab, name string, spec model.ProgramSpec,
-	server *model.Node, pkg *model.Package,
+	server *model.Node, pkg *model.Package, start bool,
 ) (*model.Program, error) {
 	now := time.Now().UTC()
 	p := &model.Program{
@@ -286,25 +289,55 @@ func (uc *ProgramUsecase) createOne(lab *model.Lab, name string, spec model.Prog
 	p.Spec.ServerName = server.Meta.Name
 	p.Spec.Entrypoint = pkg.Spec.Entrypoint
 	p.Spec.DesiredState = model.ProgramDesiredStopped
+	if start && spec.Type != agentapi.TypeOneshot {
+		p.Spec.DesiredState = model.ProgramDesiredRunning
+	}
 
 	if err := uc.repo.CreateProgram(p); err != nil {
 		return nil, fmt.Errorf("persist program: %w", err)
 	}
 
 	if lab.Meta.Generation > 0 {
-		if err := uc.installOnAgent(context.Background(), lab, p); err != nil {
-			p.Status.LastError = err.Error()
-			uc.log.Warn("install program on agent", "program", name, "server", server.Meta.Name, "error", err)
-		} else {
-			p.Status = model.ProgramStatus{State: model.ProgramStateConfigured, LastObserved: time.Now().UTC()}
-		}
-
+		p.Status = uc.deployCreated(context.Background(), lab, p, start)
 		if err := uc.repo.UpdateProgram(p); err != nil {
 			return nil, fmt.Errorf("update program: %w", err)
 		}
 	}
 
 	return p, nil
+}
+
+// deployCreated installs a freshly created program on its agent and,
+// when start is set, launches it. Failures are logged and surfaced in
+// the returned status without aborting creation.
+func (uc *ProgramUsecase) deployCreated(ctx context.Context, lab *model.Lab, p *model.Program, start bool) model.ProgramStatus {
+	addr, err := uc.driver.NodeAddress(ctx, lab.Meta.Name, p.Spec.ServerName)
+	if err != nil {
+		uc.log.Warn("resolve agent address", "program", p.Meta.Name, "server", p.Spec.ServerName, "error", err)
+
+		return model.ProgramStatus{State: model.ProgramStateUnknown, LastError: err.Error()}
+	}
+
+	if err := uc.ensureOnAgent(ctx, lab.Meta.ID, addr, p); err != nil {
+		uc.log.Warn("install program on agent", "program", p.Meta.Name, "server", p.Spec.ServerName, "error", err)
+
+		return model.ProgramStatus{State: model.ProgramStateUnknown, LastError: err.Error()}
+	}
+
+	if !start {
+		return model.ProgramStatus{State: model.ProgramStateConfigured, LastObserved: time.Now().UTC()}
+	}
+
+	status, err := uc.agent.Start(ctx, addr, p.Meta.Name)
+	if err != nil {
+		uc.log.Warn("start created program", "program", p.Meta.Name, "server", p.Spec.ServerName, "error", err)
+
+		return model.ProgramStatus{State: model.ProgramStateFailed, LastError: err.Error()}
+	}
+
+	status.LastObserved = time.Now().UTC()
+
+	return status
 }
 
 // NodeInventory reports what is actually on one server, live from
@@ -564,6 +597,68 @@ func (uc *ProgramUsecase) DeleteProgram(ctx context.Context, labID, id string) e
 	}
 
 	return uc.repo.DeleteProgram(id)
+}
+
+// ProgramOpOutcome is the result of one program in a batch operation;
+// Err is nil on success.
+type ProgramOpOutcome struct {
+	ID   string
+	Name string
+	Err  error
+}
+
+// Batch operation names.
+const (
+	BatchOpStart  = "start"
+	BatchOpStop   = "stop"
+	BatchOpDelete = "delete"
+)
+
+// BatchProgramOp applies start, stop or delete to several programs of
+// a lab. Each id is attempted independently and its outcome recorded,
+// so one failure does not abort the rest (the same best-effort shape
+// as batch package delivery and creation).
+func (uc *ProgramUsecase) BatchProgramOp(ctx context.Context, labID, op string, ids []string) ([]ProgramOpOutcome, error) {
+	var fn func(context.Context, string, string) error
+	switch op {
+	case BatchOpStart:
+		fn = func(ctx context.Context, labID, id string) error {
+			_, err := uc.StartProgram(ctx, labID, id)
+
+			return err
+		}
+	case BatchOpStop:
+		fn = func(ctx context.Context, labID, id string) error {
+			_, err := uc.StopProgram(ctx, labID, id)
+
+			return err
+		}
+	case BatchOpDelete:
+		fn = uc.DeleteProgram
+	default:
+		return nil, fmt.Errorf("invalid batch op %q (want start, stop or delete)", op)
+	}
+
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("at least one program is required")
+	}
+
+	results := make([]ProgramOpOutcome, 0, len(ids))
+	for _, id := range ids {
+		outcome := ProgramOpOutcome{ID: id}
+		if p, err := uc.repo.GetProgram(id); err == nil {
+			outcome.Name = p.Meta.Name
+		}
+
+		outcome.Err = fn(ctx, labID, id)
+		if outcome.Err != nil {
+			uc.log.Warn("batch program op", "op", op, "program", outcome.Name, "id", id, "error", outcome.Err)
+		}
+
+		results = append(results, outcome)
+	}
+
+	return results, nil
 }
 
 // ListPrograms returns the programs of a lab, with their status
@@ -915,17 +1010,6 @@ func (uc *ProgramUsecase) programAgent(ctx context.Context, labID, id string) (*
 	}
 
 	return p, addr, nil
-}
-
-// installOnAgent resolves the agent and installs the program's
-// package and definition.
-func (uc *ProgramUsecase) installOnAgent(ctx context.Context, lab *model.Lab, p *model.Program) error {
-	addr, err := uc.driver.NodeAddress(ctx, lab.Meta.Name, p.Spec.ServerName)
-	if err != nil {
-		return fmt.Errorf("resolve agent address: %w", err)
-	}
-
-	return uc.ensureOnAgent(ctx, lab.Meta.ID, addr, p)
 }
 
 // serverNode resolves a lab node by ID and requires the server role.

@@ -61,6 +61,9 @@ onBeforeUnmount(() => window.clearInterval(pollTimer))
 
 async function onLabChange(id: string) {
   await store.selectLab(id)
+  // The reserved selection would survive the lab switch and point at
+  // programs of the previous lab; drop it with the old rows.
+  tableRef.value?.clearSelection()
   loading.value = true
   await refresh()
   loading.value = false
@@ -74,7 +77,7 @@ const emptyForm = () => ({
   livenessType: 'none', livenessPort: undefined as number | undefined, livenessPath: '/',
   livenessInterval: 10, livenessThreshold: 3,
   readinessType: 'none', readinessPort: undefined as number | undefined, readinessPath: '/',
-  readinessInterval: 10, startupOrder: 0,
+  readinessInterval: 10, startupOrder: 0, start: true,
 })
 const form = ref(emptyForm())
 
@@ -134,6 +137,7 @@ async function submitCreate() {
       livenessCheck,
       readinessCheck,
       startupOrder: form.value.startupOrder || undefined,
+      start: form.value.start,
     })
     dialogVisible.value = false
     ElMessage.success(t('programs.created', { name: form.value.name, count: reply.programs.length }))
@@ -174,6 +178,49 @@ async function remove(p: Program) {
   }
 
   await withBusy(p.meta.id, () => labApi.deleteProgram(store.currentLabId, p.meta.id))
+  if (selected.value.some((s) => s.meta.id === p.meta.id)) tableRef.value?.clearSelection()
+}
+
+// --- batch actions over the table selection ---
+// The table keeps its selection across the 3 s polling refresh via
+// row-key + reserve-selection; deletions clear it so removed rows
+// cannot linger in the reserved set.
+const selected = ref<Program[]>([])
+const batchBusy = ref(false)
+const tableRef = ref<{ clearSelection: () => void }>()
+
+function onSelectionChange(rows: Program[]) {
+  selected.value = rows
+}
+
+async function batchOp(op: 'start' | 'stop' | 'delete') {
+  const ids = selected.value.map((p) => p.meta.id)
+  if (ids.length === 0) return
+
+  if (op === 'delete') {
+    try {
+      await ElMessageBox.confirm(t('programs.batchDeleteConfirm', { count: ids.length }), t('programs.deleteTitle'))
+    } catch {
+      return
+    }
+  }
+
+  batchBusy.value = true
+  try {
+    const results = await labApi.batchProgramOp(store.currentLabId, op, ids)
+    const failed = results.filter((r) => r.error)
+    const ok = results.length - failed.length
+    if (ok > 0) ElMessage.success(t('programs.batchOk', { op: t(`programs.op_${op}`), count: ok }))
+    for (const f of failed) {
+      ElMessage.warning(`${f.name || f.id}: ${f.error}`)
+    }
+    if (op === 'delete') tableRef.value?.clearSelection()
+    await refresh()
+  } catch (e) {
+    ElMessage.error((e as Error).message)
+  } finally {
+    batchBusy.value = false
+  }
 }
 
 // --- upgrade / rollback dialog ---
@@ -272,7 +319,21 @@ function healthTag(health: string): string {
 
     <el-alert v-if="!deployed" type="info" :closable="false" :title="t('programs.needDeploy')" class="hint" />
 
-    <el-table :data="programs" v-loading="loading">
+    <div v-if="selected.length" class="batch-bar">
+      <span class="batch-count">{{ t('programs.batchSelected', { count: selected.length }) }}</span>
+      <el-button size="small" type="success" :loading="batchBusy" :disabled="!deployed" @click="batchOp('start')">
+        {{ t('programs.batchStart') }}
+      </el-button>
+      <el-button size="small" type="warning" :loading="batchBusy" :disabled="!deployed" @click="batchOp('stop')">
+        {{ t('programs.batchStop') }}
+      </el-button>
+      <el-button size="small" type="danger" plain :loading="batchBusy" @click="batchOp('delete')">
+        {{ t('programs.batchDelete') }}
+      </el-button>
+    </div>
+
+    <el-table ref="tableRef" :data="programs" row-key="meta.id" v-loading="loading" @selection-change="onSelectionChange">
+      <el-table-column type="selection" width="40" reserve-selection />
       <el-table-column prop="meta.name" :label="t('common.name')" width="140" />
       <el-table-column prop="spec.serverName" :label="t('programs.server')" width="170" />
       <el-table-column :label="t('programs.package')" width="170">
@@ -427,6 +488,10 @@ function healthTag(health: string): string {
           <el-input-number v-model="form.startupOrder" :min="0" :max="999" controls-position="right" />
           <span class="form-hint">{{ t('programs.startupOrderHint') }}</span>
         </el-form-item>
+        <el-form-item :label="t('programs.startNow')">
+          <el-switch v-model="form.start" />
+          <span class="form-hint">{{ t('programs.startNowHint') }}</span>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">{{ t('common.cancel') }}</el-button>
@@ -494,6 +559,8 @@ function healthTag(health: string): string {
 .sub.error { color: var(--el-color-danger); }
 .health-tag { margin-left: 6px; }
 .liveness-timing { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.batch-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding: 8px 12px; background: var(--el-fill-color-light); border-radius: 4px; }
+.batch-count { font-size: 13px; color: var(--el-text-color-regular); margin-right: 4px; }
 .log-toolbar { display: flex; justify-content: flex-end; margin-bottom: 8px; }
 .log {
   background: var(--el-fill-color-light);

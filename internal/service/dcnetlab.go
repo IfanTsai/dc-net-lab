@@ -279,7 +279,7 @@ func (s *DCNetLabService) CreateProgram(ctx context.Context, req *v1.CreateProgr
 		StartupOrder:   int(req.StartupOrder),
 	}
 
-	programs, failures, err := s.programs.CreateProgram(req.LabId, req.Name, spec, req.ServerIds)
+	programs, failures, err := s.programs.CreateProgram(req.LabId, req.Name, spec, req.ServerIds, req.Start)
 	if err != nil {
 		return nil, asAPIError(err)
 	}
@@ -290,6 +290,25 @@ func (s *DCNetLabService) CreateProgram(ctx context.Context, req *v1.CreateProgr
 	}
 
 	reply.Failures = serverInstallsToPB(failures)
+
+	return reply, nil
+}
+
+func (s *DCNetLabService) BatchProgramOp(ctx context.Context, req *v1.BatchProgramRequest) (*v1.BatchProgramReply, error) {
+	outcomes, err := s.programs.BatchProgramOp(ctx, req.LabId, req.Op, req.Ids)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	reply := &v1.BatchProgramReply{}
+	for _, o := range outcomes {
+		result := &v1.ProgramOpResult{Id: o.ID, Name: o.Name}
+		if o.Err != nil {
+			result.Error = o.Err.Error()
+		}
+
+		reply.Results = append(reply.Results, result)
+	}
 
 	return reply, nil
 }

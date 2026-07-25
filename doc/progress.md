@@ -147,6 +147,15 @@ Create Lab（Micro/Standard Profile）→ Plan（资源分配预览）→ Apply�
 - **全链路接线**：两份 `ProgramSpec` 增加 `readiness_check` / `startup_order`、状态增加 `ready`；biz 层校验器泛化为 `validateHealthCheck`（存活 / 就绪共用）；data/service 双向透传。Programs 页创建对话框加"就绪检查"配置与"启动顺序"输入，列表 State 列加就绪角标、Type 列显示启动顺序；`program deploy` 加 `--readiness*` / `--startup-order`、`program list` 加 READY 列。
 - **测试**：agent 侧覆盖就绪程序报告 ready 且端口关闭后回落、无检查程序运行即就绪、开机按 `StartupOrder` 顺序拉起（`StartedAt` 递增）；biz 侧覆盖就绪校验与顺序持久化。
 
+### Program 批量运维（创建即运行 / 批量启停删除）
+
+补齐"批量部署却要逐个运行"的交互断层：批量创建的 N 个 Program 资源可一次拉起、事后可按选择集批量管理。
+
+- **创建即运行**：`CreateProgramRequest.start`——创建对话框"创建后立即启动"开关（默认开），simple 程序 desired 落 Running（重部署随之恢复），oneshot 语义为"跑一次"、desired 保持 Stopped；已部署 lab 上装完即启，失败不中断创建、写入程序 status。
+- **批量操作 API**：`POST /labs/{id}/programs/batch`（`op` = start/stop/delete + `ids`），复用单个操作的全部校验（跨 lab id 被拒），逐个 best-effort、回复逐条 results——与 `CreateProgram`/`InstallPackageOnServers` 的既有风格一致。
+- **列表多选**：表格勾选列 + 选中后浮现批量操作栏（启动 / 停止 / 删除，删除带确认框）；部分失败逐条 warning。勾选经 `row-key` + `reserve-selection` 在 3 s 轮询刷新下保持（否则轮询一到勾选即被清空），删除命中选中行与切换 lab 时主动清空选择集，防"幽灵勾选"。
+- **测试**：biz 覆盖创建即运行（simple desired Running / oneshot 跑一次不留 desired）、批量三操作、含未知 id 的 best-effort 与非法 op 拒绝。
+
 ### 批量交付与节点视角（范围选择 / 库存 / program CLI）
 
 把"往一台 server 上装东西"扩展成面向机群的交付操作，并补齐"这台机器上到底有什么"的节点视角。

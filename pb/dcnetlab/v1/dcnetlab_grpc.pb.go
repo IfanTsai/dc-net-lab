@@ -54,6 +54,7 @@ const (
 	DCNetLab_StopProgram_FullMethodName           = "/dcnetlab.v1.DCNetLab/StopProgram"
 	DCNetLab_UpgradeProgram_FullMethodName        = "/dcnetlab.v1.DCNetLab/UpgradeProgram"
 	DCNetLab_DeleteProgram_FullMethodName         = "/dcnetlab.v1.DCNetLab/DeleteProgram"
+	DCNetLab_BatchProgramOp_FullMethodName        = "/dcnetlab.v1.DCNetLab/BatchProgramOp"
 	DCNetLab_GetProgramLogs_FullMethodName        = "/dcnetlab.v1.DCNetLab/GetProgramLogs"
 	DCNetLab_CreatePlan_FullMethodName            = "/dcnetlab.v1.DCNetLab/CreatePlan"
 	DCNetLab_GetPlan_FullMethodName               = "/dcnetlab.v1.DCNetLab/GetPlan"
@@ -146,6 +147,10 @@ type DCNetLabClient interface {
 	StopProgram(ctx context.Context, in *ProgramOpRequest, opts ...grpc.CallOption) (*Program, error)
 	UpgradeProgram(ctx context.Context, in *UpgradeProgramRequest, opts ...grpc.CallOption) (*Program, error)
 	DeleteProgram(ctx context.Context, in *ProgramOpRequest, opts ...grpc.CallOption) (*DeleteProgramReply, error)
+	// BatchProgramOp starts, stops or deletes several programs at once
+	// (op is start|stop|delete); each id is applied best-effort and its
+	// outcome is reported, so one failure does not abort the rest.
+	BatchProgramOp(ctx context.Context, in *BatchProgramRequest, opts ...grpc.CallOption) (*BatchProgramReply, error)
 	GetProgramLogs(ctx context.Context, in *GetProgramLogsRequest, opts ...grpc.CallOption) (*ProgramLogs, error)
 	// --- Plans ---
 	CreatePlan(ctx context.Context, in *CreatePlanRequest, opts ...grpc.CallOption) (*Plan, error)
@@ -458,6 +463,16 @@ func (c *dCNetLabClient) DeleteProgram(ctx context.Context, in *ProgramOpRequest
 	return out, nil
 }
 
+func (c *dCNetLabClient) BatchProgramOp(ctx context.Context, in *BatchProgramRequest, opts ...grpc.CallOption) (*BatchProgramReply, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BatchProgramReply)
+	err := c.cc.Invoke(ctx, DCNetLab_BatchProgramOp_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *dCNetLabClient) GetProgramLogs(ctx context.Context, in *GetProgramLogsRequest, opts ...grpc.CallOption) (*ProgramLogs, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ProgramLogs)
@@ -629,6 +644,10 @@ type DCNetLabServer interface {
 	StopProgram(context.Context, *ProgramOpRequest) (*Program, error)
 	UpgradeProgram(context.Context, *UpgradeProgramRequest) (*Program, error)
 	DeleteProgram(context.Context, *ProgramOpRequest) (*DeleteProgramReply, error)
+	// BatchProgramOp starts, stops or deletes several programs at once
+	// (op is start|stop|delete); each id is applied best-effort and its
+	// outcome is reported, so one failure does not abort the rest.
+	BatchProgramOp(context.Context, *BatchProgramRequest) (*BatchProgramReply, error)
 	GetProgramLogs(context.Context, *GetProgramLogsRequest) (*ProgramLogs, error)
 	// --- Plans ---
 	CreatePlan(context.Context, *CreatePlanRequest) (*Plan, error)
@@ -737,6 +756,9 @@ func (UnimplementedDCNetLabServer) UpgradeProgram(context.Context, *UpgradeProgr
 }
 func (UnimplementedDCNetLabServer) DeleteProgram(context.Context, *ProgramOpRequest) (*DeleteProgramReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeleteProgram not implemented")
+}
+func (UnimplementedDCNetLabServer) BatchProgramOp(context.Context, *BatchProgramRequest) (*BatchProgramReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BatchProgramOp not implemented")
 }
 func (UnimplementedDCNetLabServer) GetProgramLogs(context.Context, *GetProgramLogsRequest) (*ProgramLogs, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetProgramLogs not implemented")
@@ -1308,6 +1330,24 @@ func _DCNetLab_DeleteProgram_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DCNetLab_BatchProgramOp_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BatchProgramRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).BatchProgramOp(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_BatchProgramOp_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).BatchProgramOp(ctx, req.(*BatchProgramRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DCNetLab_GetProgramLogs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetProgramLogsRequest)
 	if err := dec(in); err != nil {
@@ -1592,6 +1632,10 @@ var DCNetLab_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteProgram",
 			Handler:    _DCNetLab_DeleteProgram_Handler,
+		},
+		{
+			MethodName: "BatchProgramOp",
+			Handler:    _DCNetLab_BatchProgramOp_Handler,
 		},
 		{
 			MethodName: "GetProgramLogs",

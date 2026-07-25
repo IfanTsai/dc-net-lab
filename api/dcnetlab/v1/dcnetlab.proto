@@ -183,6 +183,15 @@ service DCNetLab {
   rpc DeleteProgram(ProgramOpRequest) returns (DeleteProgramReply) {
     option (google.api.http) = {delete: "/api/v1/labs/{lab_id}/programs/{id}"};
   }
+  // BatchProgramOp starts, stops or deletes several programs at once
+  // (op is start|stop|delete); each id is applied best-effort and its
+  // outcome is reported, so one failure does not abort the rest.
+  rpc BatchProgramOp(BatchProgramRequest) returns (BatchProgramReply) {
+    option (google.api.http) = {
+      post: "/api/v1/labs/{lab_id}/programs/batch"
+      body: "*"
+    };
+  }
   rpc GetProgramLogs(GetProgramLogsRequest) returns (ProgramLogs) {
     option (google.api.http) = {get: "/api/v1/labs/{lab_id}/programs/{id}/logs"};
   }
@@ -720,6 +729,9 @@ message CreateProgramRequest {
   HealthCheck readiness_check = 11;
   // startup_order sequences boot: programs start in ascending order.
   int32 startup_order = 12;
+  // start launches every created program right away (a oneshot runs
+  // once), instead of leaving them stopped for a later start.
+  bool start = 13;
 }
 
 message CreateProgramReply {
@@ -728,6 +740,25 @@ message CreateProgramReply {
   // (e.g. a program of the same name already exists there); creation
   // proceeds on the remaining servers.
   repeated ServerInstallResult failures = 2;
+}
+
+message BatchProgramRequest {
+  string lab_id = 1;
+  // op is start, stop or delete.
+  string op = 2;
+  repeated string ids = 3;
+}
+
+// ProgramOpResult is the outcome of one program in a batch operation;
+// error is empty on success.
+message ProgramOpResult {
+  string id = 1;
+  string name = 2;
+  string error = 3;
+}
+
+message BatchProgramReply {
+  repeated ProgramOpResult results = 1;
 }
 
 message UpgradeProgramRequest {

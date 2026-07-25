@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { HealthCheck, Lab, Link, MetricsPoint, Node, NodeBGP, NodeBGPTable, NodeInventory, NodeMetrics, NodeRoutes, NodeRuntime, Operation, Package, Plan, ProfileInfo, Program, ServerInstallResult, TopologySpec } from '../types/models'
+import type { HealthCheck, Lab, Link, MetricsPoint, Node, NodeBGP, NodeBGPTable, NodeInventory, NodeMetrics, NodeRoutes, NodeRuntime, Operation, Package, Plan, ProfileInfo, Program, ProgramOpResult, ServerInstallResult, TopologySpec } from '../types/models'
 
 const base = '/api/v1'
 
@@ -50,9 +50,12 @@ export const labApi = {
 
   programs: (labId: string) =>
     api.get<{ programs: Program[] }>(`${base}/labs/${labId}/programs`).then((r) => r.programs),
-  createProgram: (labId: string, body: { name: string; serverIds: string[]; packageName: string; packageVersion: string; args?: string[]; type?: string; autoStart?: boolean; restartPolicy: string; livenessCheck?: HealthCheck; readinessCheck?: HealthCheck; startupOrder?: number }) =>
+  createProgram: (labId: string, body: { name: string; serverIds: string[]; packageName: string; packageVersion: string; args?: string[]; type?: string; autoStart?: boolean; restartPolicy: string; livenessCheck?: HealthCheck; readinessCheck?: HealthCheck; startupOrder?: number; start?: boolean }) =>
     api.post<{ programs?: Program[]; failures?: ServerInstallResult[] }>(`${base}/labs/${labId}/programs`, body)
       .then((r) => ({ programs: r.programs ?? [], failures: r.failures ?? [] })),
+  batchProgramOp: (labId: string, op: 'start' | 'stop' | 'delete', ids: string[]) =>
+    api.post<{ results?: ProgramOpResult[] }>(`${base}/labs/${labId}/programs/batch`, { op, ids })
+      .then((r) => r.results ?? []),
   nodeInventory: (labId: string, nodeId: string) =>
     api.get<NodeInventory>(`${base}/labs/${labId}/nodes/${nodeId}/inventory`),
   nodeMetrics: (labId: string, nodeId: string) =>
