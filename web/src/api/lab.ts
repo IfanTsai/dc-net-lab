@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { HealthCheck, Lab, Link, MetricsPoint, Node, NodeBGP, NodeBGPTable, NodeInventory, NodeMetrics, NodeRoutes, NodeRuntime, Operation, Package, Plan, ProfileInfo, Program, ProgramOpResult, ServerInstallResult, TopologySpec, TrafficAssertion, TrafficPoint, TrafficScenario } from '../types/models'
+import type { FaultImpairment, FaultScenario, FaultTarget, HealthCheck, Lab, Link, MetricsPoint, Node, NodeBGP, NodeBGPTable, NodeInventory, NodeMetrics, NodeRoutes, NodeRuntime, Operation, Package, Plan, ProfileInfo, Program, ProgramOpResult, ServerInstallResult, TopologySpec, TrafficAssertion, TrafficPoint, TrafficScenario } from '../types/models'
 
 const base = '/api/v1'
 
@@ -89,6 +89,17 @@ export const labApi = {
     api.get<{ points?: TrafficPoint[] }>(
       `${base}/labs/${labId}/traffic-scenarios/${id}/history?start=${startSec}&end=${endSec}`,
     ).then((r) => r.points ?? []),
+
+  faultScenarios: (labId: string) =>
+    api.get<{ scenarios: FaultScenario[] }>(`${base}/labs/${labId}/fault-scenarios`).then((r) => r.scenarios ?? []),
+  createFaultScenario: (labId: string, body: { name: string; target: FaultTarget; type: string; impairment?: FaultImpairment }) =>
+    api.post<FaultScenario>(`${base}/labs/${labId}/fault-scenarios`, body),
+  applyFaultScenario: (labId: string, id: string) =>
+    api.post<FaultScenario>(`${base}/labs/${labId}/fault-scenarios/${id}/apply`),
+  recoverFaultScenario: (labId: string, id: string) =>
+    api.post<FaultScenario>(`${base}/labs/${labId}/fault-scenarios/${id}/recover`),
+  deleteFaultScenario: (labId: string, id: string) =>
+    api.del<Record<string, never>>(`${base}/labs/${labId}/fault-scenarios/${id}`),
 
   createPlan: (id: string) => api.post<Plan>(`${base}/labs/${id}/plans`),
   getPlan: (planId: string) => api.get<Plan>(`${base}/plans/${planId}`),

@@ -19,12 +19,15 @@ var _ = binding.EncodeURL
 
 const _ = http.SupportPackageIsVersion1
 
+const OperationDCNetLabApplyFaultScenario = "/dcnetlab.v1.DCNetLab/ApplyFaultScenario"
 const OperationDCNetLabApplyPlan = "/dcnetlab.v1.DCNetLab/ApplyPlan"
 const OperationDCNetLabBatchProgramOp = "/dcnetlab.v1.DCNetLab/BatchProgramOp"
+const OperationDCNetLabCreateFaultScenario = "/dcnetlab.v1.DCNetLab/CreateFaultScenario"
 const OperationDCNetLabCreateLab = "/dcnetlab.v1.DCNetLab/CreateLab"
 const OperationDCNetLabCreatePlan = "/dcnetlab.v1.DCNetLab/CreatePlan"
 const OperationDCNetLabCreateProgram = "/dcnetlab.v1.DCNetLab/CreateProgram"
 const OperationDCNetLabCreateTrafficScenario = "/dcnetlab.v1.DCNetLab/CreateTrafficScenario"
+const OperationDCNetLabDeleteFaultScenario = "/dcnetlab.v1.DCNetLab/DeleteFaultScenario"
 const OperationDCNetLabDeleteLab = "/dcnetlab.v1.DCNetLab/DeleteLab"
 const OperationDCNetLabDeletePackage = "/dcnetlab.v1.DCNetLab/DeletePackage"
 const OperationDCNetLabDeleteProgram = "/dcnetlab.v1.DCNetLab/DeleteProgram"
@@ -45,6 +48,7 @@ const OperationDCNetLabGetTrafficScenarioHistory = "/dcnetlab.v1.DCNetLab/GetTra
 const OperationDCNetLabHealthz = "/dcnetlab.v1.DCNetLab/Healthz"
 const OperationDCNetLabInstallPackage = "/dcnetlab.v1.DCNetLab/InstallPackage"
 const OperationDCNetLabListAllocations = "/dcnetlab.v1.DCNetLab/ListAllocations"
+const OperationDCNetLabListFaultScenarios = "/dcnetlab.v1.DCNetLab/ListFaultScenarios"
 const OperationDCNetLabListGenerations = "/dcnetlab.v1.DCNetLab/ListGenerations"
 const OperationDCNetLabListLabs = "/dcnetlab.v1.DCNetLab/ListLabs"
 const OperationDCNetLabListLinks = "/dcnetlab.v1.DCNetLab/ListLinks"
@@ -54,6 +58,7 @@ const OperationDCNetLabListPackages = "/dcnetlab.v1.DCNetLab/ListPackages"
 const OperationDCNetLabListProfiles = "/dcnetlab.v1.DCNetLab/ListProfiles"
 const OperationDCNetLabListPrograms = "/dcnetlab.v1.DCNetLab/ListPrograms"
 const OperationDCNetLabListTrafficScenarios = "/dcnetlab.v1.DCNetLab/ListTrafficScenarios"
+const OperationDCNetLabRecoverFaultScenario = "/dcnetlab.v1.DCNetLab/RecoverFaultScenario"
 const OperationDCNetLabStartLab = "/dcnetlab.v1.DCNetLab/StartLab"
 const OperationDCNetLabStartNode = "/dcnetlab.v1.DCNetLab/StartNode"
 const OperationDCNetLabStartProgram = "/dcnetlab.v1.DCNetLab/StartProgram"
@@ -66,11 +71,22 @@ const OperationDCNetLabUpgradeProgram = "/dcnetlab.v1.DCNetLab/UpgradeProgram"
 const OperationDCNetLabUploadPackage = "/dcnetlab.v1.DCNetLab/UploadPackage"
 
 type DCNetLabHTTPServer interface {
+	ApplyFaultScenario(context.Context, *FaultScenarioOpRequest) (*FaultScenario, error)
 	ApplyPlan(context.Context, *ApplyPlanRequest) (*OperationRef, error)
 	// BatchProgramOp BatchProgramOp starts, stops or deletes several programs at once
 	// (op is start|stop|delete); each id is applied best-effort and its
 	// outcome is reported, so one failure does not abort the rest.
 	BatchProgramOp(context.Context, *BatchProgramRequest) (*BatchProgramReply, error)
+	// CreateFaultScenario --- Fault ---
+	// FaultScenarios inject and recover a controlled failure against a
+	// node or a link: node-stop/node-restart reuse the same pause/
+	// unpause power semantics as the topology page; link-down and
+	// interface-down set the interface administratively down; impairment
+	// shapes egress traffic with one netem qdisc (delay/jitter/loss/rate
+	// combined, matching how netem itself works — there is only ever one
+	// qdisc per interface). A target (node or link) allows at most one
+	// applied scenario at a time.
+	CreateFaultScenario(context.Context, *CreateFaultScenarioRequest) (*FaultScenario, error)
 	// CreateLab --- Labs ---
 	CreateLab(context.Context, *CreateLabRequest) (*Lab, error)
 	// CreatePlan --- Plans ---
@@ -87,6 +103,7 @@ type DCNetLabHTTPServer interface {
 	// client's stat lines into rate/success-rate/latency metrics and
 	// evaluates any configured assertions.
 	CreateTrafficScenario(context.Context, *CreateTrafficScenarioRequest) (*TrafficScenario, error)
+	DeleteFaultScenario(context.Context, *FaultScenarioOpRequest) (*DeleteFaultScenarioReply, error)
 	DeleteLab(context.Context, *DeleteLabRequest) (*OperationRef, error)
 	DeletePackage(context.Context, *DeletePackageRequest) (*DeletePackageReply, error)
 	DeleteProgram(context.Context, *ProgramOpRequest) (*DeleteProgramReply, error)
@@ -143,6 +160,7 @@ type DCNetLabHTTPServer interface {
 	// skip versions already present with the same digest.
 	InstallPackage(context.Context, *InstallPackageRequest) (*InstallPackageReply, error)
 	ListAllocations(context.Context, *ListAllocationsRequest) (*ListAllocationsReply, error)
+	ListFaultScenarios(context.Context, *ListFaultScenariosRequest) (*ListFaultScenariosReply, error)
 	ListGenerations(context.Context, *ListGenerationsRequest) (*ListGenerationsReply, error)
 	ListLabs(context.Context, *ListLabsRequest) (*ListLabsReply, error)
 	ListLinks(context.Context, *ListLinksRequest) (*ListLinksReply, error)
@@ -154,6 +172,7 @@ type DCNetLabHTTPServer interface {
 	ListProfiles(context.Context, *ListProfilesRequest) (*ListProfilesReply, error)
 	ListPrograms(context.Context, *ListProgramsRequest) (*ListProgramsReply, error)
 	ListTrafficScenarios(context.Context, *ListTrafficScenariosRequest) (*ListTrafficScenariosReply, error)
+	RecoverFaultScenario(context.Context, *FaultScenarioOpRequest) (*FaultScenario, error)
 	// StartLab StartLab / StopLab power the deployed containers of a lab on and
 	// off (docker start/stop) without touching the generation.
 	StartLab(context.Context, *StartLabRequest) (*OperationRef, error)
@@ -213,6 +232,11 @@ func RegisterDCNetLabHTTPServer(s *http.Server, srv DCNetLabHTTPServer) {
 	r.POST("/api/v1/labs/{lab_id}/traffic-scenarios/{id}/stop", _DCNetLab_StopTrafficScenario0_HTTP_Handler(srv))
 	r.DELETE("/api/v1/labs/{lab_id}/traffic-scenarios/{id}", _DCNetLab_DeleteTrafficScenario0_HTTP_Handler(srv))
 	r.GET("/api/v1/labs/{lab_id}/traffic-scenarios/{id}/history", _DCNetLab_GetTrafficScenarioHistory0_HTTP_Handler(srv))
+	r.POST("/api/v1/labs/{lab_id}/fault-scenarios", _DCNetLab_CreateFaultScenario0_HTTP_Handler(srv))
+	r.GET("/api/v1/labs/{lab_id}/fault-scenarios", _DCNetLab_ListFaultScenarios0_HTTP_Handler(srv))
+	r.POST("/api/v1/labs/{lab_id}/fault-scenarios/{id}/apply", _DCNetLab_ApplyFaultScenario0_HTTP_Handler(srv))
+	r.POST("/api/v1/labs/{lab_id}/fault-scenarios/{id}/recover", _DCNetLab_RecoverFaultScenario0_HTTP_Handler(srv))
+	r.DELETE("/api/v1/labs/{lab_id}/fault-scenarios/{id}", _DCNetLab_DeleteFaultScenario0_HTTP_Handler(srv))
 	r.POST("/api/v1/labs/{lab_id}/plans", _DCNetLab_CreatePlan0_HTTP_Handler(srv))
 	r.GET("/api/v1/plans/{id}", _DCNetLab_GetPlan0_HTTP_Handler(srv))
 	r.POST("/api/v1/plans/{id}/apply", _DCNetLab_ApplyPlan0_HTTP_Handler(srv))
@@ -1070,6 +1094,125 @@ func _DCNetLab_GetTrafficScenarioHistory0_HTTP_Handler(srv DCNetLabHTTPServer) f
 	}
 }
 
+func _DCNetLab_CreateFaultScenario0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in CreateFaultScenarioRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabCreateFaultScenario)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.CreateFaultScenario(ctx, req.(*CreateFaultScenarioRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*FaultScenario)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_ListFaultScenarios0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in ListFaultScenariosRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabListFaultScenarios)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.ListFaultScenarios(ctx, req.(*ListFaultScenariosRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*ListFaultScenariosReply)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_ApplyFaultScenario0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in FaultScenarioOpRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabApplyFaultScenario)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.ApplyFaultScenario(ctx, req.(*FaultScenarioOpRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*FaultScenario)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_RecoverFaultScenario0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in FaultScenarioOpRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabRecoverFaultScenario)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.RecoverFaultScenario(ctx, req.(*FaultScenarioOpRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*FaultScenario)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_DeleteFaultScenario0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in FaultScenarioOpRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabDeleteFaultScenario)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.DeleteFaultScenario(ctx, req.(*FaultScenarioOpRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*DeleteFaultScenarioReply)
+		return ctx.Result(200, reply)
+	}
+}
+
 func _DCNetLab_CreatePlan0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
 	return func(ctx http.Context) error {
 		var in CreatePlanRequest
@@ -1247,11 +1390,22 @@ func _DCNetLab_Healthz0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Conte
 }
 
 type DCNetLabHTTPClient interface {
+	ApplyFaultScenario(ctx context.Context, req *FaultScenarioOpRequest, opts ...http.CallOption) (rsp *FaultScenario, err error)
 	ApplyPlan(ctx context.Context, req *ApplyPlanRequest, opts ...http.CallOption) (rsp *OperationRef, err error)
 	// BatchProgramOp BatchProgramOp starts, stops or deletes several programs at once
 	// (op is start|stop|delete); each id is applied best-effort and its
 	// outcome is reported, so one failure does not abort the rest.
 	BatchProgramOp(ctx context.Context, req *BatchProgramRequest, opts ...http.CallOption) (rsp *BatchProgramReply, err error)
+	// CreateFaultScenario --- Fault ---
+	// FaultScenarios inject and recover a controlled failure against a
+	// node or a link: node-stop/node-restart reuse the same pause/
+	// unpause power semantics as the topology page; link-down and
+	// interface-down set the interface administratively down; impairment
+	// shapes egress traffic with one netem qdisc (delay/jitter/loss/rate
+	// combined, matching how netem itself works — there is only ever one
+	// qdisc per interface). A target (node or link) allows at most one
+	// applied scenario at a time.
+	CreateFaultScenario(ctx context.Context, req *CreateFaultScenarioRequest, opts ...http.CallOption) (rsp *FaultScenario, err error)
 	// CreateLab --- Labs ---
 	CreateLab(ctx context.Context, req *CreateLabRequest, opts ...http.CallOption) (rsp *Lab, err error)
 	// CreatePlan --- Plans ---
@@ -1268,6 +1422,7 @@ type DCNetLabHTTPClient interface {
 	// client's stat lines into rate/success-rate/latency metrics and
 	// evaluates any configured assertions.
 	CreateTrafficScenario(ctx context.Context, req *CreateTrafficScenarioRequest, opts ...http.CallOption) (rsp *TrafficScenario, err error)
+	DeleteFaultScenario(ctx context.Context, req *FaultScenarioOpRequest, opts ...http.CallOption) (rsp *DeleteFaultScenarioReply, err error)
 	DeleteLab(ctx context.Context, req *DeleteLabRequest, opts ...http.CallOption) (rsp *OperationRef, err error)
 	DeletePackage(ctx context.Context, req *DeletePackageRequest, opts ...http.CallOption) (rsp *DeletePackageReply, err error)
 	DeleteProgram(ctx context.Context, req *ProgramOpRequest, opts ...http.CallOption) (rsp *DeleteProgramReply, err error)
@@ -1324,6 +1479,7 @@ type DCNetLabHTTPClient interface {
 	// skip versions already present with the same digest.
 	InstallPackage(ctx context.Context, req *InstallPackageRequest, opts ...http.CallOption) (rsp *InstallPackageReply, err error)
 	ListAllocations(ctx context.Context, req *ListAllocationsRequest, opts ...http.CallOption) (rsp *ListAllocationsReply, err error)
+	ListFaultScenarios(ctx context.Context, req *ListFaultScenariosRequest, opts ...http.CallOption) (rsp *ListFaultScenariosReply, err error)
 	ListGenerations(ctx context.Context, req *ListGenerationsRequest, opts ...http.CallOption) (rsp *ListGenerationsReply, err error)
 	ListLabs(ctx context.Context, req *ListLabsRequest, opts ...http.CallOption) (rsp *ListLabsReply, err error)
 	ListLinks(ctx context.Context, req *ListLinksRequest, opts ...http.CallOption) (rsp *ListLinksReply, err error)
@@ -1335,6 +1491,7 @@ type DCNetLabHTTPClient interface {
 	ListProfiles(ctx context.Context, req *ListProfilesRequest, opts ...http.CallOption) (rsp *ListProfilesReply, err error)
 	ListPrograms(ctx context.Context, req *ListProgramsRequest, opts ...http.CallOption) (rsp *ListProgramsReply, err error)
 	ListTrafficScenarios(ctx context.Context, req *ListTrafficScenariosRequest, opts ...http.CallOption) (rsp *ListTrafficScenariosReply, err error)
+	RecoverFaultScenario(ctx context.Context, req *FaultScenarioOpRequest, opts ...http.CallOption) (rsp *FaultScenario, err error)
 	// StartLab StartLab / StopLab power the deployed containers of a lab on and
 	// off (docker start/stop) without touching the generation.
 	StartLab(ctx context.Context, req *StartLabRequest, opts ...http.CallOption) (rsp *OperationRef, err error)
@@ -1363,6 +1520,19 @@ func NewDCNetLabHTTPClient(client *http.Client) DCNetLabHTTPClient {
 	return &DCNetLabHTTPClientImpl{client}
 }
 
+func (c *DCNetLabHTTPClientImpl) ApplyFaultScenario(ctx context.Context, in *FaultScenarioOpRequest, opts ...http.CallOption) (*FaultScenario, error) {
+	var out FaultScenario
+	pattern := "/api/v1/labs/{lab_id}/fault-scenarios/{id}/apply"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationDCNetLabApplyFaultScenario))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (c *DCNetLabHTTPClientImpl) ApplyPlan(ctx context.Context, in *ApplyPlanRequest, opts ...http.CallOption) (*OperationRef, error) {
 	var out OperationRef
 	pattern := "/api/v1/plans/{id}/apply"
@@ -1384,6 +1554,28 @@ func (c *DCNetLabHTTPClientImpl) BatchProgramOp(ctx context.Context, in *BatchPr
 	pattern := "/api/v1/labs/{lab_id}/programs/batch"
 	path := binding.EncodeURL(pattern, in, false)
 	opts = append(opts, http.Operation(OperationDCNetLabBatchProgramOp))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// CreateFaultScenario --- Fault ---
+// FaultScenarios inject and recover a controlled failure against a
+// node or a link: node-stop/node-restart reuse the same pause/
+// unpause power semantics as the topology page; link-down and
+// interface-down set the interface administratively down; impairment
+// shapes egress traffic with one netem qdisc (delay/jitter/loss/rate
+// combined, matching how netem itself works — there is only ever one
+// qdisc per interface). A target (node or link) allows at most one
+// applied scenario at a time.
+func (c *DCNetLabHTTPClientImpl) CreateFaultScenario(ctx context.Context, in *CreateFaultScenarioRequest, opts ...http.CallOption) (*FaultScenario, error) {
+	var out FaultScenario
+	pattern := "/api/v1/labs/{lab_id}/fault-scenarios"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationDCNetLabCreateFaultScenario))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
 	if err != nil {
@@ -1450,6 +1642,19 @@ func (c *DCNetLabHTTPClientImpl) CreateTrafficScenario(ctx context.Context, in *
 	opts = append(opts, http.Operation(OperationDCNetLabCreateTrafficScenario))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *DCNetLabHTTPClientImpl) DeleteFaultScenario(ctx context.Context, in *FaultScenarioOpRequest, opts ...http.CallOption) (*DeleteFaultScenarioReply, error) {
+	var out DeleteFaultScenarioReply
+	pattern := "/api/v1/labs/{lab_id}/fault-scenarios/{id}"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationDCNetLabDeleteFaultScenario))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "DELETE", path, nil, &out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1752,6 +1957,19 @@ func (c *DCNetLabHTTPClientImpl) ListAllocations(ctx context.Context, in *ListAl
 	return &out, nil
 }
 
+func (c *DCNetLabHTTPClientImpl) ListFaultScenarios(ctx context.Context, in *ListFaultScenariosRequest, opts ...http.CallOption) (*ListFaultScenariosReply, error) {
+	var out ListFaultScenariosReply
+	pattern := "/api/v1/labs/{lab_id}/fault-scenarios"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationDCNetLabListFaultScenarios))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (c *DCNetLabHTTPClientImpl) ListGenerations(ctx context.Context, in *ListGenerationsRequest, opts ...http.CallOption) (*ListGenerationsReply, error) {
 	var out ListGenerationsReply
 	pattern := "/api/v1/labs/{lab_id}/generations"
@@ -1865,6 +2083,19 @@ func (c *DCNetLabHTTPClientImpl) ListTrafficScenarios(ctx context.Context, in *L
 	opts = append(opts, http.Operation(OperationDCNetLabListTrafficScenarios))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *DCNetLabHTTPClientImpl) RecoverFaultScenario(ctx context.Context, in *FaultScenarioOpRequest, opts ...http.CallOption) (*FaultScenario, error) {
+	var out FaultScenario
+	pattern := "/api/v1/labs/{lab_id}/fault-scenarios/{id}/recover"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationDCNetLabRecoverFaultScenario))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
 	if err != nil {
 		return nil, err
 	}

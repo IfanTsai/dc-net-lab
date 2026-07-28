@@ -15,6 +15,7 @@ const menu = computed(() => [
   { path: '/programs', label: t('menu.programs') },
   { path: '/packages', label: t('menu.packages') },
   { path: '/traffic', label: t('menu.traffic') },
+  { path: '/faults', label: t('menu.faults') },
   { path: '/operations', label: t('menu.operations') },
 ])
 

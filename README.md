@@ -35,9 +35,14 @@ Apply  编译 FRR 配置 + Containerlab 拓扑 → 写入 Generation 快照 → 
 
 **可视化与观测**
 
-- 分层 Clos 拓扑画布（Pod/机柜分组框），节点状态角标（运行/未收敛/暂停/异常）经 WebSocket 实时推送，状态漂移自动纠正。
+- 分层 Clos 拓扑画布（Pod/机柜分组框），节点状态角标（运行/未收敛/暂停/异常）经 WebSocket 实时推送，状态漂移自动纠正；链路按接口真实观测状态自动置灰。
 - 节点五视角抽屉：模拟视角 / BGP Loc-RIB / RIB / FIB / 运行时，路由条目逐层漏斗递减，可对照选路与下装全过程。
 - 双击设备打开悬浮多标签 Web 终端（交换机进 vtysh、server 进 bash）；DC 与设备粒度一键启停。
+
+**故障演练**
+
+- FaultScenario 资源覆盖节点停止/重启（docker pause 语义）、链路/单端口中断（`ip link set` 管理性关闭）、网络损伤（`tc netem` 延迟/抖动/丢包/限速任意组合）；Apply/Recover 显式生命周期，同一目标同时只允许一个生效故障，删除前自动恢复，不留孤儿状态。
+- 拓扑图点哪坏哪：节点/链路详情抽屉内置快捷入口，一键注入即生效并联动 Traffic 实时指标，构成"注入故障 → 观测指标掉坑 → 恢复"的完整演示闭环；独立的故障列表页统一管理全部生效中与历史故障。
 
 **服务器工作负载（模拟软件交付）**
 
@@ -151,4 +156,4 @@ proto 依赖（`google/api` 注解）由 buf 从 BSR 拉取并经 `buf.lock` 锁
 
 ## Roadmap
 
-按设计文档迭代顺序推进：Daemon 框架、Package 格式扩展（deb/OCI）与镜像预装通道、Traffic 编排、AF_PACKET 抓包、故障注入、可视化扩容、VPC/VXLAN、EIP。
+按设计文档迭代顺序推进：Daemon 框架、Package 格式扩展（deb/OCI）与镜像预装通道、Traffic 编排、AF_PACKET 抓包、可视化扩容、VPC/VXLAN、EIP。

@@ -177,6 +177,7 @@ function render() {
   const width = container.value?.clientWidth ?? 1200
 
   const stopped = downNodeIDs()
+  const ifaceStates = interfaceStates()
 
   for (const [tier, nodes] of tiers) {
     nodes.sort((a, b) => a.meta.name.localeCompare(b.meta.name))
@@ -199,7 +200,6 @@ function render() {
     })
   }
   for (const l of props.links) {
-    const dead = stopped.has(l.spec.endpointA.nodeId) || stopped.has(l.spec.endpointB.nodeId)
     const el = cy.add({
       group: 'edges',
       data: {
@@ -209,9 +209,9 @@ function render() {
         kind: l.spec.kind ?? 'fabric',
       },
     })
-    // A link with a powered-off endpoint goes grey; colour is
-    // reserved for future link-quality signalling.
-    if (dead) el.addClass('dead')
+    // A link with a powered-off endpoint or a down interface goes
+    // grey; colour is reserved for future link-quality signalling.
+    if (linkDead(l, stopped, ifaceStates)) el.addClass('dead')
   }
   cy.fit(undefined, 40)
 }
@@ -224,6 +224,31 @@ function downNodeIDs(): Set<string> {
       .filter((n) => n.meta.phase === 'Stopped' || n.meta.phase === 'Failed')
       .map((n) => n.meta.id),
   )
+}
+
+// interfaceStates indexes each node's observed per-interface up/down
+// state (node id -> interface name -> up), as already collected by
+// the observer and shown in the node drawer's interface table.
+function interfaceStates(): Map<string, Map<string, boolean>> {
+  const m = new Map<string, Map<string, boolean>>()
+  for (const n of props.nodes) {
+    if (n.status.interfaces) m.set(n.meta.id, new Map(n.status.interfaces.map((i) => [i.name, i.up])))
+  }
+  return m
+}
+
+// linkDead reports whether a link should render as broken: either
+// endpoint's node is fully down, or either endpoint's own interface
+// was observed administratively/operationally down — which is what a
+// link-down/interface-down fault (ip link set down) produces, with no
+// need for this component to know fault scenarios exist.
+function linkDead(l: Link, stopped: Set<string>, ifaceStates: Map<string, Map<string, boolean>>): boolean {
+  if (stopped.has(l.spec.endpointA.nodeId) || stopped.has(l.spec.endpointB.nodeId)) return true
+
+  const aUp = ifaceStates.get(l.spec.endpointA.nodeId)?.get(l.spec.endpointA.interface)
+  const bUp = ifaceStates.get(l.spec.endpointB.nodeId)?.get(l.spec.endpointB.interface)
+
+  return aUp === false || bUp === false
 }
 
 // sameTopology reports whether the rendered elements match the props
@@ -246,14 +271,14 @@ function refreshState() {
   if (!cy) return
 
   const down = downNodeIDs()
+  const ifaceStates = interfaceStates()
   for (const n of props.nodes) {
     const el = cy.getElementById(n.meta.id)
     el.data('icon', iconFor(n.spec.role, nodeBadge(n)))
     el.toggleClass('down', down.has(n.meta.id))
   }
   for (const l of props.links) {
-    const dead = down.has(l.spec.endpointA.nodeId) || down.has(l.spec.endpointB.nodeId)
-    cy.getElementById(l.meta.id).toggleClass('dead', dead)
+    cy.getElementById(l.meta.id).toggleClass('dead', linkDead(l, down, ifaceStates))
   }
 }
 

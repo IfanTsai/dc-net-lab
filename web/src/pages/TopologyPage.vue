@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useLabStore } from '../stores/lab'
 import { labApi } from '../api/lab'
-import type { Link, MetricsPoint, Node, NodeBGP, NodeBGPTable, NodeInventory, NodeMetrics, NodeRoutes, NodeRuntime } from '../types/models'
+import type { FaultScenario, Link, MetricsPoint, Node, NodeBGP, NodeBGPTable, NodeInventory, NodeMetrics, NodeRoutes, NodeRuntime } from '../types/models'
 import TopologyCanvas from '../components/TopologyCanvas.vue'
 import TerminalPanel from '../components/TerminalPanel.vue'
 import MetricsChart, { type ChartSeries } from '../components/MetricsChart.vue'
@@ -172,6 +172,7 @@ watch(drawerTab, (tab) => {
   if (tab === 'bgp-table') void refreshBGPTable()
   if (tab === 'fib') void refreshFIB()
   if (tab === 'programs') void refreshInventory()
+  if (tab === 'fault') void refreshFaults()
   if (tab === 'metrics') {
     void refreshMetrics()
     void refreshHistory()
@@ -456,6 +457,148 @@ function linkKindLabel(l: Link): string {
       return t('topology.kindFabric')
   }
 }
+
+// --- Fault: quick-launch from the node/link drawers, target already
+// known from the selection, so it is created and applied in one step
+// instead of walking the Faults page's full dialog ---
+const labFaults = ref<FaultScenario[]>([])
+const faultBusy = ref(false)
+
+async function refreshFaults() {
+  if (!store.currentLabId) return
+
+  try {
+    labFaults.value = await labApi.faultScenarios(store.currentLabId)
+  } catch {
+    /* keep the last view */
+  }
+}
+
+// Re-fetch whenever the link drawer opens; the node drawer's fault
+// tab is covered by the drawerTab watcher above.
+watch(selectedLink, (link) => {
+  if (link) void refreshFaults()
+})
+
+const nodeFaults = computed(() =>
+  selectedNode.value
+    ? labFaults.value.filter((f) => f.spec.target.kind === 'node' && f.spec.target.nodeId === selectedNode.value!.meta.id)
+    : [],
+)
+const linkFaults = computed(() =>
+  selectedLink.value
+    ? labFaults.value.filter((f) => f.spec.target.kind === 'link' && f.spec.target.linkId === selectedLink.value!.meta.id)
+    : [],
+)
+
+function faultTypeLabel(type: string): string {
+  switch (type) {
+    case 'node-stop': return t('faults.typeNodeStop')
+    case 'node-restart': return t('faults.typeNodeRestart')
+    case 'link-down': return t('faults.typeLinkDown')
+    case 'interface-down': return t('faults.typeInterfaceDown')
+    case 'impairment': return t('faults.typeImpairment')
+    default: return type
+  }
+}
+
+// createAndApplyFault is the shared "quick launch" path: the target
+// is already known from the drawer selection, so create + apply run
+// back to back instead of leaving a Stopped scenario the user has to
+// separately Apply from the Faults page.
+async function createAndApplyFault(name: string, target: FaultScenario['spec']['target'], type: string, impairment?: FaultScenario['spec']['impairment']) {
+  if (!store.currentLabId) return
+
+  faultBusy.value = true
+  try {
+    const fs = await labApi.createFaultScenario(store.currentLabId, { name, target, type, impairment })
+    await labApi.applyFaultScenario(store.currentLabId, fs.meta.id)
+    ElMessage.success(t('faults.created', { name: fs.meta.name }))
+    await refreshFaults()
+  } catch (e) {
+    ElMessage.error((e as Error).message)
+  } finally {
+    faultBusy.value = false
+  }
+}
+
+function faultSlug(prefix: string): string {
+  return `${prefix}-${Date.now().toString(36)}`
+}
+
+async function quickNodeFault(type: 'node-stop' | 'node-restart') {
+  const node = selectedNode.value
+  if (!node) return
+
+  try {
+    await ElMessageBox.confirm(
+      t(type === 'node-stop' ? 'faults.confirmStopNode' : 'faults.confirmRestartNode', { name: node.meta.name }),
+      t('faults.title'),
+    )
+  } catch {
+    return
+  }
+
+  await createAndApplyFault(faultSlug(`${node.meta.name}-${type}`), { kind: 'node', nodeId: node.meta.id }, type)
+}
+
+async function quickLinkFault(type: 'link-down' | 'interface-down', side?: 'a' | 'b') {
+  const link = selectedLink.value
+  if (!link) return
+
+  await createAndApplyFault(faultSlug(`${link.meta.name}-${type}`), { kind: 'link', linkId: link.meta.id, side }, type)
+}
+
+const impairForm = ref({
+  delayMs: undefined as number | undefined,
+  lossPercent: undefined as number | undefined,
+  rateKbit: undefined as number | undefined,
+})
+
+async function quickImpairment() {
+  const link = selectedLink.value
+  if (!link) return
+
+  if (!(impairForm.value.delayMs || impairForm.value.lossPercent || impairForm.value.rateKbit)) return
+
+  await createAndApplyFault(
+    faultSlug(`${link.meta.name}-impairment`),
+    { kind: 'link', linkId: link.meta.id, side: 'both' },
+    'impairment',
+    { ...impairForm.value },
+  )
+  impairForm.value = { delayMs: undefined, lossPercent: undefined, rateKbit: undefined }
+}
+
+async function toggleFault(f: FaultScenario) {
+  if (!store.currentLabId) return
+
+  faultBusy.value = true
+  try {
+    if (f.status.applied) await labApi.recoverFaultScenario(store.currentLabId, f.meta.id)
+    else await labApi.applyFaultScenario(store.currentLabId, f.meta.id)
+
+    await refreshFaults()
+  } catch (e) {
+    ElMessage.error((e as Error).message)
+  } finally {
+    faultBusy.value = false
+  }
+}
+
+async function deleteFault(f: FaultScenario) {
+  if (!store.currentLabId) return
+
+  faultBusy.value = true
+  try {
+    await labApi.deleteFaultScenario(store.currentLabId, f.meta.id)
+    await refreshFaults()
+  } catch (e) {
+    ElMessage.error((e as Error).message)
+  } finally {
+    faultBusy.value = false
+  }
+}
 </script>
 
 <template>
@@ -632,6 +775,47 @@ function linkKindLabel(l: Link): string {
                 <el-table-column prop="description" :label="t('topology.peer')" />
               </el-table>
             </template>
+          </el-tab-pane>
+
+          <el-tab-pane :label="t('faults.title')" name="fault">
+            <div class="runtime-toolbar">
+              <el-button size="small" :loading="faultBusy" @click="quickNodeFault('node-stop')">
+                {{ t('faults.typeNodeStop') }}
+              </el-button>
+              <el-button size="small" :loading="faultBusy" @click="quickNodeFault('node-restart')">
+                {{ t('faults.typeNodeRestart') }}
+              </el-button>
+            </div>
+            <el-table v-if="nodeFaults.length" :data="nodeFaults" size="small">
+              <el-table-column prop="meta.name" :label="t('common.name')" />
+              <el-table-column :label="t('faults.type')">
+                <template #default="{ row }">{{ faultTypeLabel(row.spec.type) }}</template>
+              </el-table-column>
+              <el-table-column :label="t('faults.state')" width="90">
+                <template #default="{ row }">
+                  <el-tag size="small" :type="row.status.applied ? 'danger' : 'info'">
+                    {{ row.status.applied ? t('faults.applied') : t('faults.recovered') }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column :label="t('common.actions')" width="150">
+                <template #default="{ row }">
+                  <el-button
+                    v-if="row.spec.type !== 'node-restart' || !row.status.applied"
+                    size="small"
+                    :type="row.status.applied ? 'success' : 'danger'"
+                    :loading="faultBusy"
+                    @click="toggleFault(row)"
+                  >
+                    {{ row.status.applied ? t('faults.recover') : t('faults.apply') }}
+                  </el-button>
+                  <el-button size="small" type="danger" plain :loading="faultBusy" @click="deleteFault(row)">
+                    {{ t('common.delete') }}
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+            <el-empty v-else :description="t('faults.recovered')" />
           </el-tab-pane>
 
           <el-tab-pane
@@ -965,6 +1149,56 @@ function linkKindLabel(l: Link): string {
           </el-descriptions-item>
           <el-descriptions-item :label="t('topology.mtu')">{{ selectedLink.spec.mtu }}</el-descriptions-item>
         </el-descriptions>
+
+        <h4>{{ t('faults.title') }}</h4>
+        <div class="fault-actions">
+          <el-button size="small" :loading="faultBusy" @click="quickLinkFault('link-down')">
+            {{ t('faults.typeLinkDown') }}
+          </el-button>
+          <el-button size="small" :loading="faultBusy" @click="quickLinkFault('interface-down', 'a')">
+            {{ t('faults.typeInterfaceDown') }}: {{ selectedLink.spec.endpointA.nodeName }}
+          </el-button>
+          <el-button size="small" :loading="faultBusy" @click="quickLinkFault('interface-down', 'b')">
+            {{ t('faults.typeInterfaceDown') }}: {{ selectedLink.spec.endpointB.nodeName }}
+          </el-button>
+        </div>
+        <div class="fault-impairment">
+          <el-input-number v-model="impairForm.delayMs" :min="0" :max="60000" :placeholder="t('faults.delayMs')" size="small" controls-position="right" />
+          <el-input-number v-model="impairForm.lossPercent" :min="0" :max="100" :step="0.5" :placeholder="t('faults.lossPercent')" size="small" controls-position="right" />
+          <el-input-number v-model="impairForm.rateKbit" :min="0" :max="10000000" :placeholder="t('faults.rateKbit')" size="small" controls-position="right" />
+          <el-button size="small" type="warning" :loading="faultBusy" @click="quickImpairment">
+            {{ t('faults.typeImpairment') }}
+          </el-button>
+        </div>
+
+        <el-table v-if="linkFaults.length" :data="linkFaults" size="small">
+          <el-table-column prop="meta.name" :label="t('common.name')" />
+          <el-table-column :label="t('faults.type')">
+            <template #default="{ row }">{{ faultTypeLabel(row.spec.type) }}</template>
+          </el-table-column>
+          <el-table-column :label="t('faults.state')" width="90">
+            <template #default="{ row }">
+              <el-tag size="small" :type="row.status.applied ? 'danger' : 'info'">
+                {{ row.status.applied ? t('faults.applied') : t('faults.recovered') }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('common.actions')" width="150">
+            <template #default="{ row }">
+              <el-button
+                size="small"
+                :type="row.status.applied ? 'success' : 'danger'"
+                :loading="faultBusy"
+                @click="toggleFault(row)"
+              >
+                {{ row.status.applied ? t('faults.recover') : t('faults.apply') }}
+              </el-button>
+              <el-button size="small" type="danger" plain :loading="faultBusy" @click="deleteFault(row)">
+                {{ t('common.delete') }}
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
       </template>
     </el-drawer>
   </div>
@@ -1003,4 +1237,7 @@ h4 { margin: 16px 0 8px; }
 .page :deep(.el-drawer) { max-width: 900px; }
 .agent-down-hint { margin-left: 8px; font-size: 12px; color: var(--el-color-danger); }
 .flags { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.fault-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.fault-impairment { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.fault-impairment .el-input-number { width: 130px; }
 </style>

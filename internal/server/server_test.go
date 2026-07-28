@@ -87,7 +87,8 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 	rt := biz.NewRuntimeUsecase(d, d, runtime.NoopDriver{}, log)
 	trafficHistory := traffic.NewHistory()
 	trafficUC := biz.NewTrafficUsecase(d, programs, trafficHistory, log)
-	svc := service.NewDCNetLabService(labs, topos, plans, opsUC, power, rt, programs, packages, trafficUC, log)
+	faultUC := biz.NewFaultUsecase(d, power, runtime.NoopDriver{}, log)
+	svc := service.NewDCNetLabService(labs, topos, plans, opsUC, power, rt, programs, packages, trafficUC, faultUC, log)
 	term := biz.NewTerminalUsecase(d, d, runtime.NoopDriver{}, log)
 	obs := observer.New(d, runtime.NoopDriver{}, log)
 	// The Kratos HTTP server implements http.Handler, so the full

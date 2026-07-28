@@ -62,6 +62,11 @@ const (
 	DCNetLab_StopTrafficScenario_FullMethodName       = "/dcnetlab.v1.DCNetLab/StopTrafficScenario"
 	DCNetLab_DeleteTrafficScenario_FullMethodName     = "/dcnetlab.v1.DCNetLab/DeleteTrafficScenario"
 	DCNetLab_GetTrafficScenarioHistory_FullMethodName = "/dcnetlab.v1.DCNetLab/GetTrafficScenarioHistory"
+	DCNetLab_CreateFaultScenario_FullMethodName       = "/dcnetlab.v1.DCNetLab/CreateFaultScenario"
+	DCNetLab_ListFaultScenarios_FullMethodName        = "/dcnetlab.v1.DCNetLab/ListFaultScenarios"
+	DCNetLab_ApplyFaultScenario_FullMethodName        = "/dcnetlab.v1.DCNetLab/ApplyFaultScenario"
+	DCNetLab_RecoverFaultScenario_FullMethodName      = "/dcnetlab.v1.DCNetLab/RecoverFaultScenario"
+	DCNetLab_DeleteFaultScenario_FullMethodName       = "/dcnetlab.v1.DCNetLab/DeleteFaultScenario"
 	DCNetLab_CreatePlan_FullMethodName                = "/dcnetlab.v1.DCNetLab/CreatePlan"
 	DCNetLab_GetPlan_FullMethodName                   = "/dcnetlab.v1.DCNetLab/GetPlan"
 	DCNetLab_ApplyPlan_FullMethodName                 = "/dcnetlab.v1.DCNetLab/ApplyPlan"
@@ -174,6 +179,20 @@ type DCNetLabClient interface {
 	// (scenarios are short interactive experiments, not persisted
 	// across a controller restart like server metrics).
 	GetTrafficScenarioHistory(ctx context.Context, in *GetTrafficScenarioHistoryRequest, opts ...grpc.CallOption) (*TrafficScenarioHistory, error)
+	// --- Fault ---
+	// FaultScenarios inject and recover a controlled failure against a
+	// node or a link: node-stop/node-restart reuse the same pause/
+	// unpause power semantics as the topology page; link-down and
+	// interface-down set the interface administratively down; impairment
+	// shapes egress traffic with one netem qdisc (delay/jitter/loss/rate
+	// combined, matching how netem itself works — there is only ever one
+	// qdisc per interface). A target (node or link) allows at most one
+	// applied scenario at a time.
+	CreateFaultScenario(ctx context.Context, in *CreateFaultScenarioRequest, opts ...grpc.CallOption) (*FaultScenario, error)
+	ListFaultScenarios(ctx context.Context, in *ListFaultScenariosRequest, opts ...grpc.CallOption) (*ListFaultScenariosReply, error)
+	ApplyFaultScenario(ctx context.Context, in *FaultScenarioOpRequest, opts ...grpc.CallOption) (*FaultScenario, error)
+	RecoverFaultScenario(ctx context.Context, in *FaultScenarioOpRequest, opts ...grpc.CallOption) (*FaultScenario, error)
+	DeleteFaultScenario(ctx context.Context, in *FaultScenarioOpRequest, opts ...grpc.CallOption) (*DeleteFaultScenarioReply, error)
 	// --- Plans ---
 	CreatePlan(ctx context.Context, in *CreatePlanRequest, opts ...grpc.CallOption) (*Plan, error)
 	GetPlan(ctx context.Context, in *GetPlanRequest, opts ...grpc.CallOption) (*Plan, error)
@@ -565,6 +584,56 @@ func (c *dCNetLabClient) GetTrafficScenarioHistory(ctx context.Context, in *GetT
 	return out, nil
 }
 
+func (c *dCNetLabClient) CreateFaultScenario(ctx context.Context, in *CreateFaultScenarioRequest, opts ...grpc.CallOption) (*FaultScenario, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FaultScenario)
+	err := c.cc.Invoke(ctx, DCNetLab_CreateFaultScenario_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) ListFaultScenarios(ctx context.Context, in *ListFaultScenariosRequest, opts ...grpc.CallOption) (*ListFaultScenariosReply, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListFaultScenariosReply)
+	err := c.cc.Invoke(ctx, DCNetLab_ListFaultScenarios_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) ApplyFaultScenario(ctx context.Context, in *FaultScenarioOpRequest, opts ...grpc.CallOption) (*FaultScenario, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FaultScenario)
+	err := c.cc.Invoke(ctx, DCNetLab_ApplyFaultScenario_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) RecoverFaultScenario(ctx context.Context, in *FaultScenarioOpRequest, opts ...grpc.CallOption) (*FaultScenario, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FaultScenario)
+	err := c.cc.Invoke(ctx, DCNetLab_RecoverFaultScenario_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) DeleteFaultScenario(ctx context.Context, in *FaultScenarioOpRequest, opts ...grpc.CallOption) (*DeleteFaultScenarioReply, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteFaultScenarioReply)
+	err := c.cc.Invoke(ctx, DCNetLab_DeleteFaultScenario_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *dCNetLabClient) CreatePlan(ctx context.Context, in *CreatePlanRequest, opts ...grpc.CallOption) (*Plan, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Plan)
@@ -747,6 +816,20 @@ type DCNetLabServer interface {
 	// (scenarios are short interactive experiments, not persisted
 	// across a controller restart like server metrics).
 	GetTrafficScenarioHistory(context.Context, *GetTrafficScenarioHistoryRequest) (*TrafficScenarioHistory, error)
+	// --- Fault ---
+	// FaultScenarios inject and recover a controlled failure against a
+	// node or a link: node-stop/node-restart reuse the same pause/
+	// unpause power semantics as the topology page; link-down and
+	// interface-down set the interface administratively down; impairment
+	// shapes egress traffic with one netem qdisc (delay/jitter/loss/rate
+	// combined, matching how netem itself works — there is only ever one
+	// qdisc per interface). A target (node or link) allows at most one
+	// applied scenario at a time.
+	CreateFaultScenario(context.Context, *CreateFaultScenarioRequest) (*FaultScenario, error)
+	ListFaultScenarios(context.Context, *ListFaultScenariosRequest) (*ListFaultScenariosReply, error)
+	ApplyFaultScenario(context.Context, *FaultScenarioOpRequest) (*FaultScenario, error)
+	RecoverFaultScenario(context.Context, *FaultScenarioOpRequest) (*FaultScenario, error)
+	DeleteFaultScenario(context.Context, *FaultScenarioOpRequest) (*DeleteFaultScenarioReply, error)
 	// --- Plans ---
 	CreatePlan(context.Context, *CreatePlanRequest) (*Plan, error)
 	GetPlan(context.Context, *GetPlanRequest) (*Plan, error)
@@ -878,6 +961,21 @@ func (UnimplementedDCNetLabServer) DeleteTrafficScenario(context.Context, *Traff
 }
 func (UnimplementedDCNetLabServer) GetTrafficScenarioHistory(context.Context, *GetTrafficScenarioHistoryRequest) (*TrafficScenarioHistory, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetTrafficScenarioHistory not implemented")
+}
+func (UnimplementedDCNetLabServer) CreateFaultScenario(context.Context, *CreateFaultScenarioRequest) (*FaultScenario, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateFaultScenario not implemented")
+}
+func (UnimplementedDCNetLabServer) ListFaultScenarios(context.Context, *ListFaultScenariosRequest) (*ListFaultScenariosReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListFaultScenarios not implemented")
+}
+func (UnimplementedDCNetLabServer) ApplyFaultScenario(context.Context, *FaultScenarioOpRequest) (*FaultScenario, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ApplyFaultScenario not implemented")
+}
+func (UnimplementedDCNetLabServer) RecoverFaultScenario(context.Context, *FaultScenarioOpRequest) (*FaultScenario, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RecoverFaultScenario not implemented")
+}
+func (UnimplementedDCNetLabServer) DeleteFaultScenario(context.Context, *FaultScenarioOpRequest) (*DeleteFaultScenarioReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteFaultScenario not implemented")
 }
 func (UnimplementedDCNetLabServer) CreatePlan(context.Context, *CreatePlanRequest) (*Plan, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreatePlan not implemented")
@@ -1590,6 +1688,96 @@ func _DCNetLab_GetTrafficScenarioHistory_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DCNetLab_CreateFaultScenario_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateFaultScenarioRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).CreateFaultScenario(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_CreateFaultScenario_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).CreateFaultScenario(ctx, req.(*CreateFaultScenarioRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_ListFaultScenarios_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListFaultScenariosRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).ListFaultScenarios(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_ListFaultScenarios_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).ListFaultScenarios(ctx, req.(*ListFaultScenariosRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_ApplyFaultScenario_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FaultScenarioOpRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).ApplyFaultScenario(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_ApplyFaultScenario_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).ApplyFaultScenario(ctx, req.(*FaultScenarioOpRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_RecoverFaultScenario_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FaultScenarioOpRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).RecoverFaultScenario(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_RecoverFaultScenario_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).RecoverFaultScenario(ctx, req.(*FaultScenarioOpRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_DeleteFaultScenario_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FaultScenarioOpRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).DeleteFaultScenario(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_DeleteFaultScenario_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).DeleteFaultScenario(ctx, req.(*FaultScenarioOpRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DCNetLab_CreatePlan_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CreatePlanRequest)
 	if err := dec(in); err != nil {
@@ -1888,6 +2076,26 @@ var DCNetLab_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetTrafficScenarioHistory",
 			Handler:    _DCNetLab_GetTrafficScenarioHistory_Handler,
+		},
+		{
+			MethodName: "CreateFaultScenario",
+			Handler:    _DCNetLab_CreateFaultScenario_Handler,
+		},
+		{
+			MethodName: "ListFaultScenarios",
+			Handler:    _DCNetLab_ListFaultScenarios_Handler,
+		},
+		{
+			MethodName: "ApplyFaultScenario",
+			Handler:    _DCNetLab_ApplyFaultScenario_Handler,
+		},
+		{
+			MethodName: "RecoverFaultScenario",
+			Handler:    _DCNetLab_RecoverFaultScenario_Handler,
+		},
+		{
+			MethodName: "DeleteFaultScenario",
+			Handler:    _DCNetLab_DeleteFaultScenario_Handler,
 		},
 		{
 			MethodName: "CreatePlan",

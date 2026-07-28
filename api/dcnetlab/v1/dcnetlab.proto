@@ -45,7 +45,6 @@ service DCNetLab {
       body: "*"
     };
   }
-
   // --- Topology ---
   rpc ListNodes(ListNodesRequest) returns (ListNodesReply) {
     option (google.api.http) = {get: "/api/v1/labs/{lab_id}/nodes"};
@@ -232,6 +231,40 @@ service DCNetLab {
   // across a controller restart like server metrics).
   rpc GetTrafficScenarioHistory(GetTrafficScenarioHistoryRequest) returns (TrafficScenarioHistory) {
     option (google.api.http) = {get: "/api/v1/labs/{lab_id}/traffic-scenarios/{id}/history"};
+  }
+
+  // --- Fault ---
+  // FaultScenarios inject and recover a controlled failure against a
+  // node or a link: node-stop/node-restart reuse the same pause/
+  // unpause power semantics as the topology page; link-down and
+  // interface-down set the interface administratively down; impairment
+  // shapes egress traffic with one netem qdisc (delay/jitter/loss/rate
+  // combined, matching how netem itself works — there is only ever one
+  // qdisc per interface). A target (node or link) allows at most one
+  // applied scenario at a time.
+  rpc CreateFaultScenario(CreateFaultScenarioRequest) returns (FaultScenario) {
+    option (google.api.http) = {
+      post: "/api/v1/labs/{lab_id}/fault-scenarios"
+      body: "*"
+    };
+  }
+  rpc ListFaultScenarios(ListFaultScenariosRequest) returns (ListFaultScenariosReply) {
+    option (google.api.http) = {get: "/api/v1/labs/{lab_id}/fault-scenarios"};
+  }
+  rpc ApplyFaultScenario(FaultScenarioOpRequest) returns (FaultScenario) {
+    option (google.api.http) = {
+      post: "/api/v1/labs/{lab_id}/fault-scenarios/{id}/apply"
+      body: "*"
+    };
+  }
+  rpc RecoverFaultScenario(FaultScenarioOpRequest) returns (FaultScenario) {
+    option (google.api.http) = {
+      post: "/api/v1/labs/{lab_id}/fault-scenarios/{id}/recover"
+      body: "*"
+    };
+  }
+  rpc DeleteFaultScenario(FaultScenarioOpRequest) returns (DeleteFaultScenarioReply) {
+    option (google.api.http) = {delete: "/api/v1/labs/{lab_id}/fault-scenarios/{id}"};
   }
 
   // --- Plans ---
@@ -953,6 +986,79 @@ message GetTrafficScenarioHistoryRequest {
 message TrafficScenarioHistory {
   repeated TrafficPoint points = 1;
 }
+
+// --- Fault ---
+
+// FaultTarget identifies what a fault acts on: a node (node_id) or a
+// link (link_id). side selects which endpoint of a link an
+// interface-down/impairment fault acts on ("a", "b" or "both");
+// link-down always acts on both regardless of side. node_name/
+// link_name are denormalised for display.
+message FaultTarget {
+  string kind = 1;
+  string node_id = 2;
+  string node_name = 3;
+  string link_id = 4;
+  string link_name = 5;
+  string side = 6;
+}
+
+// FaultImpairment shapes egress traffic with one netem qdisc; zero
+// fields are omitted from the qdisc, so at least one must be set.
+message FaultImpairment {
+  int32 delay_ms = 1;
+  int32 jitter_ms = 2;
+  double loss_percent = 3;
+  int32 rate_kbit = 4;
+}
+
+// FaultScenarioSpec is the desired fault: its target and kind. type
+// is node-stop, node-restart, link-down, interface-down or
+// impairment; impairment only applies to the impairment type.
+message FaultScenarioSpec {
+  string lab_id = 1;
+  FaultTarget target = 2;
+  string type = 3;
+  FaultImpairment impairment = 4;
+}
+
+// FaultScenarioStatus is the observed state: whether the fault is
+// currently applied. node-restart is a point-in-time event, not a
+// persisted state, so it never reports applied.
+message FaultScenarioStatus {
+  bool applied = 1;
+  google.protobuf.Timestamp applied_at = 2;
+  string last_error = 3;
+}
+
+message FaultScenario {
+  ResourceMeta meta = 1;
+  FaultScenarioSpec spec = 2;
+  FaultScenarioStatus status = 3;
+}
+
+message CreateFaultScenarioRequest {
+  string lab_id = 1;
+  string name = 2;
+  FaultTarget target = 3;
+  string type = 4;
+  FaultImpairment impairment = 5;
+}
+
+message ListFaultScenariosRequest {
+  string lab_id = 1;
+}
+
+message ListFaultScenariosReply {
+  repeated FaultScenario scenarios = 1;
+}
+
+message FaultScenarioOpRequest {
+  string lab_id = 1;
+  string id = 2;
+}
+
+message DeleteFaultScenarioReply {}
 
 // --- Plan ---
 

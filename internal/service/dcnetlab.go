@@ -29,12 +29,13 @@ type DCNetLabService struct {
 	programs *biz.ProgramUsecase
 	packages *biz.PackageUsecase
 	traffic  *biz.TrafficUsecase
+	faults   *biz.FaultUsecase
 	log      *slog.Logger
 }
 
 // NewDCNetLabService wires the protobuf service.
-func NewDCNetLabService(labs *biz.LabUsecase, topos *biz.TopologyUsecase, plans *biz.PlanUsecase, ops *biz.OperationUsecase, power *biz.PowerUsecase, rt *biz.RuntimeUsecase, programs *biz.ProgramUsecase, packages *biz.PackageUsecase, traffic *biz.TrafficUsecase, log *slog.Logger) *DCNetLabService {
-	return &DCNetLabService{labs: labs, topos: topos, plans: plans, ops: ops, power: power, runtime: rt, programs: programs, packages: packages, traffic: traffic, log: log}
+func NewDCNetLabService(labs *biz.LabUsecase, topos *biz.TopologyUsecase, plans *biz.PlanUsecase, ops *biz.OperationUsecase, power *biz.PowerUsecase, rt *biz.RuntimeUsecase, programs *biz.ProgramUsecase, packages *biz.PackageUsecase, traffic *biz.TrafficUsecase, faults *biz.FaultUsecase, log *slog.Logger) *DCNetLabService {
+	return &DCNetLabService{labs: labs, topos: topos, plans: plans, ops: ops, power: power, runtime: rt, programs: programs, packages: packages, traffic: traffic, faults: faults, log: log}
 }
 
 // asAPIError maps biz-layer errors onto Kratos errors so the HTTP
@@ -497,6 +498,63 @@ func (s *DCNetLabService) GetTrafficScenarioHistory(ctx context.Context, req *v1
 	}
 
 	return reply, nil
+}
+
+// --- Fault ---
+
+func (s *DCNetLabService) CreateFaultScenario(ctx context.Context, req *v1.CreateFaultScenarioRequest) (*v1.FaultScenario, error) {
+	spec := model.FaultScenarioSpec{
+		Target:     faultTargetFromPB(req.Target),
+		Type:       req.Type,
+		Impairment: faultImpairmentFromPB(req.Impairment),
+	}
+
+	fs, err := s.faults.CreateFaultScenario(req.LabId, req.Name, spec)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return faultScenarioToPB(fs), nil
+}
+
+func (s *DCNetLabService) ListFaultScenarios(ctx context.Context, req *v1.ListFaultScenariosRequest) (*v1.ListFaultScenariosReply, error) {
+	scenarios, err := s.faults.ListFaultScenarios(req.LabId)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	reply := &v1.ListFaultScenariosReply{Scenarios: make([]*v1.FaultScenario, 0, len(scenarios))}
+	for _, fs := range scenarios {
+		reply.Scenarios = append(reply.Scenarios, faultScenarioToPB(fs))
+	}
+
+	return reply, nil
+}
+
+func (s *DCNetLabService) ApplyFaultScenario(ctx context.Context, req *v1.FaultScenarioOpRequest) (*v1.FaultScenario, error) {
+	fs, err := s.faults.ApplyFaultScenario(ctx, req.LabId, req.Id)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return faultScenarioToPB(fs), nil
+}
+
+func (s *DCNetLabService) RecoverFaultScenario(ctx context.Context, req *v1.FaultScenarioOpRequest) (*v1.FaultScenario, error) {
+	fs, err := s.faults.RecoverFaultScenario(ctx, req.LabId, req.Id)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return faultScenarioToPB(fs), nil
+}
+
+func (s *DCNetLabService) DeleteFaultScenario(ctx context.Context, req *v1.FaultScenarioOpRequest) (*v1.DeleteFaultScenarioReply, error) {
+	if err := s.faults.DeleteFaultScenario(ctx, req.LabId, req.Id); err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return &v1.DeleteFaultScenarioReply{}, nil
 }
 
 // --- Plans ---

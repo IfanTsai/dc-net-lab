@@ -206,6 +206,46 @@ export interface Link {
   status: { adminUp: boolean; operUp: boolean }
 }
 
+// FaultTarget identifies what a fault acts on: a node (nodeId) or a
+// link (linkId). side selects which endpoint an interface-down/
+// impairment fault acts on ("a", "b" or "both"); link-down always
+// acts on both regardless of side.
+export interface FaultTarget {
+  kind: 'node' | 'link' | string
+  nodeId?: string
+  nodeName?: string
+  linkId?: string
+  linkName?: string
+  side?: 'a' | 'b' | 'both' | string
+}
+
+// FaultImpairment shapes egress traffic with one netem qdisc; unset
+// fields are omitted, so at least one must be set.
+export interface FaultImpairment {
+  delayMs?: number
+  jitterMs?: number
+  lossPercent?: number
+  rateKbit?: number
+}
+
+// FaultScenario injects and recovers a controlled failure against a
+// node or a link. node-restart is a point-in-time event: applied
+// stays false even right after a successful apply.
+export interface FaultScenario {
+  meta: ResourceMeta
+  spec: {
+    labId: string
+    target: FaultTarget
+    type: 'node-stop' | 'node-restart' | 'link-down' | 'interface-down' | 'impairment' | string
+    impairment?: FaultImpairment
+  }
+  status: {
+    applied: boolean
+    appliedAt?: string
+    lastError?: string
+  }
+}
+
 export interface PlanOperation {
   type: string
   target: string

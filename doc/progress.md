@@ -12,7 +12,7 @@
 | Iteration 3 | Daemon Framework | 🚧 进行中（Auto Start / Restart Policy / 存活 + 就绪检查 / 启动顺序已落地；剩就绪门控排序、配置渲染 + Provider、Daemon UI，留到接 Pingmesh 前再做） |
 | Iteration 4 | Traffic | ✅ 已完成，含真实环境验证 |
 | Iteration 5 | 原生抓包（AF_PACKET） | ⬜ 未开始 |
-| Iteration 6 | 故障实验 | ⬜ 未开始 |
+| Iteration 6 | 故障实验 | ✅ 已完成，含真实环境验证（Link Down/Node Stop/Delay/Loss/Rate Limit/故障恢复/Traffic 联动均达成，Capture 联动待 It. 5） |
 | Iteration 7 | 扩容和 Generation Rollback | ⬜ 未开始（Generation 快照已就绪） |
 | Iteration 8 | Pingmesh 集成 | ⬜ 未开始 |
 | Iteration 9 | 虚拟网络（VPC/VXLAN） | ⬜ 未开始 |
@@ -218,6 +218,22 @@ containerlab 依赖 Linux 内核（netlink、网络命名空间），Darwin 无�
 - **Traffic UI**：新页面（列表 3 s 轮询 / 创建对话框选源+目标 server、协议、速率/并发/负载/持续时间、动态加断言 / 启停删除 / 实时指标列 + 断言 pass/fail 角标 / 图表抽屉复用 `MetricsChart.vue` 展示成功率+速率+p50/p95/p99 三块，5 s 轮询贴合采集节奏）。
 - **真实环境验证**（dc1，25 容器）：Create → Start 在真实 server 上起两个 trafficgen 进程（`pid` 非零、无重启、无 lastError），日志确认 client 按 `--concurrency`/`--interval` 并发发请求；发现并修复了上面记录的模式参数漏传坑；受当前 dc1 环境的已知漂移（长期运行 + WSL2 容器重启导致的 veth 丢失，见「关键经验记录」第 3 条）影响，本轮验证到"进程正确起停 + Collector 正确采集并如实反映失败"为止（assertion 正确判定 successRate 未达标），完整穿透 fabric 的成功流量待下次 Plan/Apply 重部署后复验；测试场景创建/启动/停止/删除全流程无残留（programs 与 scenario 均清理干净）。
 
+### 故障注入子系统（设计 §17，Iteration 6）
+
+用户可以对拓扑里的一个节点或一条链路注入受控故障、观察 Traffic 曲线掉坑、再一键恢复（设计文档 Iteration 6 交付项：Link Down / Node Stop / Delay / Loss / Rate Limit / 故障恢复 全部达成；Interface Down 顺带一起做；Traffic 联动本轮只做真实环境验证，Capture 联动因 It. 5 尚未开工推迟）。
+
+- **资源建模**（`internal/model/fault.go` + biz/data/service 分层 + `pb` API，独立于 Program/Traffic）：单一 `FaultScenario` 资源，`Spec.Target` 区分 `node`/`link`（link 额外带 `side: a/b/both`），`Spec.Type` 覆盖 `node-stop`/`node-restart`/`link-down`/`interface-down`/`impairment`。**两处对设计文档字面的偏差**（讨论阶段与用户对齐过，见下文「已知偏差」）：Delay/Jitter/Loss/Rate Limit 合并成一个 `impairment` 类型而非四个独立类型（对齐 `tc netem` 本身"一张网卡一个 qdisc"的物理事实，四个独立类型会需要内部合并/回退逻辑，UI 层的独立并不能消掉底层的合并复杂度）；同一 target 同一时刻只允许一个生效故障，Recover 直接恢复固定基线（接口 up / 无 qdisc / 容器 running），不做故障前快照结构——故障前状态在当前平台里永远是部署时写入的标准基线，等价于快照但不用真存一份。
+- **执行方式**：`node-stop`/`node-restart` 直接复用 `PowerUsecase.StopNode`/`StartNode`（pause/unpause 语义，理由见下）；`link-down`/`interface-down`/`impairment` 走 `runtime.Driver` 新增的 `SetInterfaceState`/`ApplyImpairment`/`ClearImpairment` 三个方法（`internal/runtime/fault.go`），跟 `ConnectInternet` 一样直接 `docker exec` 跑 `ip link set <iface> up/down` 与 `tc qdisc replace/del dev <iface> root netem ...`，不经过 server agent；`tc qdisc replace`（而非 `add`）与 `ip link set`（本身幂等）让 Apply 不需要读现有状态。`node-restart` 是瞬时事件（Stop 紧接 Start），Apply 后 `Applied` 直接落回 `false`，Recover 对它直接拒绝（"已自动恢复"）。
+- **Node Restart 选了 pause/unpause 而非真实 docker restart**：讨论阶段的关键取舍——真实容器重启在 WSL2/OrbStack 环境下会撞上「关键经验记录」第 3 条已知坑（veth 全部丢失，需要重新 Plan/Apply 才能恢复），会把"点 Recover 应该恢复正常"变成"点了之后链路还是断的"，与故障注入"故障可控、恢复优雅"的定位冲突；等这个环境限制解决或有明确场景要演示 agent 冷启动自愈，再升级成真实重启。
+- **一致性与回滚**：Apply 前用 `checkTargetFree` 拒绝对同一 target 的第二次 Apply（提示先 Recover）；`link-down`/`impairment` 需要操作两个端点时（如 `link-down` 两端一起 down），后一个端点失败会把前一个已成功的端点回滚，不留半生效状态；Delete 若仍生效会先自动 Recover 再删，不留下"资源没了但链路还断着"的孤儿态。
+- **拓扑图联动**：`TopologyCanvas.vue` 的 edge "dead" 判定从"只看端点节点是否整体停机"扩展为"再看这条 link 两端接口各自的观测 up 状态"（`Node.Status.Interfaces`，Observer 每 6 s `ip -br link` 采集，此前只在节点抽屉的接口表里展示、没人拿来画图）——`link-down`/`interface-down` 故障生效后拓扑图会自动把对应链路变灰，不需要拓扑组件知道 `FaultScenario` 这个资源存在，纯粹是把已经在采的真实数据画出来；`impairment` 因为 qdisc 不改变 operstate，不会体现在拓扑图颜色上（预期内，效果要看 Traffic 曲线）。
+- **UI**：独立「故障」页面（结构比照 Traffic 页面：列表 3 s 轮询 / 创建对话框先选 target 类型再联动出节点或链路下拉、故障类型、side、impairment 参数 / 注入·恢复切换按钮 / 生效中删除会先自动恢复）；另外在拓扑图的节点抽屉加「故障」标签页（快捷注入 node-stop/node-restart，需二次确认）、链路抽屉加"注入故障"小节（link-down / 分端 interface-down / 内联 impairment 小表单，均为一键创建即 Apply，target 已知不用再选一次）——两处都会列出已作用于当前节点/链路的故障并可直接 Apply/Recover/删除。
+- **测试**：`internal/runtime/fault_test.go` 表驱动覆盖 `netemArgs` 的参数组合（delay+jitter/loss/rate 任意组合、jitter 无 delay 时被丢弃、全空时不生成参数）；`internal/biz/fault_test.go` 用假 driver 记录 exec 调用，覆盖校验规则（type/side/impairment 合法性）、target 名称解析、link-down 双端下发与恢复、interface-down 单端、impairment 参数透传、同 target 二次 Apply 拒绝、双端故障后端失败时前端回滚、node-stop/node-restart 生命周期、Delete 前自动 Recover。
+- **真实环境验证**（my-dc，25 容器，standard profile）：TDD 方式——先写断言脚本（Python 直打 REST API + `docker exec` 检查内核真实状态）再跑，覆盖全部 5 种故障类型：node-stop/restart 的容器真实 pause/unpause、link-down 两端 `ip link set down` 真实生效并被 Observer 6 s 扫描周期采到、interface-down 单端只下发到目标端、impairment 的 `tc qdisc` 真实带上 `delay 100ms 10ms loss 1% rate 5Mbit`、同一 target 二次 Apply 真实被拒绝、Delete 前自动 Recover、node-restart 拒绝二次 Recover——32 项断言全过。前端用 Playwright（Firefox，headless Chromium 因缺系统库且无 sudo 装不上）跑真实浏览器：链路故障生效后拓扑图确实自动变灰（WebSocket 帧内容与像素级截图交叉验证，flags/state 需要区分 admin 与 oper 两层）、节点抽屉「故障」标签页与链路抽屉"注入故障"小节均按设计渲染、全程 0 个浏览器控制台错误。过程中发现并修复/确认了三件事（均非本轮代码缺陷）：
+  1. **验证前置条件**：my-dc 因宿主长期运行撞上「关键经验记录」第 3 条已知坑（veth 全部丢失），验证前先跑一次 Plan/Apply 重部署恢复,并同步刷新了本节此前记录的所有节点/链路 ID 示例。
+  2. **interface-down 单端的物理边界**：只对目标端跑 `ip link set down`，veth 对端不会被我们的代码触碰，但内核会让对端天然失去 carrier（`NO-CARRIER`，`state DOWN`，自身 `IFF_UP` 管理位不变）——这是 veth pair 的物理事实（等价于拔掉一根网线的一端两头都断），"side" 控制的是"命令在哪端执行"，不是"数据还通不通"（两端物理上共享同一根线,通不通不取决于哪端被标记 down）。
+  3. **拓扑图变灰的视觉强度**：现有 `edge.dead` 样式（`line-style: dotted`、`#c0c4cc`、`opacity: 0.5`）是照抄"节点掉线"沿用的既有视觉语言，在整页截图里非常不显眼，需要裁剪放大才能确认生效——功能正确，但作为故障演示的核心视觉反馈,视觉强度是否需要加强（比如更饱和的颜色）值得后续单独讨论,这轮不擅自改动既有配色决定。
+
 ### 代码规范与工程化
 
 - [golang-style.md](golang-style.md) 为 Go 代码基线；golangci-lint（`.golangci.yml`，版本固定）+ 自研 `scripts/check-style.py`（空行语义）挂在 `make lint`，零告警纳入提交门禁。
@@ -243,15 +259,17 @@ containerlab 依赖 Linux 内核（netlink、网络命名空间），Darwin 无�
 4. **采集周期**：设计 §13 的 2/3/5s 分表合并为 2s（容器状态）+ 6s（BGP/路由/接口）两档。
 5. **Operation 进度仍为 HTTP 轮询**：WebSocket 目前只覆盖拓扑观测，Operation 推送后续可迁移。
 6. **Daemon 未建独立资源**（设计 §9.7 的 `DaemonSpec` 内嵌 `ProgramSpec`）：存活 / 就绪检查、启动顺序等 Daemon 语义作为字段增量落在 `ProgramSpec` 上，"Daemon"即一种带健康检查的 simple Program——API、存储、agent 协议、UI 全部复用，迁移成本为零（有意为之，见"下一步计划"的建模决策）。
+7. **故障类型合并**：设计 §17 字面列了 Delay/Jitter/Loss/Rate Limit 四个独立故障类型，实现合并成一个 `impairment` 类型（字段可任意组合）——对齐 `tc netem` 本身"一张网卡一个 qdisc"的物理事实，四个独立类型并不能避免底层合并，只会把合并/回退逻辑转嫁给实现（有意为之，讨论阶段与用户对齐过，详见「故障注入子系统」）。
+8. **故障恢复不做快照结构**：设计 §17 要求"故障恢复必须基于故障前快照"，实现里同一 target 同一时刻只允许一个生效故障，Recover 恢复固定基线（接口 up / 无 qdisc / 容器 running）——当前平台里故障前状态永远是这个标准基线，二者事实等价，只是不存一份快照数据（有意为之，若未来要支持同一 target 叠加多个故障，需要重新引入真快照链）。
 
 ## 下一步计划（按优先级）
 
 ### 迭代路线与排序
 
-原计划顺序为 It. 3 → It. 4 → It. 5 → It. 6；实际执行时与用户对齐后调整为 **It. 4 Traffic（已完成）→ It. 6 故障 → It. 5 抓包 → It. 3 剩余 + It. 8 Pingmesh → It. 7 扩容 / Rollback → It. 9/10 虚拟网络 / EIP**，理由：
+原计划顺序为 It. 3 → It. 4 → It. 5 → It. 6；实际执行时与用户对齐后调整为 **It. 4 Traffic（已完成）→ It. 6 故障（已完成，含真实环境验证）→ It. 5 抓包 → It. 3 剩余 + It. 8 Pingmesh → It. 7 扩容 / Rollback → It. 9/10 虚拟网络 / EIP**，理由：
 
 - **Traffic（It. 4）已提前于 It. 3 剩余项完成**：trafficgen 已就绪、演示价值高于就绪门控排序 / `GenericDaemonProvider`（两者暂无真实消费者，留到接 Pingmesh 前再做，避免为无消费者的抽象提前设计）。
-- **故障实验（It. 6）紧跟 Traffic**：Node Stop 已有（pause/unpause），Link Down/Delay/Loss/Rate Limit 均为 netem/netlink 操作，"注入故障 → Traffic 曲线掉坑 → 恢复"是平台最核心的演示闭环，Traffic 的指标管道已就绪可直接消费。抓包（It. 5，AF_PACKET）为独立能力，后置不损失价值。设计 §17 要求"故障恢复基于故障前快照"，需引入 FaultSession 资源持有快照，是该迭代的建模重点。
+- **故障实验（It. 6）紧跟 Traffic 完成**：Link Down / Node Stop / Delay / Loss / Rate Limit / 故障恢复均已交付（详见「故障注入子系统」），"注入故障 → Traffic 曲线掉坑 → 恢复"这条平台最核心的演示闭环已经打通，Traffic 的指标管道被直接复用。抓包（It. 5，AF_PACKET）为独立能力，后置不损失价值，"Traffic 和 Capture 联动"里 Capture 那半句留到 It. 5 完成后补验证。快照结构按讨论阶段的结论简化为固定基线恢复（见「已知偏差」第 8 条），未引入独立的 FaultSession/快照资源。
 - **Pingmesh（It. 8）提前到扩容之前**：它是 Daemon Framework 的首个真实消费者，尽早验证 DaemonProvider 接口设计是否成立；扩容 / Rollback（Generation 快照已就绪）不阻塞任何人，何时做都行。
 
 ### Iteration 3 剩余项拆解

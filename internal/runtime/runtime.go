@@ -64,6 +64,15 @@ type Driver interface {
 	// ConnectInternet attaches a deployed node to the shared WAN
 	// network and routes its non-fabric traffic to the real internet.
 	ConnectInternet(ctx context.Context, labName, nodeName string) error
+	// SetInterfaceState brings a node's interface administratively up
+	// or down, for link-down and interface-down faults.
+	SetInterfaceState(ctx context.Context, labName, nodeName, iface string, up bool) error
+	// ApplyImpairment shapes egress traffic on a node's interface with
+	// a netem qdisc built from imp.
+	ApplyImpairment(ctx context.Context, labName, nodeName, iface string, imp Impairment) error
+	// ClearImpairment removes a previously applied netem qdisc from a
+	// node's interface; a no-op if none is present.
+	ClearImpairment(ctx context.Context, labName, nodeName, iface string) error
 }
 
 // TerminalSession is a live interactive shell inside a lab node.
@@ -403,5 +412,17 @@ func (NoopDriver) StopNodes(ctx context.Context, labName string, nodeNames []str
 func (NoopDriver) EnsureImage(ctx context.Context, image string) error { return nil }
 
 func (NoopDriver) ConnectInternet(ctx context.Context, labName, nodeName string) error {
+	return ErrNotSupported
+}
+
+func (NoopDriver) SetInterfaceState(ctx context.Context, labName, nodeName, iface string, up bool) error {
+	return ErrNotSupported
+}
+
+func (NoopDriver) ApplyImpairment(ctx context.Context, labName, nodeName, iface string, imp Impairment) error {
+	return ErrNotSupported
+}
+
+func (NoopDriver) ClearImpairment(ctx context.Context, labName, nodeName, iface string) error {
 	return ErrNotSupported
 }

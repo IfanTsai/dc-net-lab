@@ -4,6 +4,7 @@ import TopologyPage from '../pages/TopologyPage.vue'
 import ProgramsPage from '../pages/ProgramsPage.vue'
 import PackagesPage from '../pages/PackagesPage.vue'
 import TrafficPage from '../pages/TrafficPage.vue'
+import FaultsPage from '../pages/FaultsPage.vue'
 import OperationsPage from '../pages/OperationsPage.vue'
 
 export const router = createRouter({
@@ -15,6 +16,7 @@ export const router = createRouter({
     { path: '/programs', component: ProgramsPage },
     { path: '/packages', component: PackagesPage },
     { path: '/traffic', component: TrafficPage },
+    { path: '/faults', component: FaultsPage },
     { path: '/operations', component: OperationsPage },
   ],
 })

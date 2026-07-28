@@ -699,3 +699,71 @@ func trafficAssertionsToPB(assertions []model.TrafficAssertion) []*v1.TrafficAss
 
 	return pbs
 }
+
+// --- Fault ---
+
+func faultTargetFromPB(t *v1.FaultTarget) model.FaultTarget {
+	if t == nil {
+		return model.FaultTarget{}
+	}
+
+	return model.FaultTarget{
+		NodeID: t.NodeId,
+		LinkID: t.LinkId,
+		Side:   t.Side,
+	}
+}
+
+func faultTargetToPB(t model.FaultTarget) *v1.FaultTarget {
+	return &v1.FaultTarget{
+		Kind:     t.Kind,
+		NodeId:   t.NodeID,
+		NodeName: t.NodeName,
+		LinkId:   t.LinkID,
+		LinkName: t.LinkName,
+		Side:     t.Side,
+	}
+}
+
+func faultImpairmentFromPB(imp *v1.FaultImpairment) *model.FaultImpairmentSpec {
+	if imp == nil {
+		return nil
+	}
+
+	return &model.FaultImpairmentSpec{
+		DelayMs:     int(imp.DelayMs),
+		JitterMs:    int(imp.JitterMs),
+		LossPercent: imp.LossPercent,
+		RateKbit:    int(imp.RateKbit),
+	}
+}
+
+func faultImpairmentToPB(imp *model.FaultImpairmentSpec) *v1.FaultImpairment {
+	if imp == nil {
+		return nil
+	}
+
+	return &v1.FaultImpairment{
+		DelayMs:     int32(imp.DelayMs),
+		JitterMs:    int32(imp.JitterMs),
+		LossPercent: imp.LossPercent,
+		RateKbit:    int32(imp.RateKbit),
+	}
+}
+
+func faultScenarioToPB(s *model.FaultScenario) *v1.FaultScenario {
+	return &v1.FaultScenario{
+		Meta: metaToPB(s.Meta),
+		Spec: &v1.FaultScenarioSpec{
+			LabId:      s.Spec.LabID,
+			Target:     faultTargetToPB(s.Spec.Target),
+			Type:       s.Spec.Type,
+			Impairment: faultImpairmentToPB(s.Spec.Impairment),
+		},
+		Status: &v1.FaultScenarioStatus{
+			Applied:   s.Status.Applied,
+			AppliedAt: timePB(s.Status.AppliedAt),
+			LastError: s.Status.LastError,
+		},
+	}
+}
