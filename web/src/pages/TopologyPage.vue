@@ -662,9 +662,12 @@ async function deleteFault(f: FaultScenario) {
     <el-alert v-if="driftedNodes.length" type="warning" show-icon :closable="false" class="drift-banner">
       <template #title>
         <span>{{ t('topology.driftBanner', { count: driftedNodes.length }) }}</span>
-        <el-tooltip :content="t('topology.driftBannerWhy')" placement="bottom" popper-class="drift-why-tooltip">
-          <el-icon class="drift-why"><QuestionFilled /></el-icon>
-        </el-tooltip>
+        <el-popover placement="bottom-start" :width="360" trigger="hover">
+          <template #reference>
+            <el-icon class="drift-why"><QuestionFilled /></el-icon>
+          </template>
+          <div class="drift-why-body">{{ t('topology.driftBannerWhy') }}</div>
+        </el-popover>
       </template>
       <div class="drift-body">
         <span class="drift-nodes">{{ t('topology.driftNodes', { names: driftedNodeNames }) }}</span>
@@ -1296,8 +1299,8 @@ h4 { margin: 16px 0 8px; }
 </style>
 
 <style>
-/* el-tooltip teleports its popper to <body>, outside this component's
-   scoped tree, so the width cap for the drift-reason tooltip has to
-   live in an unscoped block. */
-.drift-why-tooltip { max-width: 360px; line-height: 1.6; }
+/* el-popover teleports its popper to <body>, outside this component's
+   scoped tree, so the drift-reason body style has to live in an
+   unscoped block. */
+.drift-why-body { font-size: 12px; line-height: 1.7; }
 </style>

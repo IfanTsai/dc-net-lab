@@ -3,8 +3,12 @@
 // external → dc-edge → superspine → spine → leaf → server.
 // Pure rendering: business actions live in the page, not here.
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { QuestionFilled } from '@element-plus/icons-vue'
 import cytoscape, { type Core } from 'cytoscape'
 import type { Link, Node } from '../types/models'
+
+const { t } = useI18n()
 
 const props = defineProps<{ nodes: Node[]; links: Link[] }>()
 const emit = defineEmits<{
@@ -56,6 +60,7 @@ const roleGlyph: Record<string, string> = {
 const badgeColor: Record<string, string> = {
   ok: '#67c23a', // running, all BGP sessions established
   warn: '#e6a23c', // running but BGP not fully converged
+  agent: '#9c6ade', // server only: running but the node-agent is unreachable
   stopped: '#909399',
   failed: '#f56c6c',
 }
@@ -97,14 +102,25 @@ function nodeBadge(n: Node): string {
   if (s.runtimeState !== 'Running') return 'failed'
   if (s.bgpConfigured > 0 && s.bgpEstablished < s.bgpConfigured) return 'warn'
   // A running server whose node-agent is unreachable cannot run
-  // programs — surface it as degraded, not healthy.
-  if (s.agentState === 'Down') return 'warn'
+  // programs; the dataplane is fine, so it gets its own badge
+  // (management plane lost) instead of the network warn.
+  if (s.agentState === 'Down') return 'agent'
   return 'ok'
 }
 
 const roleIcons: Record<string, string> = Object.fromEntries(
   Object.keys(roleGlyph).map((r) => [r, roleIcon(r)]),
 )
+
+// Legend entries for the observed-state badges; keys resolve to the
+// short label and its hover tooltip in the topology i18n namespace.
+const legendBadges = [
+  { badge: 'ok', key: 'badgeOk' },
+  { badge: 'warn', key: 'badgeWarn' },
+  { badge: 'agent', key: 'badgeAgent' },
+  { badge: 'stopped', key: 'badgeStopped' },
+  { badge: 'failed', key: 'badgeFailed' },
+]
 
 const legendRoles = [
   { role: 'external', label: 'External' },
@@ -448,10 +464,40 @@ onBeforeUnmount(() => {
   <div class="wrapper">
     <div ref="container" class="canvas" />
     <div class="legend">
-      <span v-for="r in legendRoles" :key="r.role" class="legend-item">
-        <img :src="roleIcons[r.role]" :alt="r.role" />
-        {{ r.label }}
-      </span>
+      <div class="legend-row">
+        <span v-for="r in legendRoles" :key="r.role" class="legend-item">
+          <img :src="roleIcons[r.role]" :alt="r.role" />
+          {{ r.label }}
+        </span>
+      </div>
+      <div class="legend-row">
+        <el-tooltip
+          v-for="b in legendBadges"
+          :key="b.badge"
+          :content="t(`topology.${b.key}Tip`)"
+          placement="top"
+          effect="light"
+        >
+          <span class="legend-item">
+            <span class="badge-dot" :style="{ background: badgeColor[b.badge] }" />
+            {{ t(`topology.${b.key}`) }}
+          </span>
+        </el-tooltip>
+        <el-popover placement="top-start" :width="360" trigger="hover">
+          <template #reference>
+            <el-icon class="badge-help"><QuestionFilled /></el-icon>
+          </template>
+          <div class="badge-help-body">
+            <p class="badge-help-title">{{ t('topology.badgeHelpTitle') }}</p>
+            <p>{{ t('topology.badgeHelpIntro') }}</p>
+            <p v-for="b in legendBadges" :key="b.badge">
+              <span class="badge-dot" :style="{ background: badgeColor[b.badge] }" />
+              <b>{{ t(`topology.${b.key}`) }}</b>: {{ t(`topology.${b.key}Tip`) }}
+            </p>
+            <p>{{ t('topology.badgeHelpNone') }}</p>
+          </div>
+        </el-popover>
+      </div>
     </div>
   </div>
 </template>
@@ -464,7 +510,8 @@ onBeforeUnmount(() => {
   left: 12px;
   bottom: 12px;
   display: flex;
-  gap: 14px;
+  flex-direction: column;
+  gap: 5px;
   padding: 6px 12px;
   border: 1px solid var(--el-border-color);
   border-radius: 4px;
@@ -472,6 +519,32 @@ onBeforeUnmount(() => {
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }
+.legend-row { display: flex; align-items: center; gap: 14px; }
 .legend-item { display: inline-flex; align-items: center; gap: 5px; }
 .legend-item img { width: 18px; height: 18px; }
+.badge-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.badge-help { cursor: help; font-size: 14px; }
+.badge-help:hover { color: var(--el-color-primary); }
+</style>
+
+<style>
+/* el-popover teleports its popper to <body>, outside this component's
+   scoped tree, so the help-body styles live in an unscoped block. */
+.badge-help-body { font-size: 12px; line-height: 1.7; }
+.badge-help-body p { margin: 0 0 4px; }
+.badge-help-body .badge-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: -1px;
+}
+.badge-help-body .badge-help-title { font-weight: 600; }
 </style>
