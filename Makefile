@@ -2,7 +2,7 @@ GO ?= go
 # buf and the protoc plugins are installed into GOPATH/bin by `make init`.
 TOOL_PATH := $(shell $(GO) env GOPATH)/bin:$(PATH)
 
-.PHONY: all init api wire build test vet lint run up down status orb-setup web-install web-dev web-build edge-image clean
+.PHONY: all init api wire build test vet lint run up dev down status orb-setup web-install web-dev web-build edge-image clean
 
 all: build test
 
@@ -54,9 +54,13 @@ golden:
 run: build
 	./bin/dcnetlab-controller --data-dir data
 
-# One-command start/stop of backend + web UI.
+# One-command start/stop of backend + web UI; "dev" serves the UI
+# with hot reload through the controller port.
 up:
 	scripts/dcnetlab up
+
+dev:
+	scripts/dcnetlab up --dev
 
 down:
 	scripts/dcnetlab down

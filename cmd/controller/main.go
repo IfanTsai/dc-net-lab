@@ -33,6 +33,8 @@ func main() {
 	flag.StringVar(&sc.HTTPAddr, "listen", "127.0.0.1:8080", "HTTP address to listen on")
 	flag.StringVar(&sc.GRPCAddr, "grpc-listen", "127.0.0.1:9090", "gRPC address to listen on (empty to disable)")
 	flag.StringVar(&sc.WebDir, "web-dir", "", "serve the built web UI from this directory (optional)")
+	flag.StringVar(&sc.WebDevProxy, "web-dev-proxy", "",
+		"proxy web UI requests to this Vite dev server URL instead of serving web-dir (hot reload)")
 	// The package repository must be reachable from lab containers, so
 	// unlike the API it binds all interfaces (read-only content).
 	flag.StringVar(&sc.RepoAddr, "repo-listen", "0.0.0.0:50062", "package repository address for lab servers (empty to disable)")

@@ -78,7 +78,7 @@ make down                    # 一键停止
 常用命令与配置：
 
 ```bash
-scripts/dcnetlab up --dev    # 开发模式:Controller + Vite 热更新(http://localhost:5173)
+make dev                     # 开发模式:同一入口,Controller 反代 Vite 热更新
 scripts/dcnetlab status      # 查看运行状态
 scripts/dcnetlab logs        # 跟踪 Controller 日志
 ```

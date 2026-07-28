@@ -6,10 +6,11 @@ package conf
 
 // Server configures the transport servers.
 type Server struct {
-	HTTPAddr string // HTTP listen address
-	GRPCAddr string // gRPC listen address, "" disables gRPC
-	WebDir   string // built web UI directory, "" disables serving it
-	RepoAddr string // package repository listen address, "" disables it
+	HTTPAddr    string // HTTP listen address
+	GRPCAddr    string // gRPC listen address, "" disables gRPC
+	WebDir      string // built web UI directory, "" disables serving it
+	WebDevProxy string // Vite dev server URL proxied instead of WebDir, "" disables it
+	RepoAddr    string // package repository listen address, "" disables it
 }
 
 // Data configures the data layer: persistence and the runtime driver.

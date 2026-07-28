@@ -247,7 +247,7 @@ containerlab 依赖 Linux 内核（netlink、网络命名空间），Darwin 无�
 ### 代码规范与工程化
 
 - [golang-style.md](golang-style.md) 为 Go 代码基线；golangci-lint（`.golangci.yml`，版本固定）+ 自研 `scripts/check-style.py`（空行语义）挂在 `make lint`，零告警纳入提交门禁。
-- `scripts/dcnetlab up|down|status|logs`（`make up`/`make down`）一键管理 Controller + 前端；`up --dev` 附带 Vite 热更新。
+- `scripts/dcnetlab up|down|status|logs`（`make up`/`make down`）一键管理 Controller + 前端；`up --dev`（`make dev`）附带 Vite 热更新——controller 以 `--web-dev-proxy` 把非 API 请求（含 HMR WebSocket）反代到本机 Vite，浏览器始终只访问 controller 端口，不再需要 5173 直连（OrbStack 场景下 Vite 也无需再绑全部接口）。
 
 ## 关键经验记录
 

@@ -2,7 +2,7 @@
 # DCNetLab launcher: one command to start/stop the controller and web UI.
 #
 #   scripts/dcnetlab up          build backend + web UI, start controller serving both
-#   scripts/dcnetlab up --dev    start controller + Vite dev server (hot reload)
+#   scripts/dcnetlab up --dev    same URL, controller proxies to Vite (hot reload)
 #   scripts/dcnetlab down        stop everything started by "up"
 #   scripts/dcnetlab status      show what is running
 #   scripts/dcnetlab logs        tail controller logs
@@ -174,6 +174,11 @@ cmd_up() {
       exit 1
     fi
     web_args=(--web-dir "$ROOT/web/dist")
+  else
+    # Dev mode: the controller reverse-proxies web requests (and the
+    # Vite HMR WebSocket) to the local dev server, so the browser
+    # stays on the controller port and still gets hot reload.
+    web_args=(--web-dev-proxy "http://127.0.0.1:5173")
   fi
 
   echo "starting controller on $LISTEN (runtime: $RUNTIME)..."
@@ -187,25 +192,20 @@ cmd_up() {
 
   if [ "$dev" = 1 ]; then
     echo "starting Vite dev server..."
-    # When forwarded into OrbStack, Vite must bind all interfaces to
-    # be reachable from the mac browser via the machine hostname.
-    local vite_args=""
-    [ -n "$ADVERTISE" ] && vite_args="-- --host"
+    # The controller proxies to Vite over loopback, so Vite stays
+    # bound to localhost even when forwarded into OrbStack.
     if command -v setsid >/dev/null 2>&1; then
       # setsid may fork, so the session leader writes its own pid;
       # "down" kills that process group to take npm and vite with it.
-      (cd "$ROOT/web" && WEB_PID="$WEB_PID" VITE_ARGS="$vite_args" setsid bash -c 'echo $$ >"$WEB_PID"; exec npm run dev $VITE_ARGS' >"$WEB_LOG" 2>&1 </dev/null &)
+      (cd "$ROOT/web" && WEB_PID="$WEB_PID" setsid bash -c 'echo $$ >"$WEB_PID"; exec npm run dev' >"$WEB_LOG" 2>&1 </dev/null &)
     else
       # macOS has no setsid; record the npm pid directly, npm forwards
       # signals to vite so a plain kill in "down" is enough.
-      (cd "$ROOT/web" && nohup npm run dev $vite_args >"$WEB_LOG" 2>&1 </dev/null & echo $! >"$WEB_PID")
+      (cd "$ROOT/web" && nohup npm run dev >"$WEB_LOG" 2>&1 </dev/null & echo $! >"$WEB_PID")
     fi
     for _ in $(seq 1 20); do [ -s "$WEB_PID" ] && break; sleep 0.1; done
-    local web_host=localhost
-    [ -n "$ADVERTISE" ] && web_host="${ADVERTISE%%:*}"
     echo
-    echo "DCNetLab is up:  http://$web_host:5173  (dev, hot reload)"
-    echo "API:             http://${ADVERTISE:-$LISTEN}"
+    echo "DCNetLab is up:  http://${ADVERTISE:-$LISTEN}  (dev, hot reload)"
   else
     echo
     echo "DCNetLab is up:  http://${ADVERTISE:-$LISTEN}"
@@ -230,7 +230,7 @@ cmd_status() {
     echo "controller: stopped"
   fi
   if alive "$WEB_PID"; then
-    echo "web dev:    running (pid $(cat "$WEB_PID"), http://localhost:5173)"
+    echo "web dev:    running (pid $(cat "$WEB_PID"), hot reload via http://${ADVERTISE:-$LISTEN})"
   else
     echo "web dev:    stopped"
   fi
