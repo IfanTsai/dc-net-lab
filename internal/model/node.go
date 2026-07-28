@@ -77,9 +77,16 @@ type NodeSpec struct {
 }
 
 // InterfaceStatus is the observed state of one simulated interface.
+// InterfaceStatus is one simulated interface's observed state.
+// Missing is true when the kernel has no such interface at all (e.g.
+// its veth pair was lost to a container restart), as opposed to being
+// present but administratively/operationally down — a distinction a
+// fault injection never produces, since faults only ever toggle an
+// existing interface's state.
 type InterfaceStatus struct {
-	Name string `json:"name"`
-	Up   bool   `json:"up"`
+	Name    string `json:"name"`
+	Up      bool   `json:"up"`
+	Missing bool   `json:"missing,omitempty"`
 }
 
 // NodeStatus is the observed state of a node, filled by the observer.

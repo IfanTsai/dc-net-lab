@@ -10,6 +10,7 @@ const (
 	OperationDestroyLab OperationType = "DestroyLab"
 	OperationStartLab   OperationType = "StartLab"
 	OperationStopLab    OperationType = "StopLab"
+	OperationRepairLab  OperationType = "RepairLab"
 )
 
 // OperationState is the lifecycle state of an operation.

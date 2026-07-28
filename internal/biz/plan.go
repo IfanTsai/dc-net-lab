@@ -264,6 +264,75 @@ func (uc *PlanUsecase) ApplyPlan(planID string) (*model.Operation, error) {
 	return op, nil
 }
 
+// RepairLab re-attaches simulated interfaces the runtime lost outside
+// the platform's control (typically a host Docker daemon restart
+// dropping the veth pairs containerlab wired in — see doc/progress.md
+// "关键经验记录" #3). It re-runs the deploy against the lab's current
+// generation artifact — already-running containers keep their PID,
+// uptime and programs; containerlab just re-attaches what is missing
+// (idempotent, verified in the real environment: FRR/zebra picks the
+// reappeared interfaces straight back up over netlink, no config
+// re-injection needed). Unlike ApplyPlan this never changes the
+// generation, so resource IDs are stable across a repair.
+func (uc *PlanUsecase) RepairLab(labID string) (*model.Operation, error) {
+	lab, err := uc.repo.GetLab(labID)
+	if err != nil {
+		return nil, fmt.Errorf("get lab: %w", err)
+	}
+
+	if lab.Meta.Generation == 0 {
+		return nil, fmt.Errorf("lab %q has no deployed generation; apply a plan first", lab.Meta.Name)
+	}
+
+	nodes, err := uc.repo.ListNodes(labID)
+	if err != nil {
+		return nil, fmt.Errorf("list nodes: %w", err)
+	}
+
+	links, err := uc.repo.ListLinks(labID)
+	if err != nil {
+		return nil, fmt.Errorf("list links: %w", err)
+	}
+
+	op, err := uc.ops.Create(lab.Meta.ID, model.OperationRepairLab, model.ResourceRef{Type: "lab", ID: labID})
+	if err != nil {
+		return nil, fmt.Errorf("create repair operation: %w", err)
+	}
+
+	genDir := generationDir(uc.dataDir, lab.Meta.ID, lab.Meta.Generation)
+	steps := []operation.Step{
+		{Name: "DeployTopology", Fn: func(ctx context.Context) error {
+			return uc.driver.Deploy(ctx, genDir)
+		}},
+		{Name: "ConnectInternet", Fn: func(ctx context.Context) error {
+			return uc.connectInternet(ctx, lab, nodes)
+		}},
+		{Name: "ValidateControlPlane", Fn: func(ctx context.Context) error {
+			return uc.validateControlPlane(ctx, lab, nodes, links)
+		}},
+		{Name: "ValidateDataPlane", Fn: func(ctx context.Context) error {
+			return uc.validateDataPlane(ctx, lab, nodes)
+		}},
+	}
+
+	uc.ops.Run(op, steps, func(failed error) {
+		lab.Meta.Phase = model.PhaseRunning
+		lab.Meta.LastError = nil
+		if failed != nil {
+			lab.Meta.Phase = model.PhaseFailed
+			lab.Meta.LastError = &model.ResourceError{
+				Code: "REPAIR_FAILED", Message: failed.Error(), Time: time.Now().UTC(),
+			}
+		}
+
+		if err := uc.repo.UpdateLab(lab); err != nil {
+			uc.log.Error("update lab", "lab_id", lab.Meta.ID, "error", err)
+		}
+	})
+
+	return op, nil
+}
+
 // connectInternet attaches every external router to the WAN network
 // after deploy. The compiler cannot emit this as exec commands: the
 // WAN interface only exists once the container joins the network.

@@ -84,9 +84,14 @@ export interface Node {
   }
 }
 
+// missing is true when the kernel has no such interface at all (e.g.
+// its veth pair was lost to a host Docker restart), as opposed to
+// being present but administratively/operationally down — a fault
+// injection never produces missing, only down.
 export interface InterfaceStatus {
   name: string
   up: boolean
+  missing?: boolean
 }
 
 // RuntimeInterface is one kernel interface of a node's container, as

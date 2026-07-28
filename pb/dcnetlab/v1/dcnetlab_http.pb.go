@@ -59,6 +59,7 @@ const OperationDCNetLabListProfiles = "/dcnetlab.v1.DCNetLab/ListProfiles"
 const OperationDCNetLabListPrograms = "/dcnetlab.v1.DCNetLab/ListPrograms"
 const OperationDCNetLabListTrafficScenarios = "/dcnetlab.v1.DCNetLab/ListTrafficScenarios"
 const OperationDCNetLabRecoverFaultScenario = "/dcnetlab.v1.DCNetLab/RecoverFaultScenario"
+const OperationDCNetLabRepairLab = "/dcnetlab.v1.DCNetLab/RepairLab"
 const OperationDCNetLabStartLab = "/dcnetlab.v1.DCNetLab/StartLab"
 const OperationDCNetLabStartNode = "/dcnetlab.v1.DCNetLab/StartNode"
 const OperationDCNetLabStartProgram = "/dcnetlab.v1.DCNetLab/StartProgram"
@@ -173,6 +174,12 @@ type DCNetLabHTTPServer interface {
 	ListPrograms(context.Context, *ListProgramsRequest) (*ListProgramsReply, error)
 	ListTrafficScenarios(context.Context, *ListTrafficScenariosRequest) (*ListTrafficScenariosReply, error)
 	RecoverFaultScenario(context.Context, *FaultScenarioOpRequest) (*FaultScenario, error)
+	// RepairLab RepairLab re-attaches any simulated interfaces the runtime lost
+	// (e.g. a host Docker daemon restart dropping veth pairs) without
+	// going through Plan/Apply: it re-runs the same idempotent deploy
+	// against the lab's current generation, so already-running
+	// containers and their programs are left untouched.
+	RepairLab(context.Context, *RepairLabRequest) (*OperationRef, error)
 	// StartLab StartLab / StopLab power the deployed containers of a lab on and
 	// off (docker start/stop) without touching the generation.
 	StartLab(context.Context, *StartLabRequest) (*OperationRef, error)
@@ -201,6 +208,7 @@ func RegisterDCNetLabHTTPServer(s *http.Server, srv DCNetLabHTTPServer) {
 	r.DELETE("/api/v1/labs/{id}", _DCNetLab_DeleteLab0_HTTP_Handler(srv))
 	r.POST("/api/v1/labs/{id}/start", _DCNetLab_StartLab0_HTTP_Handler(srv))
 	r.POST("/api/v1/labs/{id}/stop", _DCNetLab_StopLab0_HTTP_Handler(srv))
+	r.POST("/api/v1/labs/{id}/repair", _DCNetLab_RepairLab0_HTTP_Handler(srv))
 	r.GET("/api/v1/labs/{lab_id}/nodes", _DCNetLab_ListNodes0_HTTP_Handler(srv))
 	r.GET("/api/v1/labs/{lab_id}/links", _DCNetLab_ListLinks0_HTTP_Handler(srv))
 	r.GET("/api/v1/labs/{lab_id}/allocations", _DCNetLab_ListAllocations0_HTTP_Handler(srv))
@@ -372,6 +380,31 @@ func _DCNetLab_StopLab0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Conte
 		http.SetOperation(ctx, OperationDCNetLabStopLab)
 		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
 			return srv.StopLab(ctx, req.(*StopLabRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*OperationRef)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_RepairLab0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in RepairLabRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabRepairLab)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.RepairLab(ctx, req.(*RepairLabRequest))
 		})
 		out, err := h(ctx, &in)
 		if err != nil {
@@ -1492,6 +1525,12 @@ type DCNetLabHTTPClient interface {
 	ListPrograms(ctx context.Context, req *ListProgramsRequest, opts ...http.CallOption) (rsp *ListProgramsReply, err error)
 	ListTrafficScenarios(ctx context.Context, req *ListTrafficScenariosRequest, opts ...http.CallOption) (rsp *ListTrafficScenariosReply, err error)
 	RecoverFaultScenario(ctx context.Context, req *FaultScenarioOpRequest, opts ...http.CallOption) (rsp *FaultScenario, err error)
+	// RepairLab RepairLab re-attaches any simulated interfaces the runtime lost
+	// (e.g. a host Docker daemon restart dropping veth pairs) without
+	// going through Plan/Apply: it re-runs the same idempotent deploy
+	// against the lab's current generation, so already-running
+	// containers and their programs are left untouched.
+	RepairLab(ctx context.Context, req *RepairLabRequest, opts ...http.CallOption) (rsp *OperationRef, err error)
 	// StartLab StartLab / StopLab power the deployed containers of a lab on and
 	// off (docker start/stop) without touching the generation.
 	StartLab(ctx context.Context, req *StartLabRequest, opts ...http.CallOption) (rsp *OperationRef, err error)
@@ -2094,6 +2133,24 @@ func (c *DCNetLabHTTPClientImpl) RecoverFaultScenario(ctx context.Context, in *F
 	pattern := "/api/v1/labs/{lab_id}/fault-scenarios/{id}/recover"
 	path := binding.EncodeURL(pattern, in, false)
 	opts = append(opts, http.Operation(OperationDCNetLabRecoverFaultScenario))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// RepairLab RepairLab re-attaches any simulated interfaces the runtime lost
+// (e.g. a host Docker daemon restart dropping veth pairs) without
+// going through Plan/Apply: it re-runs the same idempotent deploy
+// against the lab's current generation, so already-running
+// containers and their programs are left untouched.
+func (c *DCNetLabHTTPClientImpl) RepairLab(ctx context.Context, in *RepairLabRequest, opts ...http.CallOption) (*OperationRef, error) {
+	var out OperationRef
+	pattern := "/api/v1/labs/{id}/repair"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationDCNetLabRepairLab))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
 	if err != nil {

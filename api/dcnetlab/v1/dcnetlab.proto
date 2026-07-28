@@ -45,6 +45,18 @@ service DCNetLab {
       body: "*"
     };
   }
+  // RepairLab re-attaches any simulated interfaces the runtime lost
+  // (e.g. a host Docker daemon restart dropping veth pairs) without
+  // going through Plan/Apply: it re-runs the same idempotent deploy
+  // against the lab's current generation, so already-running
+  // containers and their programs are left untouched.
+  rpc RepairLab(RepairLabRequest) returns (OperationRef) {
+    option (google.api.http) = {
+      post: "/api/v1/labs/{id}/repair"
+      body: "*"
+    };
+  }
+
   // --- Topology ---
   rpc ListNodes(ListNodesRequest) returns (ListNodesReply) {
     option (google.api.http) = {get: "/api/v1/labs/{lab_id}/nodes"};
@@ -414,10 +426,16 @@ message NodeSpec {
   repeated string bgp_peers = 18;
 }
 
-// InterfaceStatus is the observed state of one simulated interface.
+// InterfaceStatus is one simulated interface's observed state.
+// missing is true when the kernel has no such interface at all (e.g.
+// its veth pair was lost to a container restart) as opposed to being
+// present but administratively/operationally down — a distinction a
+// fault injection never produces, since faults only ever toggle an
+// existing interface's state.
 message InterfaceStatus {
   string name = 1;
   bool up = 2;
+  bool missing = 3;
 }
 
 // NodeStatus is the observed state of a node, filled by the observer.
@@ -1172,6 +1190,10 @@ message StartLabRequest {
 }
 
 message StopLabRequest {
+  string id = 1;
+}
+
+message RepairLabRequest {
   string id = 1;
 }
 

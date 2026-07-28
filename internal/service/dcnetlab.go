@@ -115,6 +115,15 @@ func (s *DCNetLabService) StopLab(ctx context.Context, req *v1.StopLabRequest) (
 	return &v1.OperationRef{OperationId: op.ID}, nil
 }
 
+func (s *DCNetLabService) RepairLab(ctx context.Context, req *v1.RepairLabRequest) (*v1.OperationRef, error) {
+	op, err := s.plans.RepairLab(req.Id)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return &v1.OperationRef{OperationId: op.ID}, nil
+}
+
 func (s *DCNetLabService) StartNode(ctx context.Context, req *v1.StartNodeRequest) (*v1.Node, error) {
 	node, err := s.power.StartNode(ctx, req.LabId, req.NodeId)
 	if err != nil {

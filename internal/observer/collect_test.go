@@ -61,6 +61,7 @@ func TestInterfaceStatuses(t *testing.T) {
 	states := parseInterfaceStates(`lo               UNKNOWN        00:00:00:00:00:00
 eth0@if20        UP             02:42:ac:14:14:09
 eth1@if21        UP             aa:c1:ab:00:00:01
+eth3@if22        DOWN           aa:c1:ab:00:00:02
 vlan1000@br0     UP             aa:c1:ab:00:00:03
 vrrp4-1-1@vlan1000 DOWN         00:00:5e:00:01:01
 `)
@@ -71,11 +72,18 @@ vrrp4-1-1@vlan1000 DOWN         00:00:5e:00:01:01
 		want   []model.InterfaceStatus
 	}{
 		{
-			name:   "leaf counts links and vlanif, missing veth is down",
-			ifaces: []string{"eth1", "eth2", "vlan1000"},
+			// eth2's veth is gone entirely (e.g. a container restart
+			// dropped it) and is flagged Missing; eth3 is present in
+			// the kernel but administratively/operationally down
+			// (e.g. an interface-down fault) and is not — the two
+			// must stay distinguishable so the UI can tell drift from
+			// an intentional fault.
+			name:   "leaf counts links and vlanif; missing veth vs present-but-down",
+			ifaces: []string{"eth1", "eth2", "eth3", "vlan1000"},
 			want: []model.InterfaceStatus{
 				{Name: "eth1", Up: true},
-				{Name: "eth2", Up: false},
+				{Name: "eth2", Up: false, Missing: true},
+				{Name: "eth3", Up: false},
 				{Name: "vlan1000", Up: true},
 			},
 		},

@@ -22,6 +22,7 @@ export const labApi = {
 
   start: (id: string) => api.post<{ operationId: string }>(`${base}/labs/${id}/start`),
   stop: (id: string) => api.post<{ operationId: string }>(`${base}/labs/${id}/stop`),
+  repair: (id: string) => api.post<{ operationId: string }>(`${base}/labs/${id}/repair`),
   startNode: (labId: string, nodeId: string) =>
     api.post<Node>(`${base}/labs/${labId}/nodes/${nodeId}/start`),
   stopNode: (labId: string, nodeId: string) =>

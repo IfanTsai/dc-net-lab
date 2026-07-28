@@ -189,7 +189,7 @@ func nodeToPB(n *model.Node) *v1.Node {
 	}
 
 	for _, it := range n.Status.Interfaces {
-		status.Interfaces = append(status.Interfaces, &v1.InterfaceStatus{Name: it.Name, Up: it.Up})
+		status.Interfaces = append(status.Interfaces, &v1.InterfaceStatus{Name: it.Name, Up: it.Up, Missing: it.Missing})
 	}
 
 	return &v1.Node{

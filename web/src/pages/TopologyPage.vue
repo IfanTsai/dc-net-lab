@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { QuestionFilled } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { useLabStore } from '../stores/lab'
 import { labApi } from '../api/lab'
@@ -431,6 +432,39 @@ async function powerLab() {
   }
 }
 
+// --- Drift detection: a host Docker/WSL restart can drop the veth
+// pairs containerlab wired in, leaving a container docker-Running
+// but network-dead. This is structurally distinct from a fault: a
+// FaultScenario only ever toggles an existing interface's state
+// (interface-down/link-down set it administratively down), it never
+// removes the interface, so `missing` can only ever mean drift —
+// no cross-check against active faults is needed. Only Running-phase
+// nodes are considered: a paused node (node-stop fault or manual
+// stop) keeps its last observed (frozen) interfaces, which is not
+// drift, and a node mid-Apply is not yet expected to have them.
+const driftedNodes = computed(() =>
+  store.nodes.filter(
+    (n) => n.meta.phase === 'Running' && n.status.interfaces?.some((i) => i.missing),
+  ),
+)
+const driftedNodeNames = computed(() => {
+  const names = driftedNodes.value.map((n) => n.meta.name)
+  return names.length > 4 ? `${names.slice(0, 4).join(', ')}, +${names.length - 4}` : names.join(', ')
+})
+const repairing = ref(false)
+
+async function repairLab() {
+  repairing.value = true
+  try {
+    await store.repairLab()
+    ElMessage.success(t('topology.repaired'))
+  } catch (e) {
+    ElMessage.error((e as Error).message)
+  } finally {
+    repairing.value = false
+  }
+}
+
 async function powerNode() {
   if (!selectedNode.value) return
 
@@ -624,6 +658,21 @@ async function deleteFault(f: FaultScenario) {
         </el-select>
       </div>
     </div>
+
+    <el-alert v-if="driftedNodes.length" type="warning" show-icon :closable="false" class="drift-banner">
+      <template #title>
+        <span>{{ t('topology.driftBanner', { count: driftedNodes.length }) }}</span>
+        <el-tooltip :content="t('topology.driftBannerWhy')" placement="bottom" popper-class="drift-why-tooltip">
+          <el-icon class="drift-why"><QuestionFilled /></el-icon>
+        </el-tooltip>
+      </template>
+      <div class="drift-body">
+        <span class="drift-nodes">{{ t('topology.driftNodes', { names: driftedNodeNames }) }}</span>
+        <el-button size="small" type="warning" :loading="repairing" @click="repairLab">
+          {{ t('topology.repair') }}
+        </el-button>
+      </div>
+    </el-alert>
 
     <div class="body">
       <el-empty v-if="store.nodes.length === 0" :description="t('topology.empty')" />
@@ -1216,6 +1265,10 @@ async function deleteFault(f: FaultScenario) {
 .node-power { margin-bottom: 12px; }
 .header h2 { margin: 0; }
 .hint { font-size: 12px; font-weight: normal; color: var(--el-text-color-secondary); margin-left: 8px; }
+.drift-banner { margin-bottom: 12px; }
+.drift-body { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
+.drift-nodes { font-size: 13px; color: var(--el-text-color-secondary); }
+.drift-why { margin-left: 6px; vertical-align: -2px; cursor: help; color: var(--el-text-color-secondary); }
 /* The non-modal drawers still mount a full-viewport positioning
    wrapper that swallows clicks (breaking canvas double-click); let
    events pass through it and keep only the panel interactive. */
@@ -1240,4 +1293,11 @@ h4 { margin: 16px 0 8px; }
 .fault-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 .fault-impairment { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
 .fault-impairment .el-input-number { width: 130px; }
+</style>
+
+<style>
+/* el-tooltip teleports its popper to <body>, outside this component's
+   scoped tree, so the width cap for the drift-reason tooltip has to
+   live in an unscoped block. */
+.drift-why-tooltip { max-width: 360px; line-height: 1.6; }
 </style>

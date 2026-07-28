@@ -31,6 +31,7 @@ const (
 	DCNetLab_DeleteLab_FullMethodName                 = "/dcnetlab.v1.DCNetLab/DeleteLab"
 	DCNetLab_StartLab_FullMethodName                  = "/dcnetlab.v1.DCNetLab/StartLab"
 	DCNetLab_StopLab_FullMethodName                   = "/dcnetlab.v1.DCNetLab/StopLab"
+	DCNetLab_RepairLab_FullMethodName                 = "/dcnetlab.v1.DCNetLab/RepairLab"
 	DCNetLab_ListNodes_FullMethodName                 = "/dcnetlab.v1.DCNetLab/ListNodes"
 	DCNetLab_ListLinks_FullMethodName                 = "/dcnetlab.v1.DCNetLab/ListLinks"
 	DCNetLab_ListAllocations_FullMethodName           = "/dcnetlab.v1.DCNetLab/ListAllocations"
@@ -93,6 +94,12 @@ type DCNetLabClient interface {
 	// off (docker start/stop) without touching the generation.
 	StartLab(ctx context.Context, in *StartLabRequest, opts ...grpc.CallOption) (*OperationRef, error)
 	StopLab(ctx context.Context, in *StopLabRequest, opts ...grpc.CallOption) (*OperationRef, error)
+	// RepairLab re-attaches any simulated interfaces the runtime lost
+	// (e.g. a host Docker daemon restart dropping veth pairs) without
+	// going through Plan/Apply: it re-runs the same idempotent deploy
+	// against the lab's current generation, so already-running
+	// containers and their programs are left untouched.
+	RepairLab(ctx context.Context, in *RepairLabRequest, opts ...grpc.CallOption) (*OperationRef, error)
 	// --- Topology ---
 	ListNodes(ctx context.Context, in *ListNodesRequest, opts ...grpc.CallOption) (*ListNodesReply, error)
 	ListLinks(ctx context.Context, in *ListLinksRequest, opts ...grpc.CallOption) (*ListLinksReply, error)
@@ -268,6 +275,16 @@ func (c *dCNetLabClient) StopLab(ctx context.Context, in *StopLabRequest, opts .
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(OperationRef)
 	err := c.cc.Invoke(ctx, DCNetLab_StopLab_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) RepairLab(ctx context.Context, in *RepairLabRequest, opts ...grpc.CallOption) (*OperationRef, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(OperationRef)
+	err := c.cc.Invoke(ctx, DCNetLab_RepairLab_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -730,6 +747,12 @@ type DCNetLabServer interface {
 	// off (docker start/stop) without touching the generation.
 	StartLab(context.Context, *StartLabRequest) (*OperationRef, error)
 	StopLab(context.Context, *StopLabRequest) (*OperationRef, error)
+	// RepairLab re-attaches any simulated interfaces the runtime lost
+	// (e.g. a host Docker daemon restart dropping veth pairs) without
+	// going through Plan/Apply: it re-runs the same idempotent deploy
+	// against the lab's current generation, so already-running
+	// containers and their programs are left untouched.
+	RepairLab(context.Context, *RepairLabRequest) (*OperationRef, error)
 	// --- Topology ---
 	ListNodes(context.Context, *ListNodesRequest) (*ListNodesReply, error)
 	ListLinks(context.Context, *ListLinksRequest) (*ListLinksReply, error)
@@ -868,6 +891,9 @@ func (UnimplementedDCNetLabServer) StartLab(context.Context, *StartLabRequest) (
 }
 func (UnimplementedDCNetLabServer) StopLab(context.Context, *StopLabRequest) (*OperationRef, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StopLab not implemented")
+}
+func (UnimplementedDCNetLabServer) RepairLab(context.Context, *RepairLabRequest) (*OperationRef, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RepairLab not implemented")
 }
 func (UnimplementedDCNetLabServer) ListNodes(context.Context, *ListNodesRequest) (*ListNodesReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListNodes not implemented")
@@ -1126,6 +1152,24 @@ func _DCNetLab_StopLab_Handler(srv interface{}, ctx context.Context, dec func(in
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DCNetLabServer).StopLab(ctx, req.(*StopLabRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_RepairLab_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RepairLabRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).RepairLab(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_RepairLab_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).RepairLab(ctx, req.(*RepairLabRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1952,6 +1996,10 @@ var DCNetLab_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "StopLab",
 			Handler:    _DCNetLab_StopLab_Handler,
+		},
+		{
+			MethodName: "RepairLab",
+			Handler:    _DCNetLab_RepairLab_Handler,
 		},
 		{
 			MethodName: "ListNodes",

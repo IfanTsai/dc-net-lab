@@ -234,6 +234,16 @@ containerlab 依赖 Linux 内核（netlink、网络命名空间），Darwin 无�
   2. **interface-down 单端的物理边界**：只对目标端跑 `ip link set down`，veth 对端不会被我们的代码触碰，但内核会让对端天然失去 carrier（`NO-CARRIER`，`state DOWN`，自身 `IFF_UP` 管理位不变）——这是 veth pair 的物理事实（等价于拔掉一根网线的一端两头都断），"side" 控制的是"命令在哪端执行"，不是"数据还通不通"（两端物理上共享同一根线,通不通不取决于哪端被标记 down）。
   3. **拓扑图变灰的视觉强度**：现有 `edge.dead` 样式（`line-style: dotted`、`#c0c4cc`、`opacity: 0.5`）是照抄"节点掉线"沿用的既有视觉语言，在整页截图里非常不显眼，需要裁剪放大才能确认生效——功能正确，但作为故障演示的核心视觉反馈,视觉强度是否需要加强（比如更饱和的颜色）值得后续单独讨论,这轮不擅自改动既有配色决定。
 
+### 网络漂移检测与一键修复
+
+上面第 1 条发现的"veth 丢失"坑本身也顺手解决了——用户追问"针对这个坑有什么方案"后，讨论出的方案（Observer 检测 + 友好提示 + 用户确认修复，而非纯手动或全自动）已落地并真实验证。
+
+- **核心洞察（决定了整个方案的可行性）**：`InterfaceStatus` 此前把"接口在内核里完全不存在"（veth 丢失）和"接口存在但状态 down"（管理性关闭）统一折叠成 `up: false`（`internal/observer/collect.go` 旧注释原话："an interface missing from the kernel ... counts as down"）。而故障注入的 `link-down`/`interface-down` 只会 `ip link set down`，永远不会让接口从内核里消失——**"missing"这个信号在结构上就不可能由故障注入产生**，不需要反查 FaultScenario 记录做交叉比对，区分故障和漂移是免费的。`internal/model/node.go` 的 `InterfaceStatus` 加了一个 `Missing bool` 字段，`interfaceStatuses()` 按 `states[name]` 是否命中来置位。
+- **修复机制验证**（关键决策依据）：动手前先用真实环境验证了一个假设——丢失的 veth 能不能仅凭 `containerlab deploy --reconfigure`（不做任何 exec 配置重新下发）就自愈？结论是可以：手动删掉一个节点的 veth 后单独跑 `containerlab deploy --reconfigure`，8 秒内 BGP 和接口状态全部自动恢复（FRR/zebra 本身监听 netlink，接口一重新出现就自己重新建邻居，配置文件从未变过不需要重新下发）。这让 `RepairLab`（`internal/biz/plan.go`）非常轻量：只重放 `DeployTopology`（`Driver.Deploy` 指向**当前** generation 目录，不生成新 generation）+ `ConnectInternet` + `ValidateControlPlane`/`ValidateDataPlane` 四步，跳过 `RestorePrograms`（容器本身没被摧毁，程序不受影响）——不走完整 Plan/Apply，generation 和所有资源 ID 保持不变，比此前"重新 Plan/Apply"的临时应对方式快得多、副作用小得多。
+- **前端提示**（`TopologyPage.vue`）：只对 `phase === 'Running'` 的节点检查 `status.interfaces` 里是否有 `missing`（跳过 Paused/Applying 节点，避免故意暂停的节点或部署中节点被误判），命中则在拓扑图顶部显示醒目的 warning 提示条，文案明确写"这不是你注入的故障"、列出受影响节点、附一键修复按钮（复用 `store.powerLab` 的操作轮询模式）。提示条标题旁加了一个 `QuestionFilled` 图标，hover 展示详细技术原因（容器仍在运行、只是 veth 从内核消失，常见于宿主 Docker 重启未开 live-restore；并重申故障注入只会把接口关闭不会让接口消失），把"是什么"和"为什么"分层，默认只看一行摘要即可。
+- **真实环境验证**：故意删除一条链路两端的 veth 模拟漂移，确认 API 正确报出 `missing: true`、前端 Playwright 真实浏览器截图确认提示条文案和受影响节点列表正确、点击修复后提示条消失、节点 BGP/接口计数完全恢复、lab generation 和 ID 全程不变、且用户当时正在生效中的另一条 `impairment` 故障场景全程未受任何影响（修复操作与故障场景互不干扰，验证了两者的隔离性）。
+- **veth 对端级联丢失，非独有于整机重启**：用户用真实拓扑手动 `docker stop` 了一台 superspine，观察到 6 个健康节点（该 superspine 在拓扑图里的全部直连邻居：2 个 dcedge + 4 个 pod spine，度数正好是 6）同时被判定为漂移，追问"ECMP 应该还通，为什么会有 6 个节点受影响"。根因确认：veth 是内核里的成对对象，删掉一端（容器网络命名空间被销毁）内核会自动连带删掉对端，不管对端在哪个容器里——所以单个节点被手动 `docker stop`/`docker restart`（绕开平台，直接操作 Docker）会像多米诺骨牌一样，把它的每一个直连邻居也各弄丢一根接口，被波及节点数 = 该节点在拓扑图里的度数，与整机重启是否发生无关。同时用真实 BGP 会话状态和跨 fabric ping 验证了 ECMP 判断是对的——6 个邻居里没有一个真正断网，只是各丢了一条冗余链路中的一条。据此把 `driftBanner` 文案从"网络连接意外丢失"改成"网络接口意外消失…若拓扑存在冗余路径，受影响节点当前仍可能保持连通"，避免在冗余拓扑下把"丢了一条链路"渲染成"整个节点断网"；中间一版文案曾写"从内核消失"，用户指出拓扑页是仿真视角、"内核"是容器实现细节，不该出现在头条摘要里（呼应「仿真视图与管理视角分离」的既有原则），故删掉这个措辞，把实现层面的解释完全留给 hover 提示条里那段技术细节；也用这个真实损坏状态（被波及的 6 个健康节点 + 1 个 Exited 的 superspine）验证了一遍 `RepairLab`，确认它不仅补线，连已经 Exited 的容器本身也会被 `containerlab deploy --reconfigure` 一并拉起。
+
 ### 代码规范与工程化
 
 - [golang-style.md](golang-style.md) 为 Go 代码基线；golangci-lint（`.golangci.yml`，版本固定）+ 自研 `scripts/check-style.py`（空行语义）挂在 `make lint`，零告警纳入提交门禁。
@@ -243,7 +253,7 @@ containerlab 依赖 Linux 内核（netlink、网络命名空间），Darwin 无�
 
 1. **Kratos 默认 1s 请求超时**会杀死挂在 `r.Context()` 上的长会话（docker exec 终端），WebSocket handler 须用 `context.WithoutCancel`，生命周期显式管理。
 2. **Element Plus 抽屉**（即使 `:modal="false"`）有全屏包裹层拦截指针事件，需 CSS `pointer-events: none`（仅面板可交互）才能实现非模态。
-3. **WSL2/Docker daemon 重启后**容器被自动重启，containerlab 建的 veth 对全部丢失（只剩 eth0），表面 Running 实际断网——需到代次目录 `containerlab deploy --reconfigure` 恢复（未来可做成"修复/重部署"操作；Observer 能暴露此类假 Running）。**OrbStack 虚机重启是同场景的加重版**：docker 先于 `/Users` 共享就绪拉起容器，server 容器的单文件 bind mount（node-agent 二进制）挂成空目录，Observer 的 agent 自愈（重放启动脚本）因此永远失败（agent.log 反复 `nohup: can't execute`），程序操作报 `connection refused`——挂载丢失自愈救不了，唯一恢复路径是 UI 上重新 Plan/Apply（`RestorePrograms` 会把包与程序全部装回并按期望状态启动）。空挂载根因已由 `orb-setup` 安装的 docker drop-in 堵住（等 `/Users` 挂载就绪再启 docker），但 veth 丢失仍需重新部署恢复。
+3. **WSL2/Docker daemon 重启后**容器被自动重启，containerlab 建的 veth 对全部丢失（只剩 eth0），表面 Running 实际断网——需到代次目录 `containerlab deploy --reconfigure` 恢复。**已解决**：Observer 现在会区分接口"完全消失"与"存在但 down"（`InterfaceStatus.Missing`，见「网络漂移检测与一键修复」），拓扑页检测到后弹出提示条，一键调用新的 `RepairLab`（只重放 `containerlab deploy --reconfigure` 等价步骤，不走完整 Plan/Apply，generation 和资源 ID 不变）即可恢复，不用再手动登录宿主敲命令或整个重新 Plan/Apply。**OrbStack 虚机重启是同场景的加重版**：docker 先于 `/Users` 共享就绪拉起容器，server 容器的单文件 bind mount（node-agent 二进制）挂成空目录，Observer 的 agent 自愈（重放启动脚本）因此永远失败（agent.log 反复 `nohup: can't execute`），程序操作报 `connection refused`——挂载丢失自愈救不了，唯一恢复路径是 UI 上重新 Plan/Apply（`RestorePrograms` 会把包与程序全部装回并按期望状态启动）。空挂载根因已由 `orb-setup` 安装的 docker drop-in 堵住（等 `/Users` 挂载就绪再启 docker）；这个组合场景里 agent 二进制丢失才是需要完整重新 Plan/Apply 的部分（`RestorePrograms` 重装包），单纯的 veth 丢失现在可以用上面的 `RepairLab` 更轻量地恢复。
 4. **WSL2 内核限制**：macvlan 不支持 `addrgenmode random`（仅 IPv6 相关，已规避）；VRRP macvlan 需显式 `up` 且 VIP 用 /32，否则 vrrpd 不发通告、双 Master。
 5. **vtysh JSON 输出**：缺 `/etc/frr/vtysh.conf` 时警告会混入 stdout，产物绑定 vtysh.conf + 解析时跳到首个 `{` 双保险。
 6. **wire v0.7.0** 自带的 x/tools 解析不了新版本 Go，`init-tools.sh` 用临时模块升级 x/tools 后构建。

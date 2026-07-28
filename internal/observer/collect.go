@@ -191,8 +191,10 @@ func parseInterfaceStates(s string) map[string]string {
 }
 
 // interfaceStatuses projects the kernel interface states onto the
-// simulated interface list; an interface missing from the kernel
-// (e.g. its veth is gone) counts as down.
+// simulated interface list. An interface missing from the kernel
+// entirely (e.g. its veth is gone) counts as down and is flagged
+// Missing, distinct from one that is present but administratively or
+// operationally down.
 func interfaceStatuses(states map[string]string, ifaces []string) []model.InterfaceStatus {
 	if len(ifaces) == 0 {
 		return nil
@@ -200,7 +202,8 @@ func interfaceStatuses(states map[string]string, ifaces []string) []model.Interf
 
 	out := make([]model.InterfaceStatus, 0, len(ifaces))
 	for _, name := range ifaces {
-		out = append(out, model.InterfaceStatus{Name: name, Up: states[name] == "UP"})
+		state, ok := states[name]
+		out = append(out, model.InterfaceStatus{Name: name, Up: state == "UP", Missing: !ok})
 	}
 
 	return out

@@ -132,6 +132,23 @@ export const useLabStore = defineStore('lab', {
         await new Promise((r) => setTimeout(r, 500))
       }
     },
+    // repairLab redeploys the current generation to re-attach any
+    // interfaces the runtime dropped (e.g. a host Docker restart),
+    // waiting for the operation the same way powerLab does.
+    async repairLab() {
+      if (!this.currentLabId) return
+      const { operationId } = await labApi.repair(this.currentLabId)
+
+      for (;;) {
+        const op = await labApi.getOperation(operationId)
+        if (op.state === 'Succeeded' || op.state === 'Failed' || op.state === 'Cancelled') {
+          await Promise.all([this.refreshLabs(), this.refreshTopology()])
+          if (op.state !== 'Succeeded') throw new Error(op.error?.message ?? `operation ${op.state}`)
+          return
+        }
+        await new Promise((r) => setTimeout(r, 500))
+      }
+    },
     // powerNode starts/stops one device (synchronous on the backend).
     async powerNode(nodeId: string, on: boolean): Promise<Node> {
       const node = on
