@@ -140,14 +140,16 @@ function render() {
 
   // Compound parents: one frame per pod, one nested frame per rack
   // (the MLAG leaf pair plus its servers). Cytoscape auto-fits each
-  // box around its children.
+  // box around its children, and grabbable lets the whole box (with
+  // its children) be dragged as a unit — core compound-drag behaviour,
+  // no extra handler needed.
   const podIds = [...new Set(props.nodes.map((n) => n.spec.podId).filter(Boolean))] as string[]
   for (const pod of podIds.sort()) {
     cy.add({
       group: 'nodes',
       data: { id: `pod:${pod}`, label: pod, frame: 'pod' },
       selectable: false,
-      grabbable: false,
+      grabbable: true,
     })
   }
   const rackKeys = [
@@ -163,7 +165,7 @@ function render() {
       group: 'nodes',
       data: { id: `rack:${key}`, label: rack, frame: 'rack', parent: `pod:${pod}` },
       selectable: false,
-      grabbable: false,
+      grabbable: true,
     })
   }
 
