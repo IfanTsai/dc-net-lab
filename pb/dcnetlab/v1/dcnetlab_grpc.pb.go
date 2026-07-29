@@ -215,7 +215,7 @@ type DCNetLabClient interface {
 	// via stop; the recording stays downloadable until the session is
 	// deleted or expires. The pcapng download is a plain HTTP route
 	// (GET /api/v1/labs/{lab_id}/captures/{id}/pcap) and live metadata
-	// is also pushed on WS /ws/v1/captures/{id}.
+	// is also pushed on WS /ws/v1/labs/{lab_id}/captures/{id}.
 	CreateCaptureSession(ctx context.Context, in *CreateCaptureSessionRequest, opts ...grpc.CallOption) (*CaptureSession, error)
 	ListCaptureSessions(ctx context.Context, in *ListCaptureSessionsRequest, opts ...grpc.CallOption) (*ListCaptureSessionsReply, error)
 	GetCaptureSession(ctx context.Context, in *CaptureSessionOpRequest, opts ...grpc.CallOption) (*CaptureSession, error)
@@ -954,7 +954,7 @@ type DCNetLabServer interface {
 	// via stop; the recording stays downloadable until the session is
 	// deleted or expires. The pcapng download is a plain HTTP route
 	// (GET /api/v1/labs/{lab_id}/captures/{id}/pcap) and live metadata
-	// is also pushed on WS /ws/v1/captures/{id}.
+	// is also pushed on WS /ws/v1/labs/{lab_id}/captures/{id}.
 	CreateCaptureSession(context.Context, *CreateCaptureSessionRequest) (*CaptureSession, error)
 	ListCaptureSessions(context.Context, *ListCaptureSessionsRequest) (*ListCaptureSessionsReply, error)
 	GetCaptureSession(context.Context, *CaptureSessionOpRequest) (*CaptureSession, error)

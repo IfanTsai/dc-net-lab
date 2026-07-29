@@ -578,18 +578,29 @@ export interface CapturePacketRow {
   wireLength?: number
   source?: string
   destination?: string
+  sourcePort?: number
+  destinationPort?: number
   protocol?: string
   info?: string
 }
 
+// offset/length locate the field's bytes in the raw frame (for the hex
+// pane highlight sync); length 0 means the field has no fixed range.
+// children nest sub-fields (e.g. each path attribute under the BGP
+// UPDATE "Path Attributes" line).
 export interface CapturePacketField {
   name: string
   value: string
+  offset?: number
+  length?: number
+  children?: CapturePacketField[]
 }
 
 export interface CapturePacketLayer {
   name: string
   fields?: CapturePacketField[]
+  offset?: number
+  length?: number
 }
 
 export interface CapturePacketDetail {
@@ -613,6 +624,8 @@ export interface CaptureWsEvent {
     wireLength?: number
     source?: string
     destination?: string
+    sourcePort?: number
+    destinationPort?: number
     protocol?: string
     info?: string
   }[]

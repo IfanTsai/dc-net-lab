@@ -93,7 +93,7 @@ type DCNetLabHTTPServer interface {
 	// via stop; the recording stays downloadable until the session is
 	// deleted or expires. The pcapng download is a plain HTTP route
 	// (GET /api/v1/labs/{lab_id}/captures/{id}/pcap) and live metadata
-	// is also pushed on WS /ws/v1/captures/{id}.
+	// is also pushed on WS /ws/v1/labs/{lab_id}/captures/{id}.
 	CreateCaptureSession(context.Context, *CreateCaptureSessionRequest) (*CaptureSession, error)
 	// CreateFaultScenario --- Fault ---
 	// FaultScenarios inject and recover a controlled failure against a
@@ -1627,7 +1627,7 @@ type DCNetLabHTTPClient interface {
 	// via stop; the recording stays downloadable until the session is
 	// deleted or expires. The pcapng download is a plain HTTP route
 	// (GET /api/v1/labs/{lab_id}/captures/{id}/pcap) and live metadata
-	// is also pushed on WS /ws/v1/captures/{id}.
+	// is also pushed on WS /ws/v1/labs/{lab_id}/captures/{id}.
 	CreateCaptureSession(ctx context.Context, req *CreateCaptureSessionRequest, opts ...http.CallOption) (rsp *CaptureSession, err error)
 	// CreateFaultScenario --- Fault ---
 	// FaultScenarios inject and recover a controlled failure against a
@@ -1815,7 +1815,7 @@ func (c *DCNetLabHTTPClientImpl) BatchProgramOp(ctx context.Context, in *BatchPr
 // via stop; the recording stays downloadable until the session is
 // deleted or expires. The pcapng download is a plain HTTP route
 // (GET /api/v1/labs/{lab_id}/captures/{id}/pcap) and live metadata
-// is also pushed on WS /ws/v1/captures/{id}.
+// is also pushed on WS /ws/v1/labs/{lab_id}/captures/{id}.
 func (c *DCNetLabHTTPClientImpl) CreateCaptureSession(ctx context.Context, in *CreateCaptureSessionRequest, opts ...http.CallOption) (*CaptureSession, error) {
 	var out CaptureSession
 	pattern := "/api/v1/labs/{lab_id}/captures"

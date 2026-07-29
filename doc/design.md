@@ -1539,12 +1539,14 @@ ICMP
 TCP
 UDP
 VXLAN
+BGP
 ```
+
+BGP 原计划放在第二阶段，因其是平台的核心协议而提前落地：gopacket 没有 BGP 层，controller 侧自研最小 BGP-4 解码器，覆盖消息分帧、OPEN 能力协商（RFC 5492，含 4 字节 AS）、UPDATE 标准路径属性与 NOTIFICATION subcode；MP_REACH/MP_UNREACH（EVPN 等）留待 Overlay 阶段。
 
 第二阶段：
 
 ```text
-BGP
 BFD
 DNS
 DHCP
@@ -1565,6 +1567,8 @@ Inner VXLAN Packet
 ```
 
 浏览器实时接收 Packet Metadata。用户打开某条报文时，再获取完整 Payload。
+
+协议树字段支持嵌套（如 UPDATE 的 Path Attributes → 各属性、NLRI → 各前缀），字段与 hex/ASCII 面板按字节区间双向 hover 高亮；含义不自明的字段名带问号 tooltip 解释，枚举类字段（TCP Flags、BGP Message Type 等）展示取值表。
 
 ### 16.5 资源限制
 
@@ -1776,30 +1780,33 @@ POST   /api/v1/daemons/{id}/disable
 
 ### 20.4 Traffic、Capture 和 Fault
 
+三类资源都属于某个 Lab，路由统一挂在 `/api/v1/labs/{labId}` 之下：
+
 ```text
-POST   /api/v1/traffic-scenarios
-POST   /api/v1/traffic-scenarios/{id}/start
-POST   /api/v1/traffic-scenarios/{id}/stop
+POST   /api/v1/labs/{labId}/traffic-scenarios
+POST   /api/v1/labs/{labId}/traffic-scenarios/{id}/start
+POST   /api/v1/labs/{labId}/traffic-scenarios/{id}/stop
 
-POST   /api/v1/capture-sessions
-GET    /api/v1/capture-sessions/{id}
-POST   /api/v1/capture-sessions/{id}/stop
+POST   /api/v1/labs/{labId}/captures
+GET    /api/v1/labs/{labId}/captures/{id}
+POST   /api/v1/labs/{labId}/captures/{id}/stop
+GET    /api/v1/labs/{labId}/captures/{id}/packets
+GET    /api/v1/labs/{labId}/captures/{id}/pcap
 
-POST   /api/v1/fault-scenarios
-POST   /api/v1/fault-scenarios/{id}/apply
-POST   /api/v1/fault-scenarios/{id}/recover
+POST   /api/v1/labs/{labId}/fault-scenarios
+POST   /api/v1/labs/{labId}/fault-scenarios/{id}/apply
+POST   /api/v1/labs/{labId}/fault-scenarios/{id}/recover
 ```
 
 ### 20.5 WebSocket
 
 ```text
-/ws/v1/labs/{id}/topology
-/ws/v1/operations/{id}
-/ws/v1/servers/{id}/programs
-/ws/v1/traffic-scenarios/{id}
-/ws/v1/capture-sessions/{id}
-/ws/v1/fault-scenarios/{id}
+/ws/v1/labs/{labId}/topology
+/ws/v1/labs/{labId}/nodes/{nodeId}/terminal
+/ws/v1/labs/{labId}/captures/{id}
 ```
+
+Operation、Program、Traffic 和 Fault 的进度目前通过 REST 轮询获取，后续有实时性需求时再增加对应 WS 通道。
 
 ### 20.6 错误格式
 

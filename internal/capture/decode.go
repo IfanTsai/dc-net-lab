@@ -19,24 +19,62 @@ import (
 const bgpPort = 179
 
 // Summary is the packet list row: Wireshark's source, destination,
-// protocol and info columns.
+// protocol and info columns. SourcePort/DestinationPort are set only
+// for TCP/UDP conversations.
 type Summary struct {
-	Source      string `json:"source"`
-	Destination string `json:"destination"`
-	Protocol    string `json:"protocol"`
-	Info        string `json:"info"`
+	Source          string `json:"source"`
+	Destination     string `json:"destination"`
+	SourcePort      int32  `json:"sourcePort,omitempty"`
+	DestinationPort int32  `json:"destinationPort,omitempty"`
+	Protocol        string `json:"protocol"`
+	Info            string `json:"info"`
 }
 
-// Field is one name/value line of a decoded layer.
+// Field is one name/value line of a decoded layer. Offset/Length locate
+// the field's bytes in the raw frame for the viewer's hex highlight
+// sync; Length 0 means the field has no fixed byte range (e.g. a
+// derived value such as a payload length). Children nest sub-fields
+// (e.g. each path attribute under the BGP UPDATE "Path Attributes"
+// line).
 type Field struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
+	Name     string  `json:"name"`
+	Value    string  `json:"value"`
+	Offset   int     `json:"offset"`
+	Length   int     `json:"length"`
+	Children []Field `json:"children,omitempty"`
 }
 
-// Layer is one protocol layer of the packet detail tree.
+// newField builds a Field with no associated byte range.
+func newField(name, value string) Field {
+	return Field{Name: name, Value: value}
+}
+
+// newFieldAt builds a Field highlighting [offset, offset+length) of the
+// raw frame.
+func newFieldAt(name, value string, offset, length int) Field {
+	return Field{Name: name, Value: value, Offset: offset, Length: length}
+}
+
+// shiftFields moves a field tree's byte ranges by delta; fields with
+// no range (Length 0) stay untouched. The BGP decoder emits offsets
+// relative to the TCP payload, and Tree shifts them frame-absolute.
+func shiftFields(fields []Field, delta int) {
+	for i := range fields {
+		if fields[i].Length > 0 {
+			fields[i].Offset += delta
+		}
+
+		shiftFields(fields[i].Children, delta)
+	}
+}
+
+// Layer is one protocol layer of the packet detail tree. Offset/Length
+// is the layer's own byte range in the raw frame.
 type Layer struct {
 	Name   string  `json:"name"`
 	Fields []Field `json:"fields"`
+	Offset int     `json:"offset"`
+	Length int     `json:"length"`
 }
 
 // parse decodes a frame fully; decoding errors surface as an error
@@ -111,6 +149,13 @@ func Summarize(data []byte) Summary {
 	}
 
 	switch {
+	case tcp != nil:
+		s.SourcePort, s.DestinationPort = int32(tcp.SrcPort), int32(tcp.DstPort)
+	case udp != nil:
+		s.SourcePort, s.DestinationPort = int32(udp.SrcPort), int32(udp.DstPort)
+	}
+
+	switch {
 	case tcp != nil && (tcp.SrcPort == bgpPort || tcp.DstPort == bgpPort) && len(tcp.Payload) > 0:
 		if msgs := decodeBGP(tcp.Payload); len(msgs) > 0 {
 			s.Protocol = "BGP"
@@ -127,7 +172,7 @@ func Summarize(data []byte) Summary {
 	case tcp != nil:
 		s.Protocol, s.Info = "TCP", tcpInfo(tcp)
 	case udp != nil:
-		s.Protocol, s.Info = "UDP", fmt.Sprintf("%d → %d Len=%d", udp.SrcPort, udp.DstPort, len(udp.Payload))
+		s.Protocol, s.Info = "UDP", fmt.Sprintf("Len=%d", len(udp.Payload))
 	case arp != nil:
 		s.Protocol, s.Info = "ARP", arpInfo(arp)
 	case ip4 != nil:
@@ -148,8 +193,8 @@ func Summarize(data []byte) Summary {
 }
 
 func tcpInfo(tcp *layers.TCP) string {
-	return fmt.Sprintf("%d → %d [%s] Seq=%d Ack=%d Win=%d Len=%d",
-		tcp.SrcPort, tcp.DstPort, tcpFlags(tcp), tcp.Seq, tcp.Ack, tcp.Window, len(tcp.Payload))
+	return fmt.Sprintf("[%s] Seq=%d Ack=%d Win=%d Len=%d",
+		tcpFlags(tcp), tcp.Seq, tcp.Ack, tcp.Window, len(tcp.Payload))
 }
 
 func tcpFlags(tcp *layers.TCP) string {
@@ -196,55 +241,63 @@ func Tree(data []byte) []Layer {
 
 	var out []Layer
 	bgpDone := false
+	off := 0
 	for _, l := range pkt.Layers() {
+		layerLen := len(l.LayerContents())
+
 		switch v := l.(type) {
 		case *layers.Ethernet:
-			out = append(out, Layer{Name: "Ethernet", Fields: []Field{
-				{"Source", v.SrcMAC.String()},
-				{"Destination", v.DstMAC.String()},
-				{"Type", v.EthernetType.String()},
+			out = append(out, Layer{Name: "Ethernet", Offset: off, Length: layerLen, Fields: []Field{
+				newFieldAt("Destination", v.DstMAC.String(), off, 6),
+				newFieldAt("Source", v.SrcMAC.String(), off+6, 6),
+				newFieldAt("Type", v.EthernetType.String(), off+12, 2),
 			}})
 
 		case *layers.ARP:
-			out = append(out, arpLayer(v))
+			out = append(out, arpLayer(v, off, layerLen))
 		case *layers.Dot1Q:
-			out = append(out, Layer{Name: "802.1Q VLAN", Fields: []Field{
-				{"VLAN ID", fmt.Sprintf("%d", v.VLANIdentifier)},
-				{"Priority", fmt.Sprintf("%d", v.Priority)},
-				{"Type", v.Type.String()},
+			out = append(out, Layer{Name: "802.1Q VLAN", Offset: off, Length: layerLen, Fields: []Field{
+				newFieldAt("VLAN ID", fmt.Sprintf("%d", v.VLANIdentifier), off, 2),
+				newFieldAt("Priority", fmt.Sprintf("%d", v.Priority), off, 2),
+				newFieldAt("Type", v.Type.String(), off+2, 2),
 			}})
 
 		case *layers.IPv4:
-			out = append(out, ipv4Layer(v))
+			out = append(out, ipv4Layer(v, off, layerLen))
 		case *layers.IPv6:
-			out = append(out, Layer{Name: "IPv6", Fields: []Field{
-				{"Source", v.SrcIP.String()},
-				{"Destination", v.DstIP.String()},
-				{"Next Header", v.NextHeader.String()},
-				{"Hop Limit", fmt.Sprintf("%d", v.HopLimit)},
-				{"Payload Length", fmt.Sprintf("%d", v.Length)},
+			out = append(out, Layer{Name: "IPv6", Offset: off, Length: layerLen, Fields: []Field{
+				newFieldAt("Source", v.SrcIP.String(), off+8, 16),
+				newFieldAt("Destination", v.DstIP.String(), off+24, 16),
+				newFieldAt("Next Header", v.NextHeader.String(), off+6, 1),
+				newFieldAt("Hop Limit", fmt.Sprintf("%d", v.HopLimit), off+7, 1),
+				newFieldAt("Payload Length", fmt.Sprintf("%d", v.Length), off+4, 2),
 			}})
 
 		case *layers.ICMPv4:
-			out = append(out, Layer{Name: "ICMP", Fields: []Field{
-				{"Type/Code", v.TypeCode.String()},
-				{"Checksum", fmt.Sprintf("0x%04x", v.Checksum)},
-				{"Identifier", fmt.Sprintf("%d", v.Id)},
-				{"Sequence", fmt.Sprintf("%d", v.Seq)},
+			out = append(out, Layer{Name: "ICMP", Offset: off, Length: layerLen, Fields: []Field{
+				newFieldAt("Type/Code", v.TypeCode.String(), off, 2),
+				newFieldAt("Checksum", fmt.Sprintf("0x%04x", v.Checksum), off+2, 2),
+				newFieldAt("Identifier", fmt.Sprintf("%d", v.Id), off+4, 2),
+				newFieldAt("Sequence", fmt.Sprintf("%d", v.Seq), off+6, 2),
 			}})
 
 		case *layers.ICMPv6:
-			out = append(out, Layer{Name: "ICMPv6", Fields: []Field{
-				{"Type/Code", v.TypeCode.String()},
-				{"Checksum", fmt.Sprintf("0x%04x", v.Checksum)},
+			out = append(out, Layer{Name: "ICMPv6", Offset: off, Length: layerLen, Fields: []Field{
+				newFieldAt("Type/Code", v.TypeCode.String(), off, 2),
+				newFieldAt("Checksum", fmt.Sprintf("0x%04x", v.Checksum), off+2, 2),
 			}})
 
 		case *layers.TCP:
-			out = append(out, tcpLayer(v))
+			out = append(out, tcpLayer(v, off, layerLen))
 			if (v.SrcPort == bgpPort || v.DstPort == bgpPort) && len(v.Payload) > 0 {
 				if msgs := decodeBGP(v.Payload); len(msgs) > 0 {
+					payloadOff := off + layerLen
 					for _, m := range msgs {
-						out = append(out, Layer{Name: "BGP · " + m.Type, Fields: m.Fields})
+						shiftFields(m.Fields, payloadOff)
+						out = append(out, Layer{
+							Name: "BGP · " + m.Type, Fields: m.Fields,
+							Offset: payloadOff + m.Offset, Length: m.Length,
+						})
 					}
 
 					bgpDone = true
@@ -252,17 +305,17 @@ func Tree(data []byte) []Layer {
 			}
 
 		case *layers.UDP:
-			out = append(out, Layer{Name: "UDP", Fields: []Field{
-				{"Source Port", fmt.Sprintf("%d", v.SrcPort)},
-				{"Destination Port", fmt.Sprintf("%d", v.DstPort)},
-				{"Length", fmt.Sprintf("%d", v.Length)},
-				{"Checksum", fmt.Sprintf("0x%04x", v.Checksum)},
+			out = append(out, Layer{Name: "UDP", Offset: off, Length: layerLen, Fields: []Field{
+				newFieldAt("Source Port", fmt.Sprintf("%d", v.SrcPort), off, 2),
+				newFieldAt("Destination Port", fmt.Sprintf("%d", v.DstPort), off+2, 2),
+				newFieldAt("Length", fmt.Sprintf("%d", v.Length), off+4, 2),
+				newFieldAt("Checksum", fmt.Sprintf("0x%04x", v.Checksum), off+6, 2),
 			}})
 
 		case *layers.VXLAN:
-			out = append(out, Layer{Name: "VXLAN", Fields: []Field{
-				{"VNI", fmt.Sprintf("%d", v.VNI)},
-				{"Flags", fmt.Sprintf("0x%02x", flagByte(v.ValidIDFlag))},
+			out = append(out, Layer{Name: "VXLAN", Offset: off, Length: layerLen, Fields: []Field{
+				newFieldAt("VNI", fmt.Sprintf("%d", v.VNI), off+4, 3),
+				newFieldAt("Flags", fmt.Sprintf("0x%02x", flagByte(v.ValidIDFlag)), off, 1),
 			}})
 
 		case *gopacket.Payload:
@@ -270,63 +323,67 @@ func Tree(data []byte) []Layer {
 				continue
 			}
 
-			out = append(out, Layer{Name: "Data", Fields: []Field{
-				{"Length", fmt.Sprintf("%d bytes", len(v.Payload()))},
+			out = append(out, Layer{Name: "Data", Offset: off, Length: layerLen, Fields: []Field{
+				newFieldAt("Length", fmt.Sprintf("%d bytes", len(v.Payload())), off, layerLen),
 			}})
 
 		case gopacket.ErrorLayer:
-			out = append(out, Layer{Name: "Undecoded", Fields: []Field{
-				{"Length", fmt.Sprintf("%d bytes", len(v.LayerContents()))},
+			out = append(out, Layer{Name: "Undecoded", Offset: off, Length: layerLen, Fields: []Field{
+				newFieldAt("Length", fmt.Sprintf("%d bytes", len(v.LayerContents())), off, layerLen),
 			}})
 
 		default:
-			out = append(out, Layer{Name: l.LayerType().String(), Fields: []Field{
-				{"Length", fmt.Sprintf("%d bytes", len(l.LayerContents()))},
+			out = append(out, Layer{Name: l.LayerType().String(), Offset: off, Length: layerLen, Fields: []Field{
+				newFieldAt("Length", fmt.Sprintf("%d bytes", len(l.LayerContents())), off, layerLen),
 			}})
 		}
+
+		off += layerLen
 	}
 
 	return out
 }
 
-func arpLayer(v *layers.ARP) Layer {
+func arpLayer(v *layers.ARP, off, length int) Layer {
 	op := "request"
 	if v.Operation == layers.ARPReply {
 		op = "reply"
 	}
 
-	return Layer{Name: "ARP", Fields: []Field{
-		{"Operation", op},
-		{"Sender MAC", fmt.Sprintf("% x", v.SourceHwAddress)},
-		{"Sender IP", fmt.Sprintf("%d.%d.%d.%d", v.SourceProtAddress[0], v.SourceProtAddress[1], v.SourceProtAddress[2], v.SourceProtAddress[3])},
-		{"Target MAC", fmt.Sprintf("% x", v.DstHwAddress)},
-		{"Target IP", fmt.Sprintf("%d.%d.%d.%d", v.DstProtAddress[0], v.DstProtAddress[1], v.DstProtAddress[2], v.DstProtAddress[3])},
+	return Layer{Name: "ARP", Offset: off, Length: length, Fields: []Field{
+		newFieldAt("Operation", op, off+6, 2),
+		newFieldAt("Sender MAC", fmt.Sprintf("% x", v.SourceHwAddress), off+8, 6),
+		newFieldAt("Sender IP", fmt.Sprintf("%d.%d.%d.%d", v.SourceProtAddress[0], v.SourceProtAddress[1], v.SourceProtAddress[2], v.SourceProtAddress[3]), off+14, 4),
+		newFieldAt("Target MAC", fmt.Sprintf("% x", v.DstHwAddress), off+18, 6),
+		newFieldAt("Target IP", fmt.Sprintf("%d.%d.%d.%d", v.DstProtAddress[0], v.DstProtAddress[1], v.DstProtAddress[2], v.DstProtAddress[3]), off+24, 4),
 	}}
 }
 
-func ipv4Layer(v *layers.IPv4) Layer {
-	return Layer{Name: "IPv4", Fields: []Field{
-		{"Source", v.SrcIP.String()},
-		{"Destination", v.DstIP.String()},
-		{"Protocol", v.Protocol.String()},
-		{"TTL", fmt.Sprintf("%d", v.TTL)},
-		{"Identification", fmt.Sprintf("0x%04x", v.Id)},
-		{"Flags", v.Flags.String()},
-		{"Total Length", fmt.Sprintf("%d", v.Length)},
-		{"Checksum", fmt.Sprintf("0x%04x", v.Checksum)},
+func ipv4Layer(v *layers.IPv4, off, length int) Layer {
+	return Layer{Name: "IPv4", Offset: off, Length: length, Fields: []Field{
+		newFieldAt("Source", v.SrcIP.String(), off+12, 4),
+		newFieldAt("Destination", v.DstIP.String(), off+16, 4),
+		newFieldAt("Protocol", v.Protocol.String(), off+9, 1),
+		newFieldAt("TTL", fmt.Sprintf("%d", v.TTL), off+8, 1),
+		newFieldAt("Identification", fmt.Sprintf("0x%04x", v.Id), off+4, 2),
+		newFieldAt("Flags", v.Flags.String(), off+6, 2),
+		newFieldAt("Total Length", fmt.Sprintf("%d", v.Length), off+2, 2),
+		newFieldAt("Checksum", fmt.Sprintf("0x%04x", v.Checksum), off+10, 2),
 	}}
 }
 
-func tcpLayer(v *layers.TCP) Layer {
-	return Layer{Name: "TCP", Fields: []Field{
-		{"Source Port", fmt.Sprintf("%d", v.SrcPort)},
-		{"Destination Port", fmt.Sprintf("%d", v.DstPort)},
-		{"Sequence", fmt.Sprintf("%d", v.Seq)},
-		{"Acknowledgment", fmt.Sprintf("%d", v.Ack)},
-		{"Flags", tcpFlags(v)},
-		{"Window", fmt.Sprintf("%d", v.Window)},
-		{"Checksum", fmt.Sprintf("0x%04x", v.Checksum)},
-		{"Payload Length", fmt.Sprintf("%d", len(v.Payload))},
+func tcpLayer(v *layers.TCP, off, length int) Layer {
+	return Layer{Name: "TCP", Offset: off, Length: length, Fields: []Field{
+		newFieldAt("Source Port", fmt.Sprintf("%d", v.SrcPort), off, 2),
+		newFieldAt("Destination Port", fmt.Sprintf("%d", v.DstPort), off+2, 2),
+		newFieldAt("Sequence", fmt.Sprintf("%d", v.Seq), off+4, 4),
+		newFieldAt("Acknowledgment", fmt.Sprintf("%d", v.Ack), off+8, 4),
+		newFieldAt("Flags", tcpFlags(v), off+12, 2),
+		newFieldAt("Window", fmt.Sprintf("%d", v.Window), off+14, 2),
+		newFieldAt("Checksum", fmt.Sprintf("0x%04x", v.Checksum), off+16, 2),
+		// The payload length is derived, so the field highlights the
+		// payload bytes themselves (empty payload keeps no range).
+		newFieldAt("Payload Length", fmt.Sprintf("%d", len(v.Payload)), off+length, len(v.Payload)),
 	}}
 }
 

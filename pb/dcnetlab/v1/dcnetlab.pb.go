@@ -6465,8 +6465,11 @@ type CapturePacket struct {
 	Destination   string                 `protobuf:"bytes,7,opt,name=destination,proto3" json:"destination,omitempty"`
 	Protocol      string                 `protobuf:"bytes,8,opt,name=protocol,proto3" json:"protocol,omitempty"`
 	Info          string                 `protobuf:"bytes,9,opt,name=info,proto3" json:"info,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// source_port/destination_port are set only for TCP/UDP conversations.
+	SourcePort      int32 `protobuf:"varint,10,opt,name=source_port,json=sourcePort,proto3" json:"source_port,omitempty"`
+	DestinationPort int32 `protobuf:"varint,11,opt,name=destination_port,json=destinationPort,proto3" json:"destination_port,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *CapturePacket) Reset() {
@@ -6560,6 +6563,20 @@ func (x *CapturePacket) GetInfo() string {
 		return x.Info
 	}
 	return ""
+}
+
+func (x *CapturePacket) GetSourcePort() int32 {
+	if x != nil {
+		return x.SourcePort
+	}
+	return 0
+}
+
+func (x *CapturePacket) GetDestinationPort() int32 {
+	if x != nil {
+		return x.DestinationPort
+	}
+	return 0
 }
 
 // ListCapturePacketsRequest pages through a capture's packets by
@@ -6757,10 +6774,19 @@ func (x *GetCapturePacketRequest) GetIndex() int64 {
 	return 0
 }
 
+// CapturePacketField is one name/value line of a decoded layer.
+// offset/length locate the field's bytes in the raw frame for the
+// viewer's hex highlight sync; length 0 means the field has no fixed
+// byte range (e.g. a derived value such as a payload length).
 type CapturePacketField struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Value         string                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Name   string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Value  string                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	Offset int32                  `protobuf:"varint,3,opt,name=offset,proto3" json:"offset,omitempty"`
+	Length int32                  `protobuf:"varint,4,opt,name=length,proto3" json:"length,omitempty"`
+	// children nest sub-fields, e.g. each path attribute under the BGP
+	// UPDATE "Path Attributes" line.
+	Children      []*CapturePacketField `protobuf:"bytes,5,rep,name=children,proto3" json:"children,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -6809,11 +6835,35 @@ func (x *CapturePacketField) GetValue() string {
 	return ""
 }
 
+func (x *CapturePacketField) GetOffset() int32 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
+func (x *CapturePacketField) GetLength() int32 {
+	if x != nil {
+		return x.Length
+	}
+	return 0
+}
+
+func (x *CapturePacketField) GetChildren() []*CapturePacketField {
+	if x != nil {
+		return x.Children
+	}
+	return nil
+}
+
 // CapturePacketLayer is one decoded protocol layer of the tree view.
+// offset/length is the layer's own byte range in the raw frame.
 type CapturePacketLayer struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Fields        []*CapturePacketField  `protobuf:"bytes,2,rep,name=fields,proto3" json:"fields,omitempty"`
+	Offset        int32                  `protobuf:"varint,3,opt,name=offset,proto3" json:"offset,omitempty"`
+	Length        int32                  `protobuf:"varint,4,opt,name=length,proto3" json:"length,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -6860,6 +6910,20 @@ func (x *CapturePacketLayer) GetFields() []*CapturePacketField {
 		return x.Fields
 	}
 	return nil
+}
+
+func (x *CapturePacketLayer) GetOffset() int32 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
+func (x *CapturePacketLayer) GetLength() int32 {
+	if x != nil {
+		return x.Length
+	}
+	return 0
 }
 
 // CapturePacketDetail is one packet opened in the viewer: the decoded
@@ -10463,7 +10527,7 @@ const file_dcnetlab_v1_dcnetlab_proto_rawDesc = "" +
 	"\x17CaptureSessionOpRequest\x12\x15\n" +
 	"\x06lab_id\x18\x01 \x01(\tR\x05labId\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\tR\x02id\"\x1b\n" +
-	"\x19DeleteCaptureSessionReply\"\xa1\x02\n" +
+	"\x19DeleteCaptureSessionReply\"\xed\x02\n" +
 	"\rCapturePacket\x12\x14\n" +
 	"\x05index\x18\x01 \x01(\x03R\x05index\x12*\n" +
 	"\x02ts\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x02ts\x12\x1c\n" +
@@ -10474,7 +10538,11 @@ const file_dcnetlab_v1_dcnetlab_proto_rawDesc = "" +
 	"\x06source\x18\x06 \x01(\tR\x06source\x12 \n" +
 	"\vdestination\x18\a \x01(\tR\vdestination\x12\x1a\n" +
 	"\bprotocol\x18\b \x01(\tR\bprotocol\x12\x12\n" +
-	"\x04info\x18\t \x01(\tR\x04info\"p\n" +
+	"\x04info\x18\t \x01(\tR\x04info\x12\x1f\n" +
+	"\vsource_port\x18\n" +
+	" \x01(\x05R\n" +
+	"sourcePort\x12)\n" +
+	"\x10destination_port\x18\v \x01(\x05R\x0fdestinationPort\"p\n" +
 	"\x19ListCapturePacketsRequest\x12\x15\n" +
 	"\x06lab_id\x18\x01 \x01(\tR\x05labId\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\tR\x02id\x12\x16\n" +
@@ -10487,13 +10555,18 @@ const file_dcnetlab_v1_dcnetlab_proto_rawDesc = "" +
 	"\x17GetCapturePacketRequest\x12\x15\n" +
 	"\x06lab_id\x18\x01 \x01(\tR\x05labId\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\tR\x02id\x12\x14\n" +
-	"\x05index\x18\x03 \x01(\x03R\x05index\">\n" +
+	"\x05index\x18\x03 \x01(\x03R\x05index\"\xab\x01\n" +
 	"\x12CapturePacketField\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value\"a\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\x12\x16\n" +
+	"\x06offset\x18\x03 \x01(\x05R\x06offset\x12\x16\n" +
+	"\x06length\x18\x04 \x01(\x05R\x06length\x12;\n" +
+	"\bchildren\x18\x05 \x03(\v2\x1f.dcnetlab.v1.CapturePacketFieldR\bchildren\"\x91\x01\n" +
 	"\x12CapturePacketLayer\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x127\n" +
-	"\x06fields\x18\x02 \x03(\v2\x1f.dcnetlab.v1.CapturePacketFieldR\x06fields\"\x96\x01\n" +
+	"\x06fields\x18\x02 \x03(\v2\x1f.dcnetlab.v1.CapturePacketFieldR\x06fields\x12\x16\n" +
+	"\x06offset\x18\x03 \x01(\x05R\x06offset\x12\x16\n" +
+	"\x06length\x18\x04 \x01(\x05R\x06length\"\x96\x01\n" +
 	"\x13CapturePacketDetail\x122\n" +
 	"\x06packet\x18\x01 \x01(\v2\x1a.dcnetlab.v1.CapturePacketR\x06packet\x127\n" +
 	"\x06layers\x18\x02 \x03(\v2\x1f.dcnetlab.v1.CapturePacketLayerR\x06layers\x12\x12\n" +
@@ -11003,156 +11076,157 @@ var file_dcnetlab_v1_dcnetlab_proto_depIdxs = []int32{
 	83,  // 79: dcnetlab.v1.ListCaptureSessionsReply.sessions:type_name -> dcnetlab.v1.CaptureSession
 	150, // 80: dcnetlab.v1.CapturePacket.ts:type_name -> google.protobuf.Timestamp
 	89,  // 81: dcnetlab.v1.ListCapturePacketsReply.packets:type_name -> dcnetlab.v1.CapturePacket
-	93,  // 82: dcnetlab.v1.CapturePacketLayer.fields:type_name -> dcnetlab.v1.CapturePacketField
-	89,  // 83: dcnetlab.v1.CapturePacketDetail.packet:type_name -> dcnetlab.v1.CapturePacket
-	94,  // 84: dcnetlab.v1.CapturePacketDetail.layers:type_name -> dcnetlab.v1.CapturePacketLayer
-	96,  // 85: dcnetlab.v1.Plan.operations:type_name -> dcnetlab.v1.PlanOperation
-	97,  // 86: dcnetlab.v1.Plan.allocations:type_name -> dcnetlab.v1.Allocation
-	98,  // 87: dcnetlab.v1.Plan.warnings:type_name -> dcnetlab.v1.PlanWarning
-	150, // 88: dcnetlab.v1.Plan.created_at:type_name -> google.protobuf.Timestamp
-	150, // 89: dcnetlab.v1.OperationStep.started_at:type_name -> google.protobuf.Timestamp
-	150, // 90: dcnetlab.v1.OperationStep.finished_at:type_name -> google.protobuf.Timestamp
-	102, // 91: dcnetlab.v1.Operation.resource:type_name -> dcnetlab.v1.ResourceRef
-	100, // 92: dcnetlab.v1.Operation.steps:type_name -> dcnetlab.v1.OperationStep
-	101, // 93: dcnetlab.v1.Operation.error:type_name -> dcnetlab.v1.OperationError
-	150, // 94: dcnetlab.v1.Operation.created_at:type_name -> google.protobuf.Timestamp
-	150, // 95: dcnetlab.v1.Operation.updated_at:type_name -> google.protobuf.Timestamp
-	5,   // 96: dcnetlab.v1.CreateLabRequest.topology:type_name -> dcnetlab.v1.TopologySpec
-	8,   // 97: dcnetlab.v1.ListLabsReply.labs:type_name -> dcnetlab.v1.Lab
-	116, // 98: dcnetlab.v1.NodeRuntime.interfaces:type_name -> dcnetlab.v1.RuntimeInterface
-	119, // 99: dcnetlab.v1.NodeBGP.neighbors:type_name -> dcnetlab.v1.BGPNeighbor
-	120, // 100: dcnetlab.v1.NodeBGP.server_group:type_name -> dcnetlab.v1.BGPServerGroup
-	123, // 101: dcnetlab.v1.Route.nexthops:type_name -> dcnetlab.v1.RouteNexthop
-	124, // 102: dcnetlab.v1.NodeRoutes.routes:type_name -> dcnetlab.v1.Route
-	127, // 103: dcnetlab.v1.NodeBGPTable.paths:type_name -> dcnetlab.v1.BGPPath
-	124, // 104: dcnetlab.v1.NodeFIB.routes:type_name -> dcnetlab.v1.Route
-	12,  // 105: dcnetlab.v1.ListNodesReply.nodes:type_name -> dcnetlab.v1.Node
-	16,  // 106: dcnetlab.v1.ListLinksReply.links:type_name -> dcnetlab.v1.Link
-	97,  // 107: dcnetlab.v1.ListAllocationsReply.allocations:type_name -> dcnetlab.v1.Allocation
-	103, // 108: dcnetlab.v1.ListOperationsReply.operations:type_name -> dcnetlab.v1.Operation
-	5,   // 109: dcnetlab.v1.ProfileInfo.topology:type_name -> dcnetlab.v1.TopologySpec
-	146, // 110: dcnetlab.v1.ListProfilesReply.profiles:type_name -> dcnetlab.v1.ProfileInfo
-	105, // 111: dcnetlab.v1.DCNetLab.CreateLab:input_type -> dcnetlab.v1.CreateLabRequest
-	106, // 112: dcnetlab.v1.DCNetLab.ListLabs:input_type -> dcnetlab.v1.ListLabsRequest
-	108, // 113: dcnetlab.v1.DCNetLab.GetLab:input_type -> dcnetlab.v1.GetLabRequest
-	109, // 114: dcnetlab.v1.DCNetLab.DeleteLab:input_type -> dcnetlab.v1.DeleteLabRequest
-	110, // 115: dcnetlab.v1.DCNetLab.StartLab:input_type -> dcnetlab.v1.StartLabRequest
-	111, // 116: dcnetlab.v1.DCNetLab.StopLab:input_type -> dcnetlab.v1.StopLabRequest
-	112, // 117: dcnetlab.v1.DCNetLab.RepairLab:input_type -> dcnetlab.v1.RepairLabRequest
-	131, // 118: dcnetlab.v1.DCNetLab.ListNodes:input_type -> dcnetlab.v1.ListNodesRequest
-	133, // 119: dcnetlab.v1.DCNetLab.ListLinks:input_type -> dcnetlab.v1.ListLinksRequest
-	135, // 120: dcnetlab.v1.DCNetLab.ListAllocations:input_type -> dcnetlab.v1.ListAllocationsRequest
-	113, // 121: dcnetlab.v1.DCNetLab.StartNode:input_type -> dcnetlab.v1.StartNodeRequest
-	114, // 122: dcnetlab.v1.DCNetLab.StopNode:input_type -> dcnetlab.v1.StopNodeRequest
-	115, // 123: dcnetlab.v1.DCNetLab.GetNodeRuntime:input_type -> dcnetlab.v1.GetNodeRuntimeRequest
-	118, // 124: dcnetlab.v1.DCNetLab.GetNodeBGP:input_type -> dcnetlab.v1.GetNodeBGPRequest
-	122, // 125: dcnetlab.v1.DCNetLab.GetNodeRoutes:input_type -> dcnetlab.v1.GetNodeRoutesRequest
-	126, // 126: dcnetlab.v1.DCNetLab.GetNodeBGPTable:input_type -> dcnetlab.v1.GetNodeBGPTableRequest
-	129, // 127: dcnetlab.v1.DCNetLab.GetNodeFIB:input_type -> dcnetlab.v1.GetNodeFIBRequest
-	30,  // 128: dcnetlab.v1.DCNetLab.GetNodeMetrics:input_type -> dcnetlab.v1.GetNodeMetricsRequest
-	38,  // 129: dcnetlab.v1.DCNetLab.GetNodeMetricsHistory:input_type -> dcnetlab.v1.GetNodeMetricsHistoryRequest
-	18,  // 130: dcnetlab.v1.DCNetLab.UploadPackage:input_type -> dcnetlab.v1.UploadPackageRequest
-	19,  // 131: dcnetlab.v1.DCNetLab.ListPackages:input_type -> dcnetlab.v1.ListPackagesRequest
-	21,  // 132: dcnetlab.v1.DCNetLab.DeletePackage:input_type -> dcnetlab.v1.DeletePackageRequest
-	26,  // 133: dcnetlab.v1.DCNetLab.GetNodeInventory:input_type -> dcnetlab.v1.GetNodeInventoryRequest
-	23,  // 134: dcnetlab.v1.DCNetLab.InstallPackage:input_type -> dcnetlab.v1.InstallPackageRequest
-	45,  // 135: dcnetlab.v1.DCNetLab.CreateProgram:input_type -> dcnetlab.v1.CreateProgramRequest
-	51,  // 136: dcnetlab.v1.DCNetLab.ListPrograms:input_type -> dcnetlab.v1.ListProgramsRequest
-	53,  // 137: dcnetlab.v1.DCNetLab.StartProgram:input_type -> dcnetlab.v1.ProgramOpRequest
-	53,  // 138: dcnetlab.v1.DCNetLab.StopProgram:input_type -> dcnetlab.v1.ProgramOpRequest
-	50,  // 139: dcnetlab.v1.DCNetLab.UpgradeProgram:input_type -> dcnetlab.v1.UpgradeProgramRequest
-	53,  // 140: dcnetlab.v1.DCNetLab.DeleteProgram:input_type -> dcnetlab.v1.ProgramOpRequest
-	47,  // 141: dcnetlab.v1.DCNetLab.BatchProgramOp:input_type -> dcnetlab.v1.BatchProgramRequest
-	55,  // 142: dcnetlab.v1.DCNetLab.GetProgramLogs:input_type -> dcnetlab.v1.GetProgramLogsRequest
-	63,  // 143: dcnetlab.v1.DCNetLab.CreateTrafficScenario:input_type -> dcnetlab.v1.CreateTrafficScenarioRequest
-	64,  // 144: dcnetlab.v1.DCNetLab.ListTrafficScenarios:input_type -> dcnetlab.v1.ListTrafficScenariosRequest
-	66,  // 145: dcnetlab.v1.DCNetLab.StartTrafficScenario:input_type -> dcnetlab.v1.TrafficScenarioOpRequest
-	66,  // 146: dcnetlab.v1.DCNetLab.StopTrafficScenario:input_type -> dcnetlab.v1.TrafficScenarioOpRequest
-	66,  // 147: dcnetlab.v1.DCNetLab.DeleteTrafficScenario:input_type -> dcnetlab.v1.TrafficScenarioOpRequest
-	68,  // 148: dcnetlab.v1.DCNetLab.GetTrafficScenarioHistory:input_type -> dcnetlab.v1.GetTrafficScenarioHistoryRequest
-	75,  // 149: dcnetlab.v1.DCNetLab.CreateFaultScenario:input_type -> dcnetlab.v1.CreateFaultScenarioRequest
-	76,  // 150: dcnetlab.v1.DCNetLab.ListFaultScenarios:input_type -> dcnetlab.v1.ListFaultScenariosRequest
-	78,  // 151: dcnetlab.v1.DCNetLab.ApplyFaultScenario:input_type -> dcnetlab.v1.FaultScenarioOpRequest
-	78,  // 152: dcnetlab.v1.DCNetLab.RecoverFaultScenario:input_type -> dcnetlab.v1.FaultScenarioOpRequest
-	78,  // 153: dcnetlab.v1.DCNetLab.DeleteFaultScenario:input_type -> dcnetlab.v1.FaultScenarioOpRequest
-	84,  // 154: dcnetlab.v1.DCNetLab.CreateCaptureSession:input_type -> dcnetlab.v1.CreateCaptureSessionRequest
-	85,  // 155: dcnetlab.v1.DCNetLab.ListCaptureSessions:input_type -> dcnetlab.v1.ListCaptureSessionsRequest
-	87,  // 156: dcnetlab.v1.DCNetLab.GetCaptureSession:input_type -> dcnetlab.v1.CaptureSessionOpRequest
-	87,  // 157: dcnetlab.v1.DCNetLab.StopCaptureSession:input_type -> dcnetlab.v1.CaptureSessionOpRequest
-	87,  // 158: dcnetlab.v1.DCNetLab.DeleteCaptureSession:input_type -> dcnetlab.v1.CaptureSessionOpRequest
-	90,  // 159: dcnetlab.v1.DCNetLab.ListCapturePackets:input_type -> dcnetlab.v1.ListCapturePacketsRequest
-	92,  // 160: dcnetlab.v1.DCNetLab.GetCapturePacket:input_type -> dcnetlab.v1.GetCapturePacketRequest
-	137, // 161: dcnetlab.v1.DCNetLab.CreatePlan:input_type -> dcnetlab.v1.CreatePlanRequest
-	138, // 162: dcnetlab.v1.DCNetLab.GetPlan:input_type -> dcnetlab.v1.GetPlanRequest
-	139, // 163: dcnetlab.v1.DCNetLab.ApplyPlan:input_type -> dcnetlab.v1.ApplyPlanRequest
-	140, // 164: dcnetlab.v1.DCNetLab.GetOperation:input_type -> dcnetlab.v1.GetOperationRequest
-	141, // 165: dcnetlab.v1.DCNetLab.ListOperations:input_type -> dcnetlab.v1.ListOperationsRequest
-	143, // 166: dcnetlab.v1.DCNetLab.ListGenerations:input_type -> dcnetlab.v1.ListGenerationsRequest
-	145, // 167: dcnetlab.v1.DCNetLab.ListProfiles:input_type -> dcnetlab.v1.ListProfilesRequest
-	148, // 168: dcnetlab.v1.DCNetLab.Healthz:input_type -> dcnetlab.v1.HealthzRequest
-	8,   // 169: dcnetlab.v1.DCNetLab.CreateLab:output_type -> dcnetlab.v1.Lab
-	107, // 170: dcnetlab.v1.DCNetLab.ListLabs:output_type -> dcnetlab.v1.ListLabsReply
-	8,   // 171: dcnetlab.v1.DCNetLab.GetLab:output_type -> dcnetlab.v1.Lab
-	104, // 172: dcnetlab.v1.DCNetLab.DeleteLab:output_type -> dcnetlab.v1.OperationRef
-	104, // 173: dcnetlab.v1.DCNetLab.StartLab:output_type -> dcnetlab.v1.OperationRef
-	104, // 174: dcnetlab.v1.DCNetLab.StopLab:output_type -> dcnetlab.v1.OperationRef
-	104, // 175: dcnetlab.v1.DCNetLab.RepairLab:output_type -> dcnetlab.v1.OperationRef
-	132, // 176: dcnetlab.v1.DCNetLab.ListNodes:output_type -> dcnetlab.v1.ListNodesReply
-	134, // 177: dcnetlab.v1.DCNetLab.ListLinks:output_type -> dcnetlab.v1.ListLinksReply
-	136, // 178: dcnetlab.v1.DCNetLab.ListAllocations:output_type -> dcnetlab.v1.ListAllocationsReply
-	12,  // 179: dcnetlab.v1.DCNetLab.StartNode:output_type -> dcnetlab.v1.Node
-	12,  // 180: dcnetlab.v1.DCNetLab.StopNode:output_type -> dcnetlab.v1.Node
-	117, // 181: dcnetlab.v1.DCNetLab.GetNodeRuntime:output_type -> dcnetlab.v1.NodeRuntime
-	121, // 182: dcnetlab.v1.DCNetLab.GetNodeBGP:output_type -> dcnetlab.v1.NodeBGP
-	125, // 183: dcnetlab.v1.DCNetLab.GetNodeRoutes:output_type -> dcnetlab.v1.NodeRoutes
-	128, // 184: dcnetlab.v1.DCNetLab.GetNodeBGPTable:output_type -> dcnetlab.v1.NodeBGPTable
-	130, // 185: dcnetlab.v1.DCNetLab.GetNodeFIB:output_type -> dcnetlab.v1.NodeFIB
-	31,  // 186: dcnetlab.v1.DCNetLab.GetNodeMetrics:output_type -> dcnetlab.v1.NodeMetrics
-	40,  // 187: dcnetlab.v1.DCNetLab.GetNodeMetricsHistory:output_type -> dcnetlab.v1.NodeMetricsHistory
-	17,  // 188: dcnetlab.v1.DCNetLab.UploadPackage:output_type -> dcnetlab.v1.Package
-	20,  // 189: dcnetlab.v1.DCNetLab.ListPackages:output_type -> dcnetlab.v1.ListPackagesReply
-	22,  // 190: dcnetlab.v1.DCNetLab.DeletePackage:output_type -> dcnetlab.v1.DeletePackageReply
-	29,  // 191: dcnetlab.v1.DCNetLab.GetNodeInventory:output_type -> dcnetlab.v1.NodeInventory
-	25,  // 192: dcnetlab.v1.DCNetLab.InstallPackage:output_type -> dcnetlab.v1.InstallPackageReply
-	46,  // 193: dcnetlab.v1.DCNetLab.CreateProgram:output_type -> dcnetlab.v1.CreateProgramReply
-	52,  // 194: dcnetlab.v1.DCNetLab.ListPrograms:output_type -> dcnetlab.v1.ListProgramsReply
-	44,  // 195: dcnetlab.v1.DCNetLab.StartProgram:output_type -> dcnetlab.v1.Program
-	44,  // 196: dcnetlab.v1.DCNetLab.StopProgram:output_type -> dcnetlab.v1.Program
-	44,  // 197: dcnetlab.v1.DCNetLab.UpgradeProgram:output_type -> dcnetlab.v1.Program
-	54,  // 198: dcnetlab.v1.DCNetLab.DeleteProgram:output_type -> dcnetlab.v1.DeleteProgramReply
-	49,  // 199: dcnetlab.v1.DCNetLab.BatchProgramOp:output_type -> dcnetlab.v1.BatchProgramReply
-	56,  // 200: dcnetlab.v1.DCNetLab.GetProgramLogs:output_type -> dcnetlab.v1.ProgramLogs
-	62,  // 201: dcnetlab.v1.DCNetLab.CreateTrafficScenario:output_type -> dcnetlab.v1.TrafficScenario
-	65,  // 202: dcnetlab.v1.DCNetLab.ListTrafficScenarios:output_type -> dcnetlab.v1.ListTrafficScenariosReply
-	62,  // 203: dcnetlab.v1.DCNetLab.StartTrafficScenario:output_type -> dcnetlab.v1.TrafficScenario
-	62,  // 204: dcnetlab.v1.DCNetLab.StopTrafficScenario:output_type -> dcnetlab.v1.TrafficScenario
-	67,  // 205: dcnetlab.v1.DCNetLab.DeleteTrafficScenario:output_type -> dcnetlab.v1.DeleteTrafficScenarioReply
-	69,  // 206: dcnetlab.v1.DCNetLab.GetTrafficScenarioHistory:output_type -> dcnetlab.v1.TrafficScenarioHistory
-	74,  // 207: dcnetlab.v1.DCNetLab.CreateFaultScenario:output_type -> dcnetlab.v1.FaultScenario
-	77,  // 208: dcnetlab.v1.DCNetLab.ListFaultScenarios:output_type -> dcnetlab.v1.ListFaultScenariosReply
-	74,  // 209: dcnetlab.v1.DCNetLab.ApplyFaultScenario:output_type -> dcnetlab.v1.FaultScenario
-	74,  // 210: dcnetlab.v1.DCNetLab.RecoverFaultScenario:output_type -> dcnetlab.v1.FaultScenario
-	79,  // 211: dcnetlab.v1.DCNetLab.DeleteFaultScenario:output_type -> dcnetlab.v1.DeleteFaultScenarioReply
-	83,  // 212: dcnetlab.v1.DCNetLab.CreateCaptureSession:output_type -> dcnetlab.v1.CaptureSession
-	86,  // 213: dcnetlab.v1.DCNetLab.ListCaptureSessions:output_type -> dcnetlab.v1.ListCaptureSessionsReply
-	83,  // 214: dcnetlab.v1.DCNetLab.GetCaptureSession:output_type -> dcnetlab.v1.CaptureSession
-	83,  // 215: dcnetlab.v1.DCNetLab.StopCaptureSession:output_type -> dcnetlab.v1.CaptureSession
-	88,  // 216: dcnetlab.v1.DCNetLab.DeleteCaptureSession:output_type -> dcnetlab.v1.DeleteCaptureSessionReply
-	91,  // 217: dcnetlab.v1.DCNetLab.ListCapturePackets:output_type -> dcnetlab.v1.ListCapturePacketsReply
-	95,  // 218: dcnetlab.v1.DCNetLab.GetCapturePacket:output_type -> dcnetlab.v1.CapturePacketDetail
-	99,  // 219: dcnetlab.v1.DCNetLab.CreatePlan:output_type -> dcnetlab.v1.Plan
-	99,  // 220: dcnetlab.v1.DCNetLab.GetPlan:output_type -> dcnetlab.v1.Plan
-	104, // 221: dcnetlab.v1.DCNetLab.ApplyPlan:output_type -> dcnetlab.v1.OperationRef
-	103, // 222: dcnetlab.v1.DCNetLab.GetOperation:output_type -> dcnetlab.v1.Operation
-	142, // 223: dcnetlab.v1.DCNetLab.ListOperations:output_type -> dcnetlab.v1.ListOperationsReply
-	144, // 224: dcnetlab.v1.DCNetLab.ListGenerations:output_type -> dcnetlab.v1.ListGenerationsReply
-	147, // 225: dcnetlab.v1.DCNetLab.ListProfiles:output_type -> dcnetlab.v1.ListProfilesReply
-	149, // 226: dcnetlab.v1.DCNetLab.Healthz:output_type -> dcnetlab.v1.HealthzReply
-	169, // [169:227] is the sub-list for method output_type
-	111, // [111:169] is the sub-list for method input_type
-	111, // [111:111] is the sub-list for extension type_name
-	111, // [111:111] is the sub-list for extension extendee
-	0,   // [0:111] is the sub-list for field type_name
+	93,  // 82: dcnetlab.v1.CapturePacketField.children:type_name -> dcnetlab.v1.CapturePacketField
+	93,  // 83: dcnetlab.v1.CapturePacketLayer.fields:type_name -> dcnetlab.v1.CapturePacketField
+	89,  // 84: dcnetlab.v1.CapturePacketDetail.packet:type_name -> dcnetlab.v1.CapturePacket
+	94,  // 85: dcnetlab.v1.CapturePacketDetail.layers:type_name -> dcnetlab.v1.CapturePacketLayer
+	96,  // 86: dcnetlab.v1.Plan.operations:type_name -> dcnetlab.v1.PlanOperation
+	97,  // 87: dcnetlab.v1.Plan.allocations:type_name -> dcnetlab.v1.Allocation
+	98,  // 88: dcnetlab.v1.Plan.warnings:type_name -> dcnetlab.v1.PlanWarning
+	150, // 89: dcnetlab.v1.Plan.created_at:type_name -> google.protobuf.Timestamp
+	150, // 90: dcnetlab.v1.OperationStep.started_at:type_name -> google.protobuf.Timestamp
+	150, // 91: dcnetlab.v1.OperationStep.finished_at:type_name -> google.protobuf.Timestamp
+	102, // 92: dcnetlab.v1.Operation.resource:type_name -> dcnetlab.v1.ResourceRef
+	100, // 93: dcnetlab.v1.Operation.steps:type_name -> dcnetlab.v1.OperationStep
+	101, // 94: dcnetlab.v1.Operation.error:type_name -> dcnetlab.v1.OperationError
+	150, // 95: dcnetlab.v1.Operation.created_at:type_name -> google.protobuf.Timestamp
+	150, // 96: dcnetlab.v1.Operation.updated_at:type_name -> google.protobuf.Timestamp
+	5,   // 97: dcnetlab.v1.CreateLabRequest.topology:type_name -> dcnetlab.v1.TopologySpec
+	8,   // 98: dcnetlab.v1.ListLabsReply.labs:type_name -> dcnetlab.v1.Lab
+	116, // 99: dcnetlab.v1.NodeRuntime.interfaces:type_name -> dcnetlab.v1.RuntimeInterface
+	119, // 100: dcnetlab.v1.NodeBGP.neighbors:type_name -> dcnetlab.v1.BGPNeighbor
+	120, // 101: dcnetlab.v1.NodeBGP.server_group:type_name -> dcnetlab.v1.BGPServerGroup
+	123, // 102: dcnetlab.v1.Route.nexthops:type_name -> dcnetlab.v1.RouteNexthop
+	124, // 103: dcnetlab.v1.NodeRoutes.routes:type_name -> dcnetlab.v1.Route
+	127, // 104: dcnetlab.v1.NodeBGPTable.paths:type_name -> dcnetlab.v1.BGPPath
+	124, // 105: dcnetlab.v1.NodeFIB.routes:type_name -> dcnetlab.v1.Route
+	12,  // 106: dcnetlab.v1.ListNodesReply.nodes:type_name -> dcnetlab.v1.Node
+	16,  // 107: dcnetlab.v1.ListLinksReply.links:type_name -> dcnetlab.v1.Link
+	97,  // 108: dcnetlab.v1.ListAllocationsReply.allocations:type_name -> dcnetlab.v1.Allocation
+	103, // 109: dcnetlab.v1.ListOperationsReply.operations:type_name -> dcnetlab.v1.Operation
+	5,   // 110: dcnetlab.v1.ProfileInfo.topology:type_name -> dcnetlab.v1.TopologySpec
+	146, // 111: dcnetlab.v1.ListProfilesReply.profiles:type_name -> dcnetlab.v1.ProfileInfo
+	105, // 112: dcnetlab.v1.DCNetLab.CreateLab:input_type -> dcnetlab.v1.CreateLabRequest
+	106, // 113: dcnetlab.v1.DCNetLab.ListLabs:input_type -> dcnetlab.v1.ListLabsRequest
+	108, // 114: dcnetlab.v1.DCNetLab.GetLab:input_type -> dcnetlab.v1.GetLabRequest
+	109, // 115: dcnetlab.v1.DCNetLab.DeleteLab:input_type -> dcnetlab.v1.DeleteLabRequest
+	110, // 116: dcnetlab.v1.DCNetLab.StartLab:input_type -> dcnetlab.v1.StartLabRequest
+	111, // 117: dcnetlab.v1.DCNetLab.StopLab:input_type -> dcnetlab.v1.StopLabRequest
+	112, // 118: dcnetlab.v1.DCNetLab.RepairLab:input_type -> dcnetlab.v1.RepairLabRequest
+	131, // 119: dcnetlab.v1.DCNetLab.ListNodes:input_type -> dcnetlab.v1.ListNodesRequest
+	133, // 120: dcnetlab.v1.DCNetLab.ListLinks:input_type -> dcnetlab.v1.ListLinksRequest
+	135, // 121: dcnetlab.v1.DCNetLab.ListAllocations:input_type -> dcnetlab.v1.ListAllocationsRequest
+	113, // 122: dcnetlab.v1.DCNetLab.StartNode:input_type -> dcnetlab.v1.StartNodeRequest
+	114, // 123: dcnetlab.v1.DCNetLab.StopNode:input_type -> dcnetlab.v1.StopNodeRequest
+	115, // 124: dcnetlab.v1.DCNetLab.GetNodeRuntime:input_type -> dcnetlab.v1.GetNodeRuntimeRequest
+	118, // 125: dcnetlab.v1.DCNetLab.GetNodeBGP:input_type -> dcnetlab.v1.GetNodeBGPRequest
+	122, // 126: dcnetlab.v1.DCNetLab.GetNodeRoutes:input_type -> dcnetlab.v1.GetNodeRoutesRequest
+	126, // 127: dcnetlab.v1.DCNetLab.GetNodeBGPTable:input_type -> dcnetlab.v1.GetNodeBGPTableRequest
+	129, // 128: dcnetlab.v1.DCNetLab.GetNodeFIB:input_type -> dcnetlab.v1.GetNodeFIBRequest
+	30,  // 129: dcnetlab.v1.DCNetLab.GetNodeMetrics:input_type -> dcnetlab.v1.GetNodeMetricsRequest
+	38,  // 130: dcnetlab.v1.DCNetLab.GetNodeMetricsHistory:input_type -> dcnetlab.v1.GetNodeMetricsHistoryRequest
+	18,  // 131: dcnetlab.v1.DCNetLab.UploadPackage:input_type -> dcnetlab.v1.UploadPackageRequest
+	19,  // 132: dcnetlab.v1.DCNetLab.ListPackages:input_type -> dcnetlab.v1.ListPackagesRequest
+	21,  // 133: dcnetlab.v1.DCNetLab.DeletePackage:input_type -> dcnetlab.v1.DeletePackageRequest
+	26,  // 134: dcnetlab.v1.DCNetLab.GetNodeInventory:input_type -> dcnetlab.v1.GetNodeInventoryRequest
+	23,  // 135: dcnetlab.v1.DCNetLab.InstallPackage:input_type -> dcnetlab.v1.InstallPackageRequest
+	45,  // 136: dcnetlab.v1.DCNetLab.CreateProgram:input_type -> dcnetlab.v1.CreateProgramRequest
+	51,  // 137: dcnetlab.v1.DCNetLab.ListPrograms:input_type -> dcnetlab.v1.ListProgramsRequest
+	53,  // 138: dcnetlab.v1.DCNetLab.StartProgram:input_type -> dcnetlab.v1.ProgramOpRequest
+	53,  // 139: dcnetlab.v1.DCNetLab.StopProgram:input_type -> dcnetlab.v1.ProgramOpRequest
+	50,  // 140: dcnetlab.v1.DCNetLab.UpgradeProgram:input_type -> dcnetlab.v1.UpgradeProgramRequest
+	53,  // 141: dcnetlab.v1.DCNetLab.DeleteProgram:input_type -> dcnetlab.v1.ProgramOpRequest
+	47,  // 142: dcnetlab.v1.DCNetLab.BatchProgramOp:input_type -> dcnetlab.v1.BatchProgramRequest
+	55,  // 143: dcnetlab.v1.DCNetLab.GetProgramLogs:input_type -> dcnetlab.v1.GetProgramLogsRequest
+	63,  // 144: dcnetlab.v1.DCNetLab.CreateTrafficScenario:input_type -> dcnetlab.v1.CreateTrafficScenarioRequest
+	64,  // 145: dcnetlab.v1.DCNetLab.ListTrafficScenarios:input_type -> dcnetlab.v1.ListTrafficScenariosRequest
+	66,  // 146: dcnetlab.v1.DCNetLab.StartTrafficScenario:input_type -> dcnetlab.v1.TrafficScenarioOpRequest
+	66,  // 147: dcnetlab.v1.DCNetLab.StopTrafficScenario:input_type -> dcnetlab.v1.TrafficScenarioOpRequest
+	66,  // 148: dcnetlab.v1.DCNetLab.DeleteTrafficScenario:input_type -> dcnetlab.v1.TrafficScenarioOpRequest
+	68,  // 149: dcnetlab.v1.DCNetLab.GetTrafficScenarioHistory:input_type -> dcnetlab.v1.GetTrafficScenarioHistoryRequest
+	75,  // 150: dcnetlab.v1.DCNetLab.CreateFaultScenario:input_type -> dcnetlab.v1.CreateFaultScenarioRequest
+	76,  // 151: dcnetlab.v1.DCNetLab.ListFaultScenarios:input_type -> dcnetlab.v1.ListFaultScenariosRequest
+	78,  // 152: dcnetlab.v1.DCNetLab.ApplyFaultScenario:input_type -> dcnetlab.v1.FaultScenarioOpRequest
+	78,  // 153: dcnetlab.v1.DCNetLab.RecoverFaultScenario:input_type -> dcnetlab.v1.FaultScenarioOpRequest
+	78,  // 154: dcnetlab.v1.DCNetLab.DeleteFaultScenario:input_type -> dcnetlab.v1.FaultScenarioOpRequest
+	84,  // 155: dcnetlab.v1.DCNetLab.CreateCaptureSession:input_type -> dcnetlab.v1.CreateCaptureSessionRequest
+	85,  // 156: dcnetlab.v1.DCNetLab.ListCaptureSessions:input_type -> dcnetlab.v1.ListCaptureSessionsRequest
+	87,  // 157: dcnetlab.v1.DCNetLab.GetCaptureSession:input_type -> dcnetlab.v1.CaptureSessionOpRequest
+	87,  // 158: dcnetlab.v1.DCNetLab.StopCaptureSession:input_type -> dcnetlab.v1.CaptureSessionOpRequest
+	87,  // 159: dcnetlab.v1.DCNetLab.DeleteCaptureSession:input_type -> dcnetlab.v1.CaptureSessionOpRequest
+	90,  // 160: dcnetlab.v1.DCNetLab.ListCapturePackets:input_type -> dcnetlab.v1.ListCapturePacketsRequest
+	92,  // 161: dcnetlab.v1.DCNetLab.GetCapturePacket:input_type -> dcnetlab.v1.GetCapturePacketRequest
+	137, // 162: dcnetlab.v1.DCNetLab.CreatePlan:input_type -> dcnetlab.v1.CreatePlanRequest
+	138, // 163: dcnetlab.v1.DCNetLab.GetPlan:input_type -> dcnetlab.v1.GetPlanRequest
+	139, // 164: dcnetlab.v1.DCNetLab.ApplyPlan:input_type -> dcnetlab.v1.ApplyPlanRequest
+	140, // 165: dcnetlab.v1.DCNetLab.GetOperation:input_type -> dcnetlab.v1.GetOperationRequest
+	141, // 166: dcnetlab.v1.DCNetLab.ListOperations:input_type -> dcnetlab.v1.ListOperationsRequest
+	143, // 167: dcnetlab.v1.DCNetLab.ListGenerations:input_type -> dcnetlab.v1.ListGenerationsRequest
+	145, // 168: dcnetlab.v1.DCNetLab.ListProfiles:input_type -> dcnetlab.v1.ListProfilesRequest
+	148, // 169: dcnetlab.v1.DCNetLab.Healthz:input_type -> dcnetlab.v1.HealthzRequest
+	8,   // 170: dcnetlab.v1.DCNetLab.CreateLab:output_type -> dcnetlab.v1.Lab
+	107, // 171: dcnetlab.v1.DCNetLab.ListLabs:output_type -> dcnetlab.v1.ListLabsReply
+	8,   // 172: dcnetlab.v1.DCNetLab.GetLab:output_type -> dcnetlab.v1.Lab
+	104, // 173: dcnetlab.v1.DCNetLab.DeleteLab:output_type -> dcnetlab.v1.OperationRef
+	104, // 174: dcnetlab.v1.DCNetLab.StartLab:output_type -> dcnetlab.v1.OperationRef
+	104, // 175: dcnetlab.v1.DCNetLab.StopLab:output_type -> dcnetlab.v1.OperationRef
+	104, // 176: dcnetlab.v1.DCNetLab.RepairLab:output_type -> dcnetlab.v1.OperationRef
+	132, // 177: dcnetlab.v1.DCNetLab.ListNodes:output_type -> dcnetlab.v1.ListNodesReply
+	134, // 178: dcnetlab.v1.DCNetLab.ListLinks:output_type -> dcnetlab.v1.ListLinksReply
+	136, // 179: dcnetlab.v1.DCNetLab.ListAllocations:output_type -> dcnetlab.v1.ListAllocationsReply
+	12,  // 180: dcnetlab.v1.DCNetLab.StartNode:output_type -> dcnetlab.v1.Node
+	12,  // 181: dcnetlab.v1.DCNetLab.StopNode:output_type -> dcnetlab.v1.Node
+	117, // 182: dcnetlab.v1.DCNetLab.GetNodeRuntime:output_type -> dcnetlab.v1.NodeRuntime
+	121, // 183: dcnetlab.v1.DCNetLab.GetNodeBGP:output_type -> dcnetlab.v1.NodeBGP
+	125, // 184: dcnetlab.v1.DCNetLab.GetNodeRoutes:output_type -> dcnetlab.v1.NodeRoutes
+	128, // 185: dcnetlab.v1.DCNetLab.GetNodeBGPTable:output_type -> dcnetlab.v1.NodeBGPTable
+	130, // 186: dcnetlab.v1.DCNetLab.GetNodeFIB:output_type -> dcnetlab.v1.NodeFIB
+	31,  // 187: dcnetlab.v1.DCNetLab.GetNodeMetrics:output_type -> dcnetlab.v1.NodeMetrics
+	40,  // 188: dcnetlab.v1.DCNetLab.GetNodeMetricsHistory:output_type -> dcnetlab.v1.NodeMetricsHistory
+	17,  // 189: dcnetlab.v1.DCNetLab.UploadPackage:output_type -> dcnetlab.v1.Package
+	20,  // 190: dcnetlab.v1.DCNetLab.ListPackages:output_type -> dcnetlab.v1.ListPackagesReply
+	22,  // 191: dcnetlab.v1.DCNetLab.DeletePackage:output_type -> dcnetlab.v1.DeletePackageReply
+	29,  // 192: dcnetlab.v1.DCNetLab.GetNodeInventory:output_type -> dcnetlab.v1.NodeInventory
+	25,  // 193: dcnetlab.v1.DCNetLab.InstallPackage:output_type -> dcnetlab.v1.InstallPackageReply
+	46,  // 194: dcnetlab.v1.DCNetLab.CreateProgram:output_type -> dcnetlab.v1.CreateProgramReply
+	52,  // 195: dcnetlab.v1.DCNetLab.ListPrograms:output_type -> dcnetlab.v1.ListProgramsReply
+	44,  // 196: dcnetlab.v1.DCNetLab.StartProgram:output_type -> dcnetlab.v1.Program
+	44,  // 197: dcnetlab.v1.DCNetLab.StopProgram:output_type -> dcnetlab.v1.Program
+	44,  // 198: dcnetlab.v1.DCNetLab.UpgradeProgram:output_type -> dcnetlab.v1.Program
+	54,  // 199: dcnetlab.v1.DCNetLab.DeleteProgram:output_type -> dcnetlab.v1.DeleteProgramReply
+	49,  // 200: dcnetlab.v1.DCNetLab.BatchProgramOp:output_type -> dcnetlab.v1.BatchProgramReply
+	56,  // 201: dcnetlab.v1.DCNetLab.GetProgramLogs:output_type -> dcnetlab.v1.ProgramLogs
+	62,  // 202: dcnetlab.v1.DCNetLab.CreateTrafficScenario:output_type -> dcnetlab.v1.TrafficScenario
+	65,  // 203: dcnetlab.v1.DCNetLab.ListTrafficScenarios:output_type -> dcnetlab.v1.ListTrafficScenariosReply
+	62,  // 204: dcnetlab.v1.DCNetLab.StartTrafficScenario:output_type -> dcnetlab.v1.TrafficScenario
+	62,  // 205: dcnetlab.v1.DCNetLab.StopTrafficScenario:output_type -> dcnetlab.v1.TrafficScenario
+	67,  // 206: dcnetlab.v1.DCNetLab.DeleteTrafficScenario:output_type -> dcnetlab.v1.DeleteTrafficScenarioReply
+	69,  // 207: dcnetlab.v1.DCNetLab.GetTrafficScenarioHistory:output_type -> dcnetlab.v1.TrafficScenarioHistory
+	74,  // 208: dcnetlab.v1.DCNetLab.CreateFaultScenario:output_type -> dcnetlab.v1.FaultScenario
+	77,  // 209: dcnetlab.v1.DCNetLab.ListFaultScenarios:output_type -> dcnetlab.v1.ListFaultScenariosReply
+	74,  // 210: dcnetlab.v1.DCNetLab.ApplyFaultScenario:output_type -> dcnetlab.v1.FaultScenario
+	74,  // 211: dcnetlab.v1.DCNetLab.RecoverFaultScenario:output_type -> dcnetlab.v1.FaultScenario
+	79,  // 212: dcnetlab.v1.DCNetLab.DeleteFaultScenario:output_type -> dcnetlab.v1.DeleteFaultScenarioReply
+	83,  // 213: dcnetlab.v1.DCNetLab.CreateCaptureSession:output_type -> dcnetlab.v1.CaptureSession
+	86,  // 214: dcnetlab.v1.DCNetLab.ListCaptureSessions:output_type -> dcnetlab.v1.ListCaptureSessionsReply
+	83,  // 215: dcnetlab.v1.DCNetLab.GetCaptureSession:output_type -> dcnetlab.v1.CaptureSession
+	83,  // 216: dcnetlab.v1.DCNetLab.StopCaptureSession:output_type -> dcnetlab.v1.CaptureSession
+	88,  // 217: dcnetlab.v1.DCNetLab.DeleteCaptureSession:output_type -> dcnetlab.v1.DeleteCaptureSessionReply
+	91,  // 218: dcnetlab.v1.DCNetLab.ListCapturePackets:output_type -> dcnetlab.v1.ListCapturePacketsReply
+	95,  // 219: dcnetlab.v1.DCNetLab.GetCapturePacket:output_type -> dcnetlab.v1.CapturePacketDetail
+	99,  // 220: dcnetlab.v1.DCNetLab.CreatePlan:output_type -> dcnetlab.v1.Plan
+	99,  // 221: dcnetlab.v1.DCNetLab.GetPlan:output_type -> dcnetlab.v1.Plan
+	104, // 222: dcnetlab.v1.DCNetLab.ApplyPlan:output_type -> dcnetlab.v1.OperationRef
+	103, // 223: dcnetlab.v1.DCNetLab.GetOperation:output_type -> dcnetlab.v1.Operation
+	142, // 224: dcnetlab.v1.DCNetLab.ListOperations:output_type -> dcnetlab.v1.ListOperationsReply
+	144, // 225: dcnetlab.v1.DCNetLab.ListGenerations:output_type -> dcnetlab.v1.ListGenerationsReply
+	147, // 226: dcnetlab.v1.DCNetLab.ListProfiles:output_type -> dcnetlab.v1.ListProfilesReply
+	149, // 227: dcnetlab.v1.DCNetLab.Healthz:output_type -> dcnetlab.v1.HealthzReply
+	170, // [170:228] is the sub-list for method output_type
+	112, // [112:170] is the sub-list for method input_type
+	112, // [112:112] is the sub-list for extension type_name
+	112, // [112:112] is the sub-list for extension extendee
+	0,   // [0:112] is the sub-list for field type_name
 }
 
 func init() { file_dcnetlab_v1_dcnetlab_proto_init() }

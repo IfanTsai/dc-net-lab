@@ -1,6 +1,7 @@
 package capture
 
 import (
+	"bytes"
 	"net"
 	"strings"
 	"testing"
@@ -55,8 +56,16 @@ func TestSummarizeTCP(t *testing.T) {
 		t.Errorf("protocol: %s", s.Protocol)
 	}
 
-	if !strings.Contains(s.Info, "33000 → 8080") || !strings.Contains(s.Info, "PSH, ACK") || !strings.Contains(s.Info, "Len=5") {
+	if !strings.Contains(s.Info, "PSH, ACK") || !strings.Contains(s.Info, "Len=5") {
 		t.Errorf("info: %s", s.Info)
+	}
+
+	if strings.Contains(s.Info, "33000") || strings.Contains(s.Info, "8080") {
+		t.Errorf("info should not repeat the ports (they have their own columns): %s", s.Info)
+	}
+
+	if s.SourcePort != 33000 || s.DestinationPort != 8080 {
+		t.Errorf("ports: %d → %d", s.SourcePort, s.DestinationPort)
 	}
 }
 
@@ -173,5 +182,83 @@ func TestTreePlainPayload(t *testing.T) {
 	last := tree[len(tree)-1]
 	if last.Name != "Data" {
 		t.Errorf("last layer: %s", last.Name)
+	}
+}
+
+func treeField(t *testing.T, tree []Layer, layer, name string) Field {
+	t.Helper()
+
+	for _, l := range tree {
+		if l.Name != layer {
+			continue
+		}
+
+		for _, f := range l.Fields {
+			if f.Name == name {
+				return f
+			}
+		}
+	}
+
+	t.Fatalf("layer %s has no field %q", layer, name)
+
+	return Field{}
+}
+
+// TestTreeFieldOffsets checks that a few representative fields point at
+// the right bytes of the raw frame, which is what the viewer's hex
+// highlight sync relies on.
+func TestTreeFieldOffsets(t *testing.T) {
+	data := tcpFrame(t, 33000, 8080, []byte("hello"))
+	tree := Tree(data)
+
+	cases := []struct {
+		layer, field string
+		want         []byte
+	}{
+		{"Ethernet", "Source", data[6:12]},
+		{"Ethernet", "Destination", data[0:6]},
+		{"IPv4", "Source", net.ParseIP("10.0.0.1").To4()},
+		{"IPv4", "Destination", net.ParseIP("10.0.0.2").To4()},
+		{"TCP", "Source Port", []byte{0x80, 0xe8}}, // 33000
+	}
+
+	for _, c := range cases {
+		f := treeField(t, tree, c.layer, c.field)
+		if f.Length != len(c.want) {
+			t.Errorf("%s.%s length = %d, want %d", c.layer, c.field, f.Length, len(c.want))
+
+			continue
+		}
+
+		got := data[f.Offset : f.Offset+f.Length]
+		if !bytes.Equal(got, c.want) {
+			t.Errorf("%s.%s bytes = % x, want % x", c.layer, c.field, got, c.want)
+		}
+	}
+}
+
+// TestTreeBGPFieldOffsets checks that BGP field offsets, produced
+// relative to the TCP payload, are shifted frame-absolute by Tree.
+func TestTreeBGPFieldOffsets(t *testing.T) {
+	data := tcpFrame(t, 33000, 179, bgpRaw(1, bgpOpenBody(65100, 9, [4]byte{10, 1, 0, 1})))
+	tree := Tree(data)
+
+	rid := treeField(t, tree, "BGP · OPEN", "Router ID")
+	if rid.Length != 4 {
+		t.Fatalf("router id length: %d", rid.Length)
+	}
+
+	if got := data[rid.Offset : rid.Offset+rid.Length]; !bytes.Equal(got, []byte{10, 1, 0, 1}) {
+		t.Errorf("router id bytes: % x", got)
+	}
+
+	if typ := treeField(t, tree, "BGP · OPEN", "Message Type"); typ.Value != "OPEN" || typ.Length != 1 {
+		t.Errorf("message type: %+v", typ)
+	}
+
+	marker := treeField(t, tree, "BGP · OPEN", "Marker")
+	if got := data[marker.Offset]; got != 0xff || marker.Length != 16 {
+		t.Errorf("marker: byte %x at %d, length %d", got, marker.Offset, marker.Length)
 	}
 }

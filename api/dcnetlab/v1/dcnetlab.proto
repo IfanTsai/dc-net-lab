@@ -1205,6 +1205,9 @@ message CapturePacket {
   string destination = 7;
   string protocol = 8;
   string info = 9;
+  // source_port/destination_port are set only for TCP/UDP conversations.
+  int32 source_port = 10;
+  int32 destination_port = 11;
 }
 
 // ListCapturePacketsRequest pages through a capture's packets by
@@ -1233,15 +1236,27 @@ message GetCapturePacketRequest {
   int64 index = 3;
 }
 
+// CapturePacketField is one name/value line of a decoded layer.
+// offset/length locate the field's bytes in the raw frame for the
+// viewer's hex highlight sync; length 0 means the field has no fixed
+// byte range (e.g. a derived value such as a payload length).
 message CapturePacketField {
   string name = 1;
   string value = 2;
+  int32 offset = 3;
+  int32 length = 4;
+  // children nest sub-fields, e.g. each path attribute under the BGP
+  // UPDATE "Path Attributes" line.
+  repeated CapturePacketField children = 5;
 }
 
 // CapturePacketLayer is one decoded protocol layer of the tree view.
+// offset/length is the layer's own byte range in the raw frame.
 message CapturePacketLayer {
   string name = 1;
   repeated CapturePacketField fields = 2;
+  int32 offset = 3;
+  int32 length = 4;
 }
 
 // CapturePacketDetail is one packet opened in the viewer: the decoded

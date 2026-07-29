@@ -825,27 +825,38 @@ func captureSessionToPB(s *model.CaptureSession) *v1.CaptureSession {
 
 func capturePacketToPB(row capture.PacketRow) *v1.CapturePacket {
 	return &v1.CapturePacket{
-		Index:         row.Index,
-		Ts:            timePB(row.Ts),
-		Direction:     row.Direction,
-		CaptureLength: int32(row.CaptureLength),
-		WireLength:    int32(row.WireLength),
-		Source:        row.Source,
-		Destination:   row.Destination,
-		Protocol:      row.Protocol,
-		Info:          row.Info,
+		Index:           row.Index,
+		Ts:              timePB(row.Ts),
+		Direction:       row.Direction,
+		CaptureLength:   int32(row.CaptureLength),
+		WireLength:      int32(row.WireLength),
+		Source:          row.Source,
+		Destination:     row.Destination,
+		SourcePort:      row.SourcePort,
+		DestinationPort: row.DestinationPort,
+		Protocol:        row.Protocol,
+		Info:            row.Info,
 	}
+}
+
+func captureFieldsToPB(fields []capture.Field) []*v1.CapturePacketField {
+	out := make([]*v1.CapturePacketField, 0, len(fields))
+	for _, f := range fields {
+		out = append(out, &v1.CapturePacketField{
+			Name: f.Name, Value: f.Value, Offset: int32(f.Offset), Length: int32(f.Length),
+			Children: captureFieldsToPB(f.Children),
+		})
+	}
+
+	return out
 }
 
 func captureLayersToPB(layers []capture.Layer) []*v1.CapturePacketLayer {
 	out := make([]*v1.CapturePacketLayer, 0, len(layers))
 	for _, l := range layers {
-		fields := make([]*v1.CapturePacketField, 0, len(l.Fields))
-		for _, f := range l.Fields {
-			fields = append(fields, &v1.CapturePacketField{Name: f.Name, Value: f.Value})
-		}
-
-		out = append(out, &v1.CapturePacketLayer{Name: l.Name, Fields: fields})
+		out = append(out, &v1.CapturePacketLayer{
+			Name: l.Name, Fields: captureFieldsToPB(l.Fields), Offset: int32(l.Offset), Length: int32(l.Length),
+		})
 	}
 
 	return out
