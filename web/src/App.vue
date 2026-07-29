@@ -54,7 +54,16 @@ const elementLocale = computed(() => (locale.value === 'zh-CN' ? elementZhCn : e
 </template>
 
 <style>
+/* Element Plus defines --el-font-family but only applies it inside its
+   own components; without this the browser default (serif) leaks into
+   every plain element on the page. */
 html, body, #app { height: 100%; margin: 0; }
+body {
+  font-family: var(--el-font-family);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: var(--el-text-color-primary);
+}
 .app { height: 100%; }
 .sidebar {
   border-right: 1px solid var(--el-border-color);
