@@ -1,4 +1,4 @@
-# golangci-lint v2 配置,执行 doc/golang-style.md 中机器可检查的部分。
+# golangci-lint v2 配置,执行 docs/golang-style.md 中机器可检查的部分。
 # 空行语义等判断性规则不适合用 wsl 之类的机械 linter 强制(规范明确
 # "不要为了满足规则破坏短函数的紧凑性"),由 code review 执行。
 version: "2"

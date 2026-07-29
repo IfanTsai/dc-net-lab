@@ -266,7 +266,7 @@ func (uc *PlanUsecase) ApplyPlan(planID string) (*model.Operation, error) {
 
 // RepairLab re-attaches simulated interfaces the runtime lost outside
 // the platform's control (typically a host Docker daemon restart
-// dropping the veth pairs containerlab wired in — see doc/progress.md
+// dropping the veth pairs containerlab wired in — see docs/progress.md
 // "关键经验记录" #3). It re-runs the deploy against the lab's current
 // generation artifact — already-running containers keep their PID,
 // uptime and programs; containerlab just re-attaches what is missing

@@ -7,7 +7,7 @@ DCNetLab 是面向数据中心物理网络与虚拟网络的本地化、可视�
 适用于网络方案验证、故障演练、协议行为研究与教学演示。
 
 <p align="center">
-  <img src="doc/images/demo.gif" alt="点击设备查看 BGP Loc-RIB,双击进入 vtysh 终端" width="900"/>
+  <img src="docs/images/demo.gif" alt="点击设备查看 BGP Loc-RIB,双击进入 vtysh 终端" width="900"/>
 </p>
 <p align="center"><i>点击设备查看 BGP Loc-RIB → 双击进入 vtysh,一切都是真实协议栈</i></p>
 
@@ -55,17 +55,17 @@ Apply  编译 FRR 配置 + Containerlab 拓扑 → 写入 Generation 快照 → 
 
 | 分层 Clos 拓扑画布 | 节点多视角抽屉(BGP Loc-RIB) |
 |---|---|
-| ![拓扑画布](doc/images/topology.png) | ![节点抽屉](doc/images/node-drawer.png) |
+| ![拓扑画布](docs/images/topology.png) | ![节点抽屉](docs/images/node-drawer.png) |
 
 | 悬浮 Web 终端(vtysh) | 业务程序编排(批量部署/自启/升级) |
 |---|---|
-| ![Web 终端](doc/images/terminal.png) | ![程序页面](doc/images/programs.png) |
+| ![Web 终端](docs/images/terminal.png) | ![程序页面](docs/images/programs.png) |
 
 ## 快速开始
 
 依赖：Go 1.23+、Node 20+、Docker；部署真实拓扑还需 [containerlab](https://containerlab.dev)（缺省自动降级为 `noop` 运行时，仅生成产物）。
 
-containerlab 依赖 Linux 内核，macOS 上 `make up` 会自动转发到 [OrbStack](https://orbstack.dev) 机器内执行，浏览器访问 `http://dcnetlab.orb.local:8080`。首次使用先装好 OrbStack 再 `make orb-setup`（创建机器并安装 Docker/containerlab/Go/Node，幂等可重复执行）；未安装 OrbStack 或设置 `DCNETLAB_RUNTIME=noop` 时保持本地运行。转发机制与文件共享原理见 [macOS 适配](doc/macos.md)。
+containerlab 依赖 Linux 内核，macOS 上 `make up` 会自动转发到 [OrbStack](https://orbstack.dev) 机器内执行，浏览器访问 `http://dcnetlab.orb.local:8080`。首次使用先装好 OrbStack 再 `make orb-setup`（创建机器并安装 Docker/containerlab/Go/Node，幂等可重复执行）；未安装 OrbStack 或设置 `DCNETLAB_RUNTIME=noop` 时保持本地运行。转发机制与文件共享原理见 [macOS 适配](docs/macos.md)。
 
 ```bash
 make up                      # 构建后端 + 前端,Controller 托管 UI
@@ -127,7 +127,7 @@ internal/runtime/      Runtime Driver(containerlab / noop)
 internal/observer/     运行态采集与状态自愈
 web/                   Vue 3 前端
 scripts/               一键启停与工具链初始化脚本
-doc/                   PRD、技术设计、node-agent 与代码规范文档
+docs/                   PRD、技术设计、node-agent 与代码规范文档
 ```
 
 目录组织遵循 [kratos-layout](https://github.com/go-kratos/kratos-layout)，wire 依赖注入按层聚合 ProviderSet。
@@ -143,17 +143,17 @@ make lint            # golangci-lint + 风格检查,要求零告警
 make golden          # 编译器模板变更后更新 Golden 基线
 ```
 
-proto 依赖（`google/api` 注解）由 buf 从 BSR 拉取并经 `buf.lock` 锁定，仓库不落 third_party。提交前 `make build test lint` 必须全部通过；代码与提交规范见 doc/ 下的 style 文档。
+proto 依赖（`google/api` 注解）由 buf 从 BSR 拉取并经 `buf.lock` 锁定，仓库不落 third_party。提交前 `make build test lint` 必须全部通过；代码与提交规范见 docs/ 下的 style 文档。
 
 ## 文档
 
 | 文档 | 内容 |
 |---|---|
-| [PRD](doc/PRD.md) | 需求与产品定义 |
-| [技术设计](doc/design.md) | 架构、网络模型与迭代规划 |
-| [node-agent](doc/node-agent.md) | agent 运行逻辑与容器内 `pkg`/`program` 命令参考 |
-| [macOS 适配](doc/macos.md) | OrbStack 转发运行时的实现原理与图示 |
-| [开发进展](doc/progress.md) | 各迭代交付明细与关键经验 |
+| [PRD](docs/PRD.md) | 需求与产品定义 |
+| [技术设计](docs/design.md) | 架构、网络模型与迭代规划 |
+| [node-agent](docs/node-agent.md) | agent 运行逻辑与容器内 `pkg`/`program` 命令参考 |
+| [macOS 适配](docs/macos.md) | OrbStack 转发运行时的实现原理与图示 |
+| [开发进展](docs/progress.md) | 各迭代交付明细与关键经验 |
 
 ## Roadmap
 

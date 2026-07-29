@@ -35,7 +35,7 @@ test:
 vet:
 	$(GO) vet ./...
 
-# Static analysis per doc/golang-style.md; zero findings required.
+# Static analysis per docs/golang-style.md; zero findings required.
 # golangci-lint covers the mechanical rules, check-style.py the
 # blank-line semantics it cannot express.
 lint:

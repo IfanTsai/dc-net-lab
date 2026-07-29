@@ -12,7 +12,7 @@
 
 ## 代码规范
 
-Go 代码必须遵循 [doc/golang-style.md](doc/golang-style.md)：
+Go 代码必须遵循 [docs/golang-style.md](docs/golang-style.md)：
 
 - gofmt/goimports 格式化；`make lint` 必须零告警（golangci-lint 见 .golangci.yml，
   空行语义由 scripts/check-style.py 检查）
@@ -23,7 +23,7 @@ Go 代码必须遵循 [doc/golang-style.md](doc/golang-style.md)：
 - 接口由调用方定义、小而聚焦（见 biz 的 Repo 接口）；单一实现不预设接口
 - goroutine 必须有明确退出机制（context / 超时）；公开函数与核心逻辑要有单测，多组输入用表驱动
 
-Commit message 必须遵循 [doc/git-commit-style.md](doc/git-commit-style.md)：
+Commit message 必须遵循 [docs/git-commit-style.md](docs/git-commit-style.md)：
 
 - Conventional Commits 格式 `<type>(<scope>): <summary>`；type 用 feat/fix/refactor/perf/test/docs/style/build/ci/chore/revert，禁用 update/change/modify 等模糊词
 - summary 用英文祈使语气、首字母小写、结尾无句号、≤72 字符，描述行为变化而非文件改动
@@ -31,7 +31,7 @@ Commit message 必须遵循 [doc/git-commit-style.md](doc/git-commit-style.md)�
 - 一个提交只表达一个主要逻辑变更；diff 含多个独立变更时建议拆分；生成前必须先分析实际 diff
 - 不兼容变更在 type/scope 后加 `!` 并在 footer 写 BREAKING CHANGE 说明
 
-中文文档（doc/、README、注释、PR 描述等）必须遵循 [doc/chinese-doc-style.md](doc/chinese-doc-style.md)：
+中文文档（docs/、README、注释、PR 描述等）必须遵循 [docs/chinese-doc-style.md](docs/chinese-doc-style.md)：
 
 - 中文与英文、数字之间加一个半角空格；数字与单位之间加空格（保持仓库既有风格优先）
 - 中文句子用全角标点（，。；：等），英文句子内部用半角标点；全角标点两侧不加空格
@@ -46,4 +46,4 @@ Commit message 必须遵循 [doc/git-commit-style.md](doc/git-commit-style.md)�
   biz 与 data 按功能模块同构拆分（lab/plan/topology/operation）
 - API 以 api/dcnetlab/v1/dcnetlab.proto 为唯一事实来源，生成代码在 pb/（勿手改）
 - internal/model 是零依赖的共享资源模型；模块私有类型放各自包内
-- 新功能落地时同步更新 doc/progress.md
+- 新功能落地时同步更新 docs/progress.md

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""检查 doc/golang-style.md 中 golangci-lint 覆盖不到的空行语义规则。
+"""检查 docs/golang-style.md 中 golangci-lint 覆盖不到的空行语义规则。
 
 规则(违规则退出码 1 并逐条列出):
   1. 完整的 if/for/switch 块结束后应有一个空行(任意嵌套层级)。
@@ -81,7 +81,7 @@ def main():
             failed = True
 
     if failed:
-        print("\nstyle check failed; 规则见 doc/golang-style.md 第 2/5 章", file=sys.stderr)
+        print("\nstyle check failed; 规则见 docs/golang-style.md 第 2/5 章", file=sys.stderr)
 
         return 1
 
