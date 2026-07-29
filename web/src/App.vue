@@ -16,6 +16,7 @@ const menu = computed(() => [
   { path: '/packages', label: t('menu.packages') },
   { path: '/traffic', label: t('menu.traffic') },
   { path: '/faults', label: t('menu.faults') },
+  { path: '/captures', label: t('menu.captures') },
   { path: '/operations', label: t('menu.operations') },
 ])
 
@@ -27,7 +28,9 @@ const elementLocale = computed(() => (locale.value === 'zh-CN' ? elementZhCn : e
     <el-container class="app">
       <el-aside width="200px" class="sidebar">
         <div class="brand">DCNetLab</div>
-        <el-menu :default-active="route.path" router>
+        <!-- Highlight by first path segment so nested routes (e.g. the
+             capture viewer) keep their section active. -->
+        <el-menu :default-active="'/' + route.path.split('/')[1]" router>
           <el-menu-item v-for="m in menu" :key="m.path" :index="m.path">
             {{ m.label }}
           </el-menu-item>

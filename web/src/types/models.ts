@@ -530,3 +530,93 @@ export interface TrafficScenario {
     lastError?: string
   }
 }
+
+// --- Capture ---
+
+export interface CaptureFilter {
+  protocol?: string
+  srcPrefix?: string
+  dstPrefix?: string
+  port?: number
+}
+
+// CaptureSession records packets on one modelled interface of a lab
+// node into a pcapng file. int64 counters arrive as strings on the
+// protobuf JSON wire.
+export interface CaptureSession {
+  meta: ResourceMeta
+  spec: {
+    labId: string
+    nodeId: string
+    nodeName?: string
+    interface: string
+    direction?: 'both' | 'rx' | 'tx' | string
+    snapLength?: number
+    durationSeconds?: number
+    maxPackets?: string
+    maxBytes?: string
+    filter?: CaptureFilter
+  }
+  status: {
+    state: 'Running' | 'Completed' | 'Stopped' | 'Failed' | string
+    packets?: string
+    bytes?: string
+    startedAt?: string
+    endedAt?: string
+    lastError?: string
+  }
+}
+
+// CapturePacketRow is a normalized packet list row. REST rows carry
+// string indices (protobuf int64 JSON) while WebSocket rows carry
+// numbers; normalizeCapturePacket folds both into this shape.
+export interface CapturePacketRow {
+  index: number
+  ts?: string
+  direction?: string
+  captureLength?: number
+  wireLength?: number
+  source?: string
+  destination?: string
+  protocol?: string
+  info?: string
+}
+
+export interface CapturePacketField {
+  name: string
+  value: string
+}
+
+export interface CapturePacketLayer {
+  name: string
+  fields?: CapturePacketField[]
+}
+
+export interface CapturePacketDetail {
+  packet?: Record<string, unknown>
+  layers?: CapturePacketLayer[]
+  // Snapped raw bytes, base64-encoded (protobuf bytes JSON mapping).
+  data?: string
+}
+
+// CaptureWsEvent is one frame on /ws/v1/labs/{labId}/captures/{id}:
+// a packets batch (the first one is the window snapshot) or the end
+// notice. Encoded by the Go backend with encoding/json, so integers
+// are numbers here, not strings.
+export interface CaptureWsEvent {
+  type: 'packets' | 'end' | string
+  packets?: {
+    index: number
+    ts?: string
+    direction?: string
+    captureLength?: number
+    wireLength?: number
+    source?: string
+    destination?: string
+    protocol?: string
+    info?: string
+  }[]
+  total?: number
+  firstAvailable?: number
+  state?: string
+}

@@ -3,14 +3,17 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { useLabStore } from '../stores/lab'
 import { labApi } from '../api/lab'
-import type { FaultScenario, Link, MetricsPoint, Node, NodeBGP, NodeBGPTable, NodeInventory, NodeMetrics, NodeRoutes, NodeRuntime } from '../types/models'
+import { nodeCaptureInterfaces } from '../utils/capture'
+import type { FaultScenario, Link, LinkEndpoint, MetricsPoint, Node, NodeBGP, NodeBGPTable, NodeInventory, NodeMetrics, NodeRoutes, NodeRuntime } from '../types/models'
 import TopologyCanvas from '../components/TopologyCanvas.vue'
 import TerminalPanel from '../components/TerminalPanel.vue'
 import MetricsChart, { type ChartSeries } from '../components/MetricsChart.vue'
 
 const store = useLabStore()
+const router = useRouter()
 const { t } = useI18n()
 const selectedNode = ref<Node | null>(null)
 const selectedLink = ref<Link | null>(null)
@@ -604,6 +607,59 @@ async function quickImpairment() {
   impairForm.value = { delayMs: undefined, lossPercent: undefined, rateKbit: undefined }
 }
 
+// --- quick capture (node drawer tab and link drawer section) ---
+// Creating a session starts capturing immediately; on success we jump
+// straight into the viewer.
+const captureBusy = ref(false)
+const captureIface = ref('')
+const captureProto = ref('')
+const captureDuration = ref(30)
+
+const captureIfaceOptions = computed(() =>
+  selectedNode.value ? nodeCaptureInterfaces(selectedNode.value, store.links) : [],
+)
+
+watch(selectedNode, (node, prev) => {
+  if (node?.meta.id !== prev?.meta.id) captureIface.value = ''
+})
+
+async function startCapture(name: string, nodeId: string, iface: string, protocol?: string) {
+  if (!store.currentLabId) return
+
+  captureBusy.value = true
+  try {
+    const sess = await labApi.createCaptureSession(store.currentLabId, {
+      name,
+      nodeId,
+      interface: iface,
+      durationSeconds: captureDuration.value,
+      filter: protocol ? { protocol } : undefined,
+    })
+    ElMessage.success(t('captures.created', { name: sess.meta.name }))
+    void router.push(`/captures/${store.currentLabId}/${sess.meta.id}`)
+  } catch (e) {
+    ElMessage.error((e as Error).message)
+  } finally {
+    captureBusy.value = false
+  }
+}
+
+async function quickNodeCapture() {
+  const node = selectedNode.value
+  if (!node || !captureIface.value) return
+
+  await startCapture(
+    faultSlug(`${node.meta.name}-${captureIface.value}`),
+    node.meta.id,
+    captureIface.value,
+    captureProto.value || undefined,
+  )
+}
+
+async function quickEndpointCapture(ep: LinkEndpoint) {
+  await startCapture(faultSlug(`${ep.nodeName}-${ep.interface}`), ep.nodeId, ep.interface)
+}
+
 async function toggleFault(f: FaultScenario) {
   if (!store.currentLabId) return
 
@@ -868,6 +924,30 @@ async function deleteFault(f: FaultScenario) {
               </el-table-column>
             </el-table>
             <el-empty v-else :description="t('faults.recovered')" />
+          </el-tab-pane>
+
+          <el-tab-pane :label="t('captures.quickTitle')" name="capture">
+            <el-form label-width="90px">
+              <el-form-item :label="t('captures.interface')">
+                <el-select v-model="captureIface" style="width: 100%" :placeholder="t('captures.pickInterface')">
+                  <el-option v-for="i in captureIfaceOptions" :key="i.value" :label="i.label" :value="i.value" />
+                </el-select>
+              </el-form-item>
+              <el-form-item :label="t('captures.protocol')">
+                <el-select v-model="captureProto" clearable style="width: 100%" :placeholder="t('captures.anyProtocol')">
+                  <el-option v-for="p in ['arp', 'icmp', 'tcp', 'udp', 'bgp', 'vxlan']" :key="p" :label="p.toUpperCase()" :value="p" />
+                </el-select>
+              </el-form-item>
+              <el-form-item :label="t('captures.durationSeconds')">
+                <el-input-number v-model="captureDuration" :min="1" :max="600" controls-position="right" />
+              </el-form-item>
+            </el-form>
+            <div class="capture-quick-footer">
+              <span class="sub">{{ t('captures.quickHint') }}</span>
+              <el-button type="primary" size="small" :loading="captureBusy" :disabled="!captureIface" @click="quickNodeCapture">
+                {{ t('captures.quickStart') }}
+              </el-button>
+            </div>
           </el-tab-pane>
 
           <el-tab-pane
@@ -1223,6 +1303,16 @@ async function deleteFault(f: FaultScenario) {
           </el-button>
         </div>
 
+        <h4>{{ t('captures.quickTitle') }}</h4>
+        <div class="fault-actions">
+          <el-button size="small" :loading="captureBusy" @click="quickEndpointCapture(selectedLink.spec.endpointA)">
+            {{ t('captures.captureEndpoint', { name: selectedLink.spec.endpointA.nodeName }) }}
+          </el-button>
+          <el-button size="small" :loading="captureBusy" @click="quickEndpointCapture(selectedLink.spec.endpointB)">
+            {{ t('captures.captureEndpoint', { name: selectedLink.spec.endpointB.nodeName }) }}
+          </el-button>
+        </div>
+
         <el-table v-if="linkFaults.length" :data="linkFaults" size="small">
           <el-table-column prop="meta.name" :label="t('common.name')" />
           <el-table-column :label="t('faults.type')">
@@ -1294,6 +1384,7 @@ h4 { margin: 16px 0 8px; }
 .agent-down-hint { margin-left: 8px; font-size: 12px; color: var(--el-color-danger); }
 .flags { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
 .fault-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.capture-quick-footer { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .fault-impairment { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
 .fault-impairment .el-input-number { width: 130px; }
 </style>

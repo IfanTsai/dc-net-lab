@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { FaultImpairment, FaultScenario, FaultTarget, HealthCheck, Lab, Link, MetricsPoint, Node, NodeBGP, NodeBGPTable, NodeInventory, NodeMetrics, NodeRoutes, NodeRuntime, Operation, Package, Plan, ProfileInfo, Program, ProgramOpResult, ServerInstallResult, TopologySpec, TrafficAssertion, TrafficPoint, TrafficScenario } from '../types/models'
+import type { CaptureFilter, CapturePacketDetail, CaptureSession, FaultImpairment, FaultScenario, FaultTarget, HealthCheck, Lab, Link, MetricsPoint, Node, NodeBGP, NodeBGPTable, NodeInventory, NodeMetrics, NodeRoutes, NodeRuntime, Operation, Package, Plan, ProfileInfo, Program, ProgramOpResult, ServerInstallResult, TopologySpec, TrafficAssertion, TrafficPoint, TrafficScenario } from '../types/models'
 
 const base = '/api/v1'
 
@@ -101,6 +101,25 @@ export const labApi = {
     api.post<FaultScenario>(`${base}/labs/${labId}/fault-scenarios/${id}/recover`),
   deleteFaultScenario: (labId: string, id: string) =>
     api.del<Record<string, never>>(`${base}/labs/${labId}/fault-scenarios/${id}`),
+
+  captureSessions: (labId: string) =>
+    api.get<{ sessions: CaptureSession[] }>(`${base}/labs/${labId}/captures`).then((r) => r.sessions ?? []),
+  createCaptureSession: (labId: string, body: { name: string; nodeId: string; interface: string; direction?: string; snapLength?: number; durationSeconds?: number; maxPackets?: number; maxBytes?: number; filter?: CaptureFilter }) =>
+    api.post<CaptureSession>(`${base}/labs/${labId}/captures`, body),
+  getCaptureSession: (labId: string, id: string) =>
+    api.get<CaptureSession>(`${base}/labs/${labId}/captures/${id}`),
+  stopCaptureSession: (labId: string, id: string) =>
+    api.post<CaptureSession>(`${base}/labs/${labId}/captures/${id}/stop`),
+  deleteCaptureSession: (labId: string, id: string) =>
+    api.del<Record<string, never>>(`${base}/labs/${labId}/captures/${id}`),
+  capturePackets: (labId: string, id: string, offset: number, limit: number) =>
+    api.get<{ packets?: Record<string, unknown>[]; total?: string; firstAvailable?: string }>(
+      `${base}/labs/${labId}/captures/${id}/packets?offset=${offset}&limit=${limit}`,
+    ),
+  capturePacket: (labId: string, id: string, index: number) =>
+    api.get<CapturePacketDetail>(`${base}/labs/${labId}/captures/${id}/packets/${index}`),
+  // Plain HTTP download (Wireshark-ready pcapng), not a JSON endpoint.
+  capturePcapUrl: (labId: string, id: string) => `${base}/labs/${labId}/captures/${id}/pcap`,
 
   createPlan: (id: string) => api.post<Plan>(`${base}/labs/${id}/plans`),
   getPlan: (planId: string) => api.get<Plan>(`${base}/plans/${planId}`),
