@@ -22,16 +22,20 @@ const _ = http.SupportPackageIsVersion1
 const OperationDCNetLabApplyFaultScenario = "/dcnetlab.v1.DCNetLab/ApplyFaultScenario"
 const OperationDCNetLabApplyPlan = "/dcnetlab.v1.DCNetLab/ApplyPlan"
 const OperationDCNetLabBatchProgramOp = "/dcnetlab.v1.DCNetLab/BatchProgramOp"
+const OperationDCNetLabCreateCaptureSession = "/dcnetlab.v1.DCNetLab/CreateCaptureSession"
 const OperationDCNetLabCreateFaultScenario = "/dcnetlab.v1.DCNetLab/CreateFaultScenario"
 const OperationDCNetLabCreateLab = "/dcnetlab.v1.DCNetLab/CreateLab"
 const OperationDCNetLabCreatePlan = "/dcnetlab.v1.DCNetLab/CreatePlan"
 const OperationDCNetLabCreateProgram = "/dcnetlab.v1.DCNetLab/CreateProgram"
 const OperationDCNetLabCreateTrafficScenario = "/dcnetlab.v1.DCNetLab/CreateTrafficScenario"
+const OperationDCNetLabDeleteCaptureSession = "/dcnetlab.v1.DCNetLab/DeleteCaptureSession"
 const OperationDCNetLabDeleteFaultScenario = "/dcnetlab.v1.DCNetLab/DeleteFaultScenario"
 const OperationDCNetLabDeleteLab = "/dcnetlab.v1.DCNetLab/DeleteLab"
 const OperationDCNetLabDeletePackage = "/dcnetlab.v1.DCNetLab/DeletePackage"
 const OperationDCNetLabDeleteProgram = "/dcnetlab.v1.DCNetLab/DeleteProgram"
 const OperationDCNetLabDeleteTrafficScenario = "/dcnetlab.v1.DCNetLab/DeleteTrafficScenario"
+const OperationDCNetLabGetCapturePacket = "/dcnetlab.v1.DCNetLab/GetCapturePacket"
+const OperationDCNetLabGetCaptureSession = "/dcnetlab.v1.DCNetLab/GetCaptureSession"
 const OperationDCNetLabGetLab = "/dcnetlab.v1.DCNetLab/GetLab"
 const OperationDCNetLabGetNodeBGP = "/dcnetlab.v1.DCNetLab/GetNodeBGP"
 const OperationDCNetLabGetNodeBGPTable = "/dcnetlab.v1.DCNetLab/GetNodeBGPTable"
@@ -48,6 +52,8 @@ const OperationDCNetLabGetTrafficScenarioHistory = "/dcnetlab.v1.DCNetLab/GetTra
 const OperationDCNetLabHealthz = "/dcnetlab.v1.DCNetLab/Healthz"
 const OperationDCNetLabInstallPackage = "/dcnetlab.v1.DCNetLab/InstallPackage"
 const OperationDCNetLabListAllocations = "/dcnetlab.v1.DCNetLab/ListAllocations"
+const OperationDCNetLabListCapturePackets = "/dcnetlab.v1.DCNetLab/ListCapturePackets"
+const OperationDCNetLabListCaptureSessions = "/dcnetlab.v1.DCNetLab/ListCaptureSessions"
 const OperationDCNetLabListFaultScenarios = "/dcnetlab.v1.DCNetLab/ListFaultScenarios"
 const OperationDCNetLabListGenerations = "/dcnetlab.v1.DCNetLab/ListGenerations"
 const OperationDCNetLabListLabs = "/dcnetlab.v1.DCNetLab/ListLabs"
@@ -64,6 +70,7 @@ const OperationDCNetLabStartLab = "/dcnetlab.v1.DCNetLab/StartLab"
 const OperationDCNetLabStartNode = "/dcnetlab.v1.DCNetLab/StartNode"
 const OperationDCNetLabStartProgram = "/dcnetlab.v1.DCNetLab/StartProgram"
 const OperationDCNetLabStartTrafficScenario = "/dcnetlab.v1.DCNetLab/StartTrafficScenario"
+const OperationDCNetLabStopCaptureSession = "/dcnetlab.v1.DCNetLab/StopCaptureSession"
 const OperationDCNetLabStopLab = "/dcnetlab.v1.DCNetLab/StopLab"
 const OperationDCNetLabStopNode = "/dcnetlab.v1.DCNetLab/StopNode"
 const OperationDCNetLabStopProgram = "/dcnetlab.v1.DCNetLab/StopProgram"
@@ -78,6 +85,16 @@ type DCNetLabHTTPServer interface {
 	// (op is start|stop|delete); each id is applied best-effort and its
 	// outcome is reported, so one failure does not abort the rest.
 	BatchProgramOp(context.Context, *BatchProgramRequest) (*BatchProgramReply, error)
+	// CreateCaptureSession --- Capture ---
+	// CaptureSessions record packets on one modelled interface of a lab
+	// node (a topology link endpoint or vlanif/bond0) into a pcapng
+	// file, with per-packet metadata available live. A session starts
+	// capturing on creation and ends by itself (duration or limit) or
+	// via stop; the recording stays downloadable until the session is
+	// deleted or expires. The pcapng download is a plain HTTP route
+	// (GET /api/v1/labs/{lab_id}/captures/{id}/pcap) and live metadata
+	// is also pushed on WS /ws/v1/captures/{id}.
+	CreateCaptureSession(context.Context, *CreateCaptureSessionRequest) (*CaptureSession, error)
 	// CreateFaultScenario --- Fault ---
 	// FaultScenarios inject and recover a controlled failure against a
 	// node or a link: node-stop/node-restart reuse the same pause/
@@ -104,11 +121,14 @@ type DCNetLabHTTPServer interface {
 	// client's stat lines into rate/success-rate/latency metrics and
 	// evaluates any configured assertions.
 	CreateTrafficScenario(context.Context, *CreateTrafficScenarioRequest) (*TrafficScenario, error)
+	DeleteCaptureSession(context.Context, *CaptureSessionOpRequest) (*DeleteCaptureSessionReply, error)
 	DeleteFaultScenario(context.Context, *FaultScenarioOpRequest) (*DeleteFaultScenarioReply, error)
 	DeleteLab(context.Context, *DeleteLabRequest) (*OperationRef, error)
 	DeletePackage(context.Context, *DeletePackageRequest) (*DeletePackageReply, error)
 	DeleteProgram(context.Context, *ProgramOpRequest) (*DeleteProgramReply, error)
 	DeleteTrafficScenario(context.Context, *TrafficScenarioOpRequest) (*DeleteTrafficScenarioReply, error)
+	GetCapturePacket(context.Context, *GetCapturePacketRequest) (*CapturePacketDetail, error)
+	GetCaptureSession(context.Context, *CaptureSessionOpRequest) (*CaptureSession, error)
 	GetLab(context.Context, *GetLabRequest) (*Lab, error)
 	// GetNodeBGP GetNodeBGP returns the BGP configuration of one node as derived
 	// by the FRR compiler from the topology model: eBGP neighbors over
@@ -161,6 +181,8 @@ type DCNetLabHTTPServer interface {
 	// skip versions already present with the same digest.
 	InstallPackage(context.Context, *InstallPackageRequest) (*InstallPackageReply, error)
 	ListAllocations(context.Context, *ListAllocationsRequest) (*ListAllocationsReply, error)
+	ListCapturePackets(context.Context, *ListCapturePacketsRequest) (*ListCapturePacketsReply, error)
+	ListCaptureSessions(context.Context, *ListCaptureSessionsRequest) (*ListCaptureSessionsReply, error)
 	ListFaultScenarios(context.Context, *ListFaultScenariosRequest) (*ListFaultScenariosReply, error)
 	ListGenerations(context.Context, *ListGenerationsRequest) (*ListGenerationsReply, error)
 	ListLabs(context.Context, *ListLabsRequest) (*ListLabsReply, error)
@@ -187,6 +209,7 @@ type DCNetLabHTTPServer interface {
 	StartNode(context.Context, *StartNodeRequest) (*Node, error)
 	StartProgram(context.Context, *ProgramOpRequest) (*Program, error)
 	StartTrafficScenario(context.Context, *TrafficScenarioOpRequest) (*TrafficScenario, error)
+	StopCaptureSession(context.Context, *CaptureSessionOpRequest) (*CaptureSession, error)
 	StopLab(context.Context, *StopLabRequest) (*OperationRef, error)
 	StopNode(context.Context, *StopNodeRequest) (*Node, error)
 	StopProgram(context.Context, *ProgramOpRequest) (*Program, error)
@@ -245,6 +268,13 @@ func RegisterDCNetLabHTTPServer(s *http.Server, srv DCNetLabHTTPServer) {
 	r.POST("/api/v1/labs/{lab_id}/fault-scenarios/{id}/apply", _DCNetLab_ApplyFaultScenario0_HTTP_Handler(srv))
 	r.POST("/api/v1/labs/{lab_id}/fault-scenarios/{id}/recover", _DCNetLab_RecoverFaultScenario0_HTTP_Handler(srv))
 	r.DELETE("/api/v1/labs/{lab_id}/fault-scenarios/{id}", _DCNetLab_DeleteFaultScenario0_HTTP_Handler(srv))
+	r.POST("/api/v1/labs/{lab_id}/captures", _DCNetLab_CreateCaptureSession0_HTTP_Handler(srv))
+	r.GET("/api/v1/labs/{lab_id}/captures", _DCNetLab_ListCaptureSessions0_HTTP_Handler(srv))
+	r.GET("/api/v1/labs/{lab_id}/captures/{id}", _DCNetLab_GetCaptureSession0_HTTP_Handler(srv))
+	r.POST("/api/v1/labs/{lab_id}/captures/{id}/stop", _DCNetLab_StopCaptureSession0_HTTP_Handler(srv))
+	r.DELETE("/api/v1/labs/{lab_id}/captures/{id}", _DCNetLab_DeleteCaptureSession0_HTTP_Handler(srv))
+	r.GET("/api/v1/labs/{lab_id}/captures/{id}/packets", _DCNetLab_ListCapturePackets0_HTTP_Handler(srv))
+	r.GET("/api/v1/labs/{lab_id}/captures/{id}/packets/{index}", _DCNetLab_GetCapturePacket0_HTTP_Handler(srv))
 	r.POST("/api/v1/labs/{lab_id}/plans", _DCNetLab_CreatePlan0_HTTP_Handler(srv))
 	r.GET("/api/v1/plans/{id}", _DCNetLab_GetPlan0_HTTP_Handler(srv))
 	r.POST("/api/v1/plans/{id}/apply", _DCNetLab_ApplyPlan0_HTTP_Handler(srv))
@@ -1246,6 +1276,166 @@ func _DCNetLab_DeleteFaultScenario0_HTTP_Handler(srv DCNetLabHTTPServer) func(ct
 	}
 }
 
+func _DCNetLab_CreateCaptureSession0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in CreateCaptureSessionRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabCreateCaptureSession)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.CreateCaptureSession(ctx, req.(*CreateCaptureSessionRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*CaptureSession)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_ListCaptureSessions0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in ListCaptureSessionsRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabListCaptureSessions)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.ListCaptureSessions(ctx, req.(*ListCaptureSessionsRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*ListCaptureSessionsReply)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_GetCaptureSession0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in CaptureSessionOpRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabGetCaptureSession)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.GetCaptureSession(ctx, req.(*CaptureSessionOpRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*CaptureSession)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_StopCaptureSession0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in CaptureSessionOpRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabStopCaptureSession)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.StopCaptureSession(ctx, req.(*CaptureSessionOpRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*CaptureSession)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_DeleteCaptureSession0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in CaptureSessionOpRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabDeleteCaptureSession)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.DeleteCaptureSession(ctx, req.(*CaptureSessionOpRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*DeleteCaptureSessionReply)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_ListCapturePackets0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in ListCapturePacketsRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabListCapturePackets)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.ListCapturePackets(ctx, req.(*ListCapturePacketsRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*ListCapturePacketsReply)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_GetCapturePacket0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in GetCapturePacketRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabGetCapturePacket)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.GetCapturePacket(ctx, req.(*GetCapturePacketRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*CapturePacketDetail)
+		return ctx.Result(200, reply)
+	}
+}
+
 func _DCNetLab_CreatePlan0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
 	return func(ctx http.Context) error {
 		var in CreatePlanRequest
@@ -1429,6 +1619,16 @@ type DCNetLabHTTPClient interface {
 	// (op is start|stop|delete); each id is applied best-effort and its
 	// outcome is reported, so one failure does not abort the rest.
 	BatchProgramOp(ctx context.Context, req *BatchProgramRequest, opts ...http.CallOption) (rsp *BatchProgramReply, err error)
+	// CreateCaptureSession --- Capture ---
+	// CaptureSessions record packets on one modelled interface of a lab
+	// node (a topology link endpoint or vlanif/bond0) into a pcapng
+	// file, with per-packet metadata available live. A session starts
+	// capturing on creation and ends by itself (duration or limit) or
+	// via stop; the recording stays downloadable until the session is
+	// deleted or expires. The pcapng download is a plain HTTP route
+	// (GET /api/v1/labs/{lab_id}/captures/{id}/pcap) and live metadata
+	// is also pushed on WS /ws/v1/captures/{id}.
+	CreateCaptureSession(ctx context.Context, req *CreateCaptureSessionRequest, opts ...http.CallOption) (rsp *CaptureSession, err error)
 	// CreateFaultScenario --- Fault ---
 	// FaultScenarios inject and recover a controlled failure against a
 	// node or a link: node-stop/node-restart reuse the same pause/
@@ -1455,11 +1655,14 @@ type DCNetLabHTTPClient interface {
 	// client's stat lines into rate/success-rate/latency metrics and
 	// evaluates any configured assertions.
 	CreateTrafficScenario(ctx context.Context, req *CreateTrafficScenarioRequest, opts ...http.CallOption) (rsp *TrafficScenario, err error)
+	DeleteCaptureSession(ctx context.Context, req *CaptureSessionOpRequest, opts ...http.CallOption) (rsp *DeleteCaptureSessionReply, err error)
 	DeleteFaultScenario(ctx context.Context, req *FaultScenarioOpRequest, opts ...http.CallOption) (rsp *DeleteFaultScenarioReply, err error)
 	DeleteLab(ctx context.Context, req *DeleteLabRequest, opts ...http.CallOption) (rsp *OperationRef, err error)
 	DeletePackage(ctx context.Context, req *DeletePackageRequest, opts ...http.CallOption) (rsp *DeletePackageReply, err error)
 	DeleteProgram(ctx context.Context, req *ProgramOpRequest, opts ...http.CallOption) (rsp *DeleteProgramReply, err error)
 	DeleteTrafficScenario(ctx context.Context, req *TrafficScenarioOpRequest, opts ...http.CallOption) (rsp *DeleteTrafficScenarioReply, err error)
+	GetCapturePacket(ctx context.Context, req *GetCapturePacketRequest, opts ...http.CallOption) (rsp *CapturePacketDetail, err error)
+	GetCaptureSession(ctx context.Context, req *CaptureSessionOpRequest, opts ...http.CallOption) (rsp *CaptureSession, err error)
 	GetLab(ctx context.Context, req *GetLabRequest, opts ...http.CallOption) (rsp *Lab, err error)
 	// GetNodeBGP GetNodeBGP returns the BGP configuration of one node as derived
 	// by the FRR compiler from the topology model: eBGP neighbors over
@@ -1512,6 +1715,8 @@ type DCNetLabHTTPClient interface {
 	// skip versions already present with the same digest.
 	InstallPackage(ctx context.Context, req *InstallPackageRequest, opts ...http.CallOption) (rsp *InstallPackageReply, err error)
 	ListAllocations(ctx context.Context, req *ListAllocationsRequest, opts ...http.CallOption) (rsp *ListAllocationsReply, err error)
+	ListCapturePackets(ctx context.Context, req *ListCapturePacketsRequest, opts ...http.CallOption) (rsp *ListCapturePacketsReply, err error)
+	ListCaptureSessions(ctx context.Context, req *ListCaptureSessionsRequest, opts ...http.CallOption) (rsp *ListCaptureSessionsReply, err error)
 	ListFaultScenarios(ctx context.Context, req *ListFaultScenariosRequest, opts ...http.CallOption) (rsp *ListFaultScenariosReply, err error)
 	ListGenerations(ctx context.Context, req *ListGenerationsRequest, opts ...http.CallOption) (rsp *ListGenerationsReply, err error)
 	ListLabs(ctx context.Context, req *ListLabsRequest, opts ...http.CallOption) (rsp *ListLabsReply, err error)
@@ -1538,6 +1743,7 @@ type DCNetLabHTTPClient interface {
 	StartNode(ctx context.Context, req *StartNodeRequest, opts ...http.CallOption) (rsp *Node, err error)
 	StartProgram(ctx context.Context, req *ProgramOpRequest, opts ...http.CallOption) (rsp *Program, err error)
 	StartTrafficScenario(ctx context.Context, req *TrafficScenarioOpRequest, opts ...http.CallOption) (rsp *TrafficScenario, err error)
+	StopCaptureSession(ctx context.Context, req *CaptureSessionOpRequest, opts ...http.CallOption) (rsp *CaptureSession, err error)
 	StopLab(ctx context.Context, req *StopLabRequest, opts ...http.CallOption) (rsp *OperationRef, err error)
 	StopNode(ctx context.Context, req *StopNodeRequest, opts ...http.CallOption) (rsp *Node, err error)
 	StopProgram(ctx context.Context, req *ProgramOpRequest, opts ...http.CallOption) (rsp *Program, err error)
@@ -1593,6 +1799,28 @@ func (c *DCNetLabHTTPClientImpl) BatchProgramOp(ctx context.Context, in *BatchPr
 	pattern := "/api/v1/labs/{lab_id}/programs/batch"
 	path := binding.EncodeURL(pattern, in, false)
 	opts = append(opts, http.Operation(OperationDCNetLabBatchProgramOp))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// CreateCaptureSession --- Capture ---
+// CaptureSessions record packets on one modelled interface of a lab
+// node (a topology link endpoint or vlanif/bond0) into a pcapng
+// file, with per-packet metadata available live. A session starts
+// capturing on creation and ends by itself (duration or limit) or
+// via stop; the recording stays downloadable until the session is
+// deleted or expires. The pcapng download is a plain HTTP route
+// (GET /api/v1/labs/{lab_id}/captures/{id}/pcap) and live metadata
+// is also pushed on WS /ws/v1/captures/{id}.
+func (c *DCNetLabHTTPClientImpl) CreateCaptureSession(ctx context.Context, in *CreateCaptureSessionRequest, opts ...http.CallOption) (*CaptureSession, error) {
+	var out CaptureSession
+	pattern := "/api/v1/labs/{lab_id}/captures"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationDCNetLabCreateCaptureSession))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
 	if err != nil {
@@ -1687,6 +1915,19 @@ func (c *DCNetLabHTTPClientImpl) CreateTrafficScenario(ctx context.Context, in *
 	return &out, nil
 }
 
+func (c *DCNetLabHTTPClientImpl) DeleteCaptureSession(ctx context.Context, in *CaptureSessionOpRequest, opts ...http.CallOption) (*DeleteCaptureSessionReply, error) {
+	var out DeleteCaptureSessionReply
+	pattern := "/api/v1/labs/{lab_id}/captures/{id}"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationDCNetLabDeleteCaptureSession))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "DELETE", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (c *DCNetLabHTTPClientImpl) DeleteFaultScenario(ctx context.Context, in *FaultScenarioOpRequest, opts ...http.CallOption) (*DeleteFaultScenarioReply, error) {
 	var out DeleteFaultScenarioReply
 	pattern := "/api/v1/labs/{lab_id}/fault-scenarios/{id}"
@@ -1746,6 +1987,32 @@ func (c *DCNetLabHTTPClientImpl) DeleteTrafficScenario(ctx context.Context, in *
 	opts = append(opts, http.Operation(OperationDCNetLabDeleteTrafficScenario))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "DELETE", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *DCNetLabHTTPClientImpl) GetCapturePacket(ctx context.Context, in *GetCapturePacketRequest, opts ...http.CallOption) (*CapturePacketDetail, error) {
+	var out CapturePacketDetail
+	pattern := "/api/v1/labs/{lab_id}/captures/{id}/packets/{index}"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationDCNetLabGetCapturePacket))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *DCNetLabHTTPClientImpl) GetCaptureSession(ctx context.Context, in *CaptureSessionOpRequest, opts ...http.CallOption) (*CaptureSession, error) {
+	var out CaptureSession
+	pattern := "/api/v1/labs/{lab_id}/captures/{id}"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationDCNetLabGetCaptureSession))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1996,6 +2263,32 @@ func (c *DCNetLabHTTPClientImpl) ListAllocations(ctx context.Context, in *ListAl
 	return &out, nil
 }
 
+func (c *DCNetLabHTTPClientImpl) ListCapturePackets(ctx context.Context, in *ListCapturePacketsRequest, opts ...http.CallOption) (*ListCapturePacketsReply, error) {
+	var out ListCapturePacketsReply
+	pattern := "/api/v1/labs/{lab_id}/captures/{id}/packets"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationDCNetLabListCapturePackets))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *DCNetLabHTTPClientImpl) ListCaptureSessions(ctx context.Context, in *ListCaptureSessionsRequest, opts ...http.CallOption) (*ListCaptureSessionsReply, error) {
+	var out ListCaptureSessionsReply
+	pattern := "/api/v1/labs/{lab_id}/captures"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationDCNetLabListCaptureSessions))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (c *DCNetLabHTTPClientImpl) ListFaultScenarios(ctx context.Context, in *ListFaultScenariosRequest, opts ...http.CallOption) (*ListFaultScenariosReply, error) {
 	var out ListFaultScenariosReply
 	pattern := "/api/v1/labs/{lab_id}/fault-scenarios"
@@ -2206,6 +2499,19 @@ func (c *DCNetLabHTTPClientImpl) StartTrafficScenario(ctx context.Context, in *T
 	pattern := "/api/v1/labs/{lab_id}/traffic-scenarios/{id}/start"
 	path := binding.EncodeURL(pattern, in, false)
 	opts = append(opts, http.Operation(OperationDCNetLabStartTrafficScenario))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *DCNetLabHTTPClientImpl) StopCaptureSession(ctx context.Context, in *CaptureSessionOpRequest, opts ...http.CallOption) (*CaptureSession, error) {
+	var out CaptureSession
+	pattern := "/api/v1/labs/{lab_id}/captures/{id}/stop"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationDCNetLabStopCaptureSession))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
 	if err != nil {

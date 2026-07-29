@@ -67,6 +67,12 @@ const (
 	CLIMount   = "/opt/dcnetlab/bin/node-cli"
 )
 
+// CaptureMount is the in-container path of the packet capture tool.
+// Unlike the agent it is mounted into every node — switches are the
+// primary capture targets — and the controller invokes it by this
+// path over docker exec.
+const CaptureMount = "/opt/dcnetlab/bin/capture"
+
 // StartAgentScript boots node-agent inside a server container (PATH
 // symlinks, then the daemon in the background). It runs under `sh -c`
 // both at deploy time (containerlab exec) and when the observer

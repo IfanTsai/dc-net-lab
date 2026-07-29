@@ -4,6 +4,7 @@
 package runtime
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/creack/pty"
 
@@ -43,6 +45,11 @@ type Driver interface {
 	// OpenTerminal starts an interactive command inside a deployed
 	// node's container, attached to a pseudo-terminal.
 	OpenTerminal(ctx context.Context, labName, nodeName string, cmd []string) (TerminalSession, error)
+	// ExecStream starts a long-lived non-interactive command inside a
+	// deployed node's container, streaming its stdout; closing the
+	// session closes the command's stdin, which tools like capture
+	// take as their stop signal.
+	ExecStream(ctx context.Context, labName, nodeName string, cmd []string) (ExecSession, error)
 	// NodeStates reports the live container state ("running",
 	// "paused", "exited", ... or "missing") of each named node.
 	NodeStates(ctx context.Context, labName string, nodeNames []string) (map[string]string, error)
@@ -82,6 +89,14 @@ type TerminalSession interface {
 	io.ReadWriteCloser
 	// Resize adjusts the pseudo-terminal window size.
 	Resize(cols, rows uint16) error
+}
+
+// ExecSession is a long-lived non-interactive command inside a lab
+// node. Reads return the command's raw stdout; Close closes its stdin
+// — the in-container tool's stop signal — and reaps the process,
+// reporting stderr if it exited abnormally.
+type ExecSession interface {
+	io.ReadCloser
 }
 
 // TopologyFileName is the artifact file Containerlab consumes.
@@ -204,6 +219,76 @@ func (d *ContainerlabDriver) OpenTerminal(ctx context.Context, labName, nodeName
 	}
 
 	return &ptySession{f: f, cmd: cmd}, nil
+}
+
+// ExecStream starts `docker exec -i` with stdin piped and stdout
+// streamed back. It backs long-lived in-container tools (capture):
+// they treat stdin EOF as their stop signal, so whichever way the
+// session ends — Close, a cancelled context or a dropped connection —
+// the tool exits and no orphan is left in the container.
+func (d *ContainerlabDriver) ExecStream(ctx context.Context, labName, nodeName string, cmdArgs []string) (ExecSession, error) {
+	container := fmt.Sprintf("clab-%s-%s", labName, nodeName)
+	args := append([]string{"exec", "-i", container}, cmdArgs...)
+
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, fmt.Errorf("exec stream in %s: %w", container, err)
+	}
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("exec stream in %s: %w", container, err)
+	}
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("exec stream in %s: %w", container, err)
+	}
+
+	return &execStream{container: container, cmd: cmd, stdin: stdin, stdout: stdout, stderr: &stderr}, nil
+}
+
+// execStream wraps a running `docker exec -i`.
+type execStream struct {
+	container string
+	cmd       *exec.Cmd
+	stdin     io.WriteCloser
+	stdout    io.ReadCloser
+	stderr    *bytes.Buffer
+}
+
+func (s *execStream) Read(p []byte) (int, error) { return s.stdout.Read(p) }
+
+// Close closes the command's stdin — the in-container tool exits on
+// that EOF, which ends the exec — then reaps the process. If the tool
+// ignores the EOF, the docker client is killed after a grace period;
+// its dropped connection closes the container-side stdin as well, so
+// the tool still terminates.
+func (s *execStream) Close() error {
+	_ = s.stdin.Close()
+
+	done := make(chan error, 1)
+	go func() { done <- s.cmd.Wait() }()
+
+	var err error
+	select {
+	case err = <-done:
+	case <-time.After(5 * time.Second):
+		if s.cmd.Process != nil {
+			_ = s.cmd.Process.Kill()
+		}
+
+		err = <-done
+	}
+
+	if err != nil {
+		return fmt.Errorf("exec stream in %s: %w\n%s", s.container, err, s.stderr.Bytes())
+	}
+
+	return nil
 }
 
 // StartNodes thaws frozen containers with docker unpause. Only
@@ -384,6 +469,10 @@ func (NoopDriver) Exec(ctx context.Context, labName, nodeName string, cmd []stri
 }
 
 func (NoopDriver) OpenTerminal(ctx context.Context, labName, nodeName string, cmd []string) (TerminalSession, error) {
+	return nil, ErrNotSupported
+}
+
+func (NoopDriver) ExecStream(ctx context.Context, labName, nodeName string, cmd []string) (ExecSession, error) {
 	return nil, ErrNotSupported
 }
 

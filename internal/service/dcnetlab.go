@@ -30,12 +30,13 @@ type DCNetLabService struct {
 	packages *biz.PackageUsecase
 	traffic  *biz.TrafficUsecase
 	faults   *biz.FaultUsecase
+	captures *biz.CaptureUsecase
 	log      *slog.Logger
 }
 
 // NewDCNetLabService wires the protobuf service.
-func NewDCNetLabService(labs *biz.LabUsecase, topos *biz.TopologyUsecase, plans *biz.PlanUsecase, ops *biz.OperationUsecase, power *biz.PowerUsecase, rt *biz.RuntimeUsecase, programs *biz.ProgramUsecase, packages *biz.PackageUsecase, traffic *biz.TrafficUsecase, faults *biz.FaultUsecase, log *slog.Logger) *DCNetLabService {
-	return &DCNetLabService{labs: labs, topos: topos, plans: plans, ops: ops, power: power, runtime: rt, programs: programs, packages: packages, traffic: traffic, faults: faults, log: log}
+func NewDCNetLabService(labs *biz.LabUsecase, topos *biz.TopologyUsecase, plans *biz.PlanUsecase, ops *biz.OperationUsecase, power *biz.PowerUsecase, rt *biz.RuntimeUsecase, programs *biz.ProgramUsecase, packages *biz.PackageUsecase, traffic *biz.TrafficUsecase, faults *biz.FaultUsecase, captures *biz.CaptureUsecase, log *slog.Logger) *DCNetLabService {
+	return &DCNetLabService{labs: labs, topos: topos, plans: plans, ops: ops, power: power, runtime: rt, programs: programs, packages: packages, traffic: traffic, faults: faults, captures: captures, log: log}
 }
 
 // asAPIError maps biz-layer errors onto Kratos errors so the HTTP
@@ -564,6 +565,100 @@ func (s *DCNetLabService) DeleteFaultScenario(ctx context.Context, req *v1.Fault
 	}
 
 	return &v1.DeleteFaultScenarioReply{}, nil
+}
+
+// --- Capture ---
+
+func (s *DCNetLabService) CreateCaptureSession(ctx context.Context, req *v1.CreateCaptureSessionRequest) (*v1.CaptureSession, error) {
+	spec := model.CaptureSessionSpec{
+		NodeID:     req.NodeId,
+		Interface:  req.Interface,
+		Direction:  req.Direction,
+		SnapLength: int(req.SnapLength),
+		Duration:   time.Duration(req.DurationSeconds) * time.Second,
+		MaxPackets: uint64(max(req.MaxPackets, 0)),
+		MaxBytes:   uint64(max(req.MaxBytes, 0)),
+		Filter:     captureFilterFromPB(req.Filter),
+	}
+
+	sess, err := s.captures.CreateCaptureSession(ctx, req.LabId, req.Name, spec)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return captureSessionToPB(sess), nil
+}
+
+func (s *DCNetLabService) ListCaptureSessions(ctx context.Context, req *v1.ListCaptureSessionsRequest) (*v1.ListCaptureSessionsReply, error) {
+	sessions, err := s.captures.ListCaptureSessions(req.LabId)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	reply := &v1.ListCaptureSessionsReply{Sessions: make([]*v1.CaptureSession, 0, len(sessions))}
+	for _, sess := range sessions {
+		reply.Sessions = append(reply.Sessions, captureSessionToPB(sess))
+	}
+
+	return reply, nil
+}
+
+func (s *DCNetLabService) GetCaptureSession(ctx context.Context, req *v1.CaptureSessionOpRequest) (*v1.CaptureSession, error) {
+	sess, err := s.captures.GetCaptureSession(req.LabId, req.Id)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return captureSessionToPB(sess), nil
+}
+
+func (s *DCNetLabService) StopCaptureSession(ctx context.Context, req *v1.CaptureSessionOpRequest) (*v1.CaptureSession, error) {
+	sess, err := s.captures.StopCaptureSession(ctx, req.LabId, req.Id)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return captureSessionToPB(sess), nil
+}
+
+func (s *DCNetLabService) DeleteCaptureSession(ctx context.Context, req *v1.CaptureSessionOpRequest) (*v1.DeleteCaptureSessionReply, error) {
+	if err := s.captures.DeleteCaptureSession(ctx, req.LabId, req.Id); err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return &v1.DeleteCaptureSessionReply{}, nil
+}
+
+func (s *DCNetLabService) ListCapturePackets(ctx context.Context, req *v1.ListCapturePacketsRequest) (*v1.ListCapturePacketsReply, error) {
+	rows, total, first, err := s.captures.CapturePackets(req.LabId, req.Id, req.Offset, int(req.Limit))
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	reply := &v1.ListCapturePacketsReply{
+		Packets:        make([]*v1.CapturePacket, 0, len(rows)),
+		Total:          total,
+		FirstAvailable: first,
+	}
+
+	for _, row := range rows {
+		reply.Packets = append(reply.Packets, capturePacketToPB(row))
+	}
+
+	return reply, nil
+}
+
+func (s *DCNetLabService) GetCapturePacket(ctx context.Context, req *v1.GetCapturePacketRequest) (*v1.CapturePacketDetail, error) {
+	row, layers, data, err := s.captures.CapturePacket(req.LabId, req.Id, req.Index)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return &v1.CapturePacketDetail{
+		Packet: capturePacketToPB(row),
+		Layers: captureLayersToPB(layers),
+		Data:   data,
+	}, nil
 }
 
 // --- Plans ---

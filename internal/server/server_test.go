@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ifantsai/dcnetlab/internal/biz"
+	"github.com/ifantsai/dcnetlab/internal/capture"
 	"github.com/ifantsai/dcnetlab/internal/conf"
 	"github.com/ifantsai/dcnetlab/internal/data"
 	"github.com/ifantsai/dcnetlab/internal/metrics"
@@ -88,12 +89,18 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 	trafficHistory := traffic.NewHistory()
 	trafficUC := biz.NewTrafficUsecase(d, programs, trafficHistory, log)
 	faultUC := biz.NewFaultUsecase(d, power, runtime.NoopDriver{}, log)
-	svc := service.NewDCNetLabService(labs, topos, plans, opsUC, power, rt, programs, packages, trafficUC, faultUC, log)
+	captureMgr := capture.NewManager(runtime.NoopDriver{}, dataDir, log)
+	captureUC, err := biz.NewCaptureUsecase(d, captureMgr, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svc := service.NewDCNetLabService(labs, topos, plans, opsUC, power, rt, programs, packages, trafficUC, faultUC, captureUC, log)
 	term := biz.NewTerminalUsecase(d, d, runtime.NoopDriver{}, log)
 	obs := observer.New(d, runtime.NoopDriver{}, log)
 	// The Kratos HTTP server implements http.Handler, so the full
 	// transport stack (routing, codecs, error encoding) is under test.
-	srv := httptest.NewServer(NewHTTPServer(sc, svc, term, obs, history, SlogLogger{S: log}))
+	srv := httptest.NewServer(NewHTTPServer(sc, svc, term, obs, history, captureUC, SlogLogger{S: log}))
 	t.Cleanup(srv.Close)
 
 	return srv, dataDir

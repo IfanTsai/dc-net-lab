@@ -14,7 +14,10 @@ import (
 
 	"github.com/google/wire"
 
+	"github.com/ifantsai/dcnetlab/internal/capture"
+	"github.com/ifantsai/dcnetlab/internal/conf"
 	"github.com/ifantsai/dcnetlab/internal/operation"
+	"github.com/ifantsai/dcnetlab/internal/runtime"
 )
 
 // operationTTL is how long finished operations stay queryable.
@@ -38,11 +41,18 @@ var ProviderSet = wire.NewSet(
 	NewPackageUsecase,
 	NewTrafficUsecase,
 	NewFaultUsecase,
+	NewCaptureManager,
+	NewCaptureUsecase,
 )
 
 // NewOperationManager wires the async operation executor.
 func NewOperationManager(st operation.Store, log *slog.Logger) *operation.Manager {
 	return operation.NewManager(st, log, operationTTL)
+}
+
+// NewCaptureManager wires the capture pipeline manager.
+func NewCaptureManager(driver runtime.Driver, c *conf.Data, log *slog.Logger) *capture.Manager {
+	return capture.NewManager(driver, c.Dir, log)
 }
 
 // generationDir returns the artifact directory for one generation of

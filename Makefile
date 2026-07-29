@@ -27,6 +27,7 @@ build:
 	CGO_ENABLED=0 $(GO) build -o bin/dcnetlab-node-agent ./serverapps/node-agent
 	CGO_ENABLED=0 $(GO) build -o bin/dcnetlab-node-cli ./serverapps/node-cli
 	CGO_ENABLED=0 $(GO) build -o bin/dcnetlab-trafficgen ./serverapps/trafficgen
+	CGO_ENABLED=0 $(GO) build -o bin/dcnetlab-capture ./serverapps/capture
 
 test:
 	$(GO) test ./...

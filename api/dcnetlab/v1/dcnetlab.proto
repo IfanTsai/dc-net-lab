@@ -279,6 +279,43 @@ service DCNetLab {
     option (google.api.http) = {delete: "/api/v1/labs/{lab_id}/fault-scenarios/{id}"};
   }
 
+  // --- Capture ---
+  // CaptureSessions record packets on one modelled interface of a lab
+  // node (a topology link endpoint or vlanif/bond0) into a pcapng
+  // file, with per-packet metadata available live. A session starts
+  // capturing on creation and ends by itself (duration or limit) or
+  // via stop; the recording stays downloadable until the session is
+  // deleted or expires. The pcapng download is a plain HTTP route
+  // (GET /api/v1/labs/{lab_id}/captures/{id}/pcap) and live metadata
+  // is also pushed on WS /ws/v1/labs/{lab_id}/captures/{id}.
+  rpc CreateCaptureSession(CreateCaptureSessionRequest) returns (CaptureSession) {
+    option (google.api.http) = {
+      post: "/api/v1/labs/{lab_id}/captures"
+      body: "*"
+    };
+  }
+  rpc ListCaptureSessions(ListCaptureSessionsRequest) returns (ListCaptureSessionsReply) {
+    option (google.api.http) = {get: "/api/v1/labs/{lab_id}/captures"};
+  }
+  rpc GetCaptureSession(CaptureSessionOpRequest) returns (CaptureSession) {
+    option (google.api.http) = {get: "/api/v1/labs/{lab_id}/captures/{id}"};
+  }
+  rpc StopCaptureSession(CaptureSessionOpRequest) returns (CaptureSession) {
+    option (google.api.http) = {
+      post: "/api/v1/labs/{lab_id}/captures/{id}/stop"
+      body: "*"
+    };
+  }
+  rpc DeleteCaptureSession(CaptureSessionOpRequest) returns (DeleteCaptureSessionReply) {
+    option (google.api.http) = {delete: "/api/v1/labs/{lab_id}/captures/{id}"};
+  }
+  rpc ListCapturePackets(ListCapturePacketsRequest) returns (ListCapturePacketsReply) {
+    option (google.api.http) = {get: "/api/v1/labs/{lab_id}/captures/{id}/packets"};
+  }
+  rpc GetCapturePacket(GetCapturePacketRequest) returns (CapturePacketDetail) {
+    option (google.api.http) = {get: "/api/v1/labs/{lab_id}/captures/{id}/packets/{index}"};
+  }
+
   // --- Plans ---
   rpc CreatePlan(CreatePlanRequest) returns (Plan) {
     option (google.api.http) = {
@@ -1077,6 +1114,143 @@ message FaultScenarioOpRequest {
 }
 
 message DeleteFaultScenarioReply {}
+
+// --- Capture ---
+
+// CaptureFilter restricts which frames are recorded; an empty filter
+// records everything. protocol is arp, icmp, tcp, udp, bgp or vxlan
+// (bgp/vxlan match their well-known ports); prefixes accept CIDR or
+// bare addresses; port matches either transport side.
+message CaptureFilter {
+  string protocol = 1;
+  string src_prefix = 2;
+  string dst_prefix = 3;
+  int32 port = 4;
+}
+
+// CaptureSessionSpec is the desired capture. interface must be a
+// modelled interface of the node (a topology link endpoint or
+// vlanif/bond0); direction is both (default), rx or tx; duration,
+// snap_length, max_packets and max_bytes default and cap per the
+// controller's capture policy.
+message CaptureSessionSpec {
+  string lab_id = 1;
+  string node_id = 2;
+  string node_name = 3;
+  string interface = 4;
+  string direction = 5;
+  int32 snap_length = 6;
+  int32 duration_seconds = 7;
+  int64 max_packets = 8;
+  int64 max_bytes = 9;
+  CaptureFilter filter = 10;
+}
+
+// CaptureSessionStatus is the observed capture state: Running,
+// Completed (ended by itself), Stopped (by the user) or Failed, plus
+// the running counters. bytes counts captured (snapped) bytes.
+message CaptureSessionStatus {
+  string state = 1;
+  int64 packets = 2;
+  int64 bytes = 3;
+  google.protobuf.Timestamp started_at = 4;
+  google.protobuf.Timestamp ended_at = 5;
+  string last_error = 6;
+}
+
+message CaptureSession {
+  ResourceMeta meta = 1;
+  CaptureSessionSpec spec = 2;
+  CaptureSessionStatus status = 3;
+}
+
+message CreateCaptureSessionRequest {
+  string lab_id = 1;
+  string name = 2;
+  string node_id = 3;
+  string interface = 4;
+  string direction = 5;
+  int32 snap_length = 6;
+  int32 duration_seconds = 7;
+  int64 max_packets = 8;
+  int64 max_bytes = 9;
+  CaptureFilter filter = 10;
+}
+
+message ListCaptureSessionsRequest {
+  string lab_id = 1;
+}
+
+message ListCaptureSessionsReply {
+  repeated CaptureSession sessions = 1;
+}
+
+message CaptureSessionOpRequest {
+  string lab_id = 1;
+  string id = 2;
+}
+
+message DeleteCaptureSessionReply {}
+
+// CapturePacket is one packet's metadata row: its position in the
+// capture, direction (rx/tx), lengths (wire vs captured after snap)
+// and the decoded one-line summary (Wireshark list columns).
+message CapturePacket {
+  int64 index = 1;
+  google.protobuf.Timestamp ts = 2;
+  string direction = 3;
+  int32 capture_length = 4;
+  int32 wire_length = 5;
+  string source = 6;
+  string destination = 7;
+  string protocol = 8;
+  string info = 9;
+}
+
+// ListCapturePacketsRequest pages through a capture's packets by
+// index; limit defaults and caps per the controller.
+message ListCapturePacketsRequest {
+  string lab_id = 1;
+  string id = 2;
+  int64 offset = 3;
+  int32 limit = 4;
+}
+
+// ListCapturePacketsReply returns one page. total is the number of
+// packets captured so far; first_available is the oldest index still
+// listable (older packets of a live session may have been evicted
+// from the in-memory window — the pcapng download always has all of
+// them).
+message ListCapturePacketsReply {
+  repeated CapturePacket packets = 1;
+  int64 total = 2;
+  int64 first_available = 3;
+}
+
+message GetCapturePacketRequest {
+  string lab_id = 1;
+  string id = 2;
+  int64 index = 3;
+}
+
+message CapturePacketField {
+  string name = 1;
+  string value = 2;
+}
+
+// CapturePacketLayer is one decoded protocol layer of the tree view.
+message CapturePacketLayer {
+  string name = 1;
+  repeated CapturePacketField fields = 2;
+}
+
+// CapturePacketDetail is one packet opened in the viewer: the decoded
+// protocol tree plus the snapped raw bytes for the hex pane.
+message CapturePacketDetail {
+  CapturePacket packet = 1;
+  repeated CapturePacketLayer layers = 2;
+  bytes data = 3;
+}
 
 // --- Plan ---
 

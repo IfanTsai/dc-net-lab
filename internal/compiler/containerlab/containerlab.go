@@ -58,6 +58,16 @@ const (
 	cliMount        = agentapi.CLIMount
 )
 
+// The capture tool mounts into every node — switches and routers are
+// the primary capture targets — conceptually shipping with the NOS
+// image like tcpdump does. The symlink puts it on PATH for operators
+// working in a node terminal; the controller invokes the mount path.
+const (
+	hostCaptureBinary = "dcnetlab-capture"
+	captureMount      = agentapi.CaptureMount
+	linkCaptureCLI    = "ln -sf " + agentapi.CaptureMount + " /usr/local/bin/capture"
+)
+
 // startServerAgent launches node-agent in the background at deploy
 // time. The script itself is shared with the observer's agent
 // self-heal so both boot paths stay identical.
@@ -162,6 +172,12 @@ func Compile(labName string, nodes []*model.Node, links []*model.Link, opts Opti
 			// with no other exec-time setup, but still need the
 			// management default route removed.
 			def.Exec = []string{removeMgmtDefaultRoute}
+		}
+
+		if opts.HostBinDir != "" {
+			def.Binds = append(def.Binds,
+				filepath.Join(opts.HostBinDir, hostCaptureBinary)+":"+captureMount+":ro")
+			def.Exec = append(def.Exec, linkCaptureCLI)
 		}
 
 		defs[n.Meta.Name] = def

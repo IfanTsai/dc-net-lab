@@ -7,6 +7,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/ifantsai/dcnetlab/internal/biz"
+	"github.com/ifantsai/dcnetlab/internal/capture"
 	"github.com/ifantsai/dcnetlab/internal/compiler/frr"
 	"github.com/ifantsai/dcnetlab/internal/model"
 	v1 "github.com/ifantsai/dcnetlab/pb/dcnetlab/v1"
@@ -766,4 +767,86 @@ func faultScenarioToPB(s *model.FaultScenario) *v1.FaultScenario {
 			LastError: s.Status.LastError,
 		},
 	}
+}
+
+// --- Capture ---
+
+func captureFilterFromPB(f *v1.CaptureFilter) model.CaptureFilter {
+	if f == nil {
+		return model.CaptureFilter{}
+	}
+
+	return model.CaptureFilter{
+		Protocol:  f.Protocol,
+		SrcPrefix: f.SrcPrefix,
+		DstPrefix: f.DstPrefix,
+		Port:      int(f.Port),
+	}
+}
+
+func captureFilterToPB(f model.CaptureFilter) *v1.CaptureFilter {
+	if f.IsZero() {
+		return nil
+	}
+
+	return &v1.CaptureFilter{
+		Protocol:  f.Protocol,
+		SrcPrefix: f.SrcPrefix,
+		DstPrefix: f.DstPrefix,
+		Port:      int32(f.Port),
+	}
+}
+
+func captureSessionToPB(s *model.CaptureSession) *v1.CaptureSession {
+	return &v1.CaptureSession{
+		Meta: metaToPB(s.Meta),
+		Spec: &v1.CaptureSessionSpec{
+			LabId:           s.Spec.LabID,
+			NodeId:          s.Spec.NodeID,
+			NodeName:        s.Spec.NodeName,
+			Interface:       s.Spec.Interface,
+			Direction:       s.Spec.Direction,
+			SnapLength:      int32(s.Spec.SnapLength),
+			DurationSeconds: int32(s.Spec.Duration / time.Second),
+			MaxPackets:      int64(s.Spec.MaxPackets),
+			MaxBytes:        int64(s.Spec.MaxBytes),
+			Filter:          captureFilterToPB(s.Spec.Filter),
+		},
+		Status: &v1.CaptureSessionStatus{
+			State:     s.Status.State,
+			Packets:   int64(s.Status.Packets),
+			Bytes:     int64(s.Status.Bytes),
+			StartedAt: timePB(s.Status.StartedAt),
+			EndedAt:   timePB(s.Status.EndedAt),
+			LastError: s.Status.LastError,
+		},
+	}
+}
+
+func capturePacketToPB(row capture.PacketRow) *v1.CapturePacket {
+	return &v1.CapturePacket{
+		Index:         row.Index,
+		Ts:            timePB(row.Ts),
+		Direction:     row.Direction,
+		CaptureLength: int32(row.CaptureLength),
+		WireLength:    int32(row.WireLength),
+		Source:        row.Source,
+		Destination:   row.Destination,
+		Protocol:      row.Protocol,
+		Info:          row.Info,
+	}
+}
+
+func captureLayersToPB(layers []capture.Layer) []*v1.CapturePacketLayer {
+	out := make([]*v1.CapturePacketLayer, 0, len(layers))
+	for _, l := range layers {
+		fields := make([]*v1.CapturePacketField, 0, len(l.Fields))
+		for _, f := range l.Fields {
+			fields = append(fields, &v1.CapturePacketField{Name: f.Name, Value: f.Value})
+		}
+
+		out = append(out, &v1.CapturePacketLayer{Name: l.Name, Fields: fields})
+	}
+
+	return out
 }

@@ -68,6 +68,13 @@ const (
 	DCNetLab_ApplyFaultScenario_FullMethodName        = "/dcnetlab.v1.DCNetLab/ApplyFaultScenario"
 	DCNetLab_RecoverFaultScenario_FullMethodName      = "/dcnetlab.v1.DCNetLab/RecoverFaultScenario"
 	DCNetLab_DeleteFaultScenario_FullMethodName       = "/dcnetlab.v1.DCNetLab/DeleteFaultScenario"
+	DCNetLab_CreateCaptureSession_FullMethodName      = "/dcnetlab.v1.DCNetLab/CreateCaptureSession"
+	DCNetLab_ListCaptureSessions_FullMethodName       = "/dcnetlab.v1.DCNetLab/ListCaptureSessions"
+	DCNetLab_GetCaptureSession_FullMethodName         = "/dcnetlab.v1.DCNetLab/GetCaptureSession"
+	DCNetLab_StopCaptureSession_FullMethodName        = "/dcnetlab.v1.DCNetLab/StopCaptureSession"
+	DCNetLab_DeleteCaptureSession_FullMethodName      = "/dcnetlab.v1.DCNetLab/DeleteCaptureSession"
+	DCNetLab_ListCapturePackets_FullMethodName        = "/dcnetlab.v1.DCNetLab/ListCapturePackets"
+	DCNetLab_GetCapturePacket_FullMethodName          = "/dcnetlab.v1.DCNetLab/GetCapturePacket"
 	DCNetLab_CreatePlan_FullMethodName                = "/dcnetlab.v1.DCNetLab/CreatePlan"
 	DCNetLab_GetPlan_FullMethodName                   = "/dcnetlab.v1.DCNetLab/GetPlan"
 	DCNetLab_ApplyPlan_FullMethodName                 = "/dcnetlab.v1.DCNetLab/ApplyPlan"
@@ -200,6 +207,22 @@ type DCNetLabClient interface {
 	ApplyFaultScenario(ctx context.Context, in *FaultScenarioOpRequest, opts ...grpc.CallOption) (*FaultScenario, error)
 	RecoverFaultScenario(ctx context.Context, in *FaultScenarioOpRequest, opts ...grpc.CallOption) (*FaultScenario, error)
 	DeleteFaultScenario(ctx context.Context, in *FaultScenarioOpRequest, opts ...grpc.CallOption) (*DeleteFaultScenarioReply, error)
+	// --- Capture ---
+	// CaptureSessions record packets on one modelled interface of a lab
+	// node (a topology link endpoint or vlanif/bond0) into a pcapng
+	// file, with per-packet metadata available live. A session starts
+	// capturing on creation and ends by itself (duration or limit) or
+	// via stop; the recording stays downloadable until the session is
+	// deleted or expires. The pcapng download is a plain HTTP route
+	// (GET /api/v1/labs/{lab_id}/captures/{id}/pcap) and live metadata
+	// is also pushed on WS /ws/v1/captures/{id}.
+	CreateCaptureSession(ctx context.Context, in *CreateCaptureSessionRequest, opts ...grpc.CallOption) (*CaptureSession, error)
+	ListCaptureSessions(ctx context.Context, in *ListCaptureSessionsRequest, opts ...grpc.CallOption) (*ListCaptureSessionsReply, error)
+	GetCaptureSession(ctx context.Context, in *CaptureSessionOpRequest, opts ...grpc.CallOption) (*CaptureSession, error)
+	StopCaptureSession(ctx context.Context, in *CaptureSessionOpRequest, opts ...grpc.CallOption) (*CaptureSession, error)
+	DeleteCaptureSession(ctx context.Context, in *CaptureSessionOpRequest, opts ...grpc.CallOption) (*DeleteCaptureSessionReply, error)
+	ListCapturePackets(ctx context.Context, in *ListCapturePacketsRequest, opts ...grpc.CallOption) (*ListCapturePacketsReply, error)
+	GetCapturePacket(ctx context.Context, in *GetCapturePacketRequest, opts ...grpc.CallOption) (*CapturePacketDetail, error)
 	// --- Plans ---
 	CreatePlan(ctx context.Context, in *CreatePlanRequest, opts ...grpc.CallOption) (*Plan, error)
 	GetPlan(ctx context.Context, in *GetPlanRequest, opts ...grpc.CallOption) (*Plan, error)
@@ -651,6 +674,76 @@ func (c *dCNetLabClient) DeleteFaultScenario(ctx context.Context, in *FaultScena
 	return out, nil
 }
 
+func (c *dCNetLabClient) CreateCaptureSession(ctx context.Context, in *CreateCaptureSessionRequest, opts ...grpc.CallOption) (*CaptureSession, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CaptureSession)
+	err := c.cc.Invoke(ctx, DCNetLab_CreateCaptureSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) ListCaptureSessions(ctx context.Context, in *ListCaptureSessionsRequest, opts ...grpc.CallOption) (*ListCaptureSessionsReply, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCaptureSessionsReply)
+	err := c.cc.Invoke(ctx, DCNetLab_ListCaptureSessions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) GetCaptureSession(ctx context.Context, in *CaptureSessionOpRequest, opts ...grpc.CallOption) (*CaptureSession, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CaptureSession)
+	err := c.cc.Invoke(ctx, DCNetLab_GetCaptureSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) StopCaptureSession(ctx context.Context, in *CaptureSessionOpRequest, opts ...grpc.CallOption) (*CaptureSession, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CaptureSession)
+	err := c.cc.Invoke(ctx, DCNetLab_StopCaptureSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) DeleteCaptureSession(ctx context.Context, in *CaptureSessionOpRequest, opts ...grpc.CallOption) (*DeleteCaptureSessionReply, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteCaptureSessionReply)
+	err := c.cc.Invoke(ctx, DCNetLab_DeleteCaptureSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) ListCapturePackets(ctx context.Context, in *ListCapturePacketsRequest, opts ...grpc.CallOption) (*ListCapturePacketsReply, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCapturePacketsReply)
+	err := c.cc.Invoke(ctx, DCNetLab_ListCapturePackets_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) GetCapturePacket(ctx context.Context, in *GetCapturePacketRequest, opts ...grpc.CallOption) (*CapturePacketDetail, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CapturePacketDetail)
+	err := c.cc.Invoke(ctx, DCNetLab_GetCapturePacket_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *dCNetLabClient) CreatePlan(ctx context.Context, in *CreatePlanRequest, opts ...grpc.CallOption) (*Plan, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Plan)
@@ -853,6 +946,22 @@ type DCNetLabServer interface {
 	ApplyFaultScenario(context.Context, *FaultScenarioOpRequest) (*FaultScenario, error)
 	RecoverFaultScenario(context.Context, *FaultScenarioOpRequest) (*FaultScenario, error)
 	DeleteFaultScenario(context.Context, *FaultScenarioOpRequest) (*DeleteFaultScenarioReply, error)
+	// --- Capture ---
+	// CaptureSessions record packets on one modelled interface of a lab
+	// node (a topology link endpoint or vlanif/bond0) into a pcapng
+	// file, with per-packet metadata available live. A session starts
+	// capturing on creation and ends by itself (duration or limit) or
+	// via stop; the recording stays downloadable until the session is
+	// deleted or expires. The pcapng download is a plain HTTP route
+	// (GET /api/v1/labs/{lab_id}/captures/{id}/pcap) and live metadata
+	// is also pushed on WS /ws/v1/captures/{id}.
+	CreateCaptureSession(context.Context, *CreateCaptureSessionRequest) (*CaptureSession, error)
+	ListCaptureSessions(context.Context, *ListCaptureSessionsRequest) (*ListCaptureSessionsReply, error)
+	GetCaptureSession(context.Context, *CaptureSessionOpRequest) (*CaptureSession, error)
+	StopCaptureSession(context.Context, *CaptureSessionOpRequest) (*CaptureSession, error)
+	DeleteCaptureSession(context.Context, *CaptureSessionOpRequest) (*DeleteCaptureSessionReply, error)
+	ListCapturePackets(context.Context, *ListCapturePacketsRequest) (*ListCapturePacketsReply, error)
+	GetCapturePacket(context.Context, *GetCapturePacketRequest) (*CapturePacketDetail, error)
 	// --- Plans ---
 	CreatePlan(context.Context, *CreatePlanRequest) (*Plan, error)
 	GetPlan(context.Context, *GetPlanRequest) (*Plan, error)
@@ -1002,6 +1111,27 @@ func (UnimplementedDCNetLabServer) RecoverFaultScenario(context.Context, *FaultS
 }
 func (UnimplementedDCNetLabServer) DeleteFaultScenario(context.Context, *FaultScenarioOpRequest) (*DeleteFaultScenarioReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeleteFaultScenario not implemented")
+}
+func (UnimplementedDCNetLabServer) CreateCaptureSession(context.Context, *CreateCaptureSessionRequest) (*CaptureSession, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateCaptureSession not implemented")
+}
+func (UnimplementedDCNetLabServer) ListCaptureSessions(context.Context, *ListCaptureSessionsRequest) (*ListCaptureSessionsReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListCaptureSessions not implemented")
+}
+func (UnimplementedDCNetLabServer) GetCaptureSession(context.Context, *CaptureSessionOpRequest) (*CaptureSession, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetCaptureSession not implemented")
+}
+func (UnimplementedDCNetLabServer) StopCaptureSession(context.Context, *CaptureSessionOpRequest) (*CaptureSession, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StopCaptureSession not implemented")
+}
+func (UnimplementedDCNetLabServer) DeleteCaptureSession(context.Context, *CaptureSessionOpRequest) (*DeleteCaptureSessionReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteCaptureSession not implemented")
+}
+func (UnimplementedDCNetLabServer) ListCapturePackets(context.Context, *ListCapturePacketsRequest) (*ListCapturePacketsReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListCapturePackets not implemented")
+}
+func (UnimplementedDCNetLabServer) GetCapturePacket(context.Context, *GetCapturePacketRequest) (*CapturePacketDetail, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetCapturePacket not implemented")
 }
 func (UnimplementedDCNetLabServer) CreatePlan(context.Context, *CreatePlanRequest) (*Plan, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreatePlan not implemented")
@@ -1822,6 +1952,132 @@ func _DCNetLab_DeleteFaultScenario_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DCNetLab_CreateCaptureSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateCaptureSessionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).CreateCaptureSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_CreateCaptureSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).CreateCaptureSession(ctx, req.(*CreateCaptureSessionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_ListCaptureSessions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCaptureSessionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).ListCaptureSessions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_ListCaptureSessions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).ListCaptureSessions(ctx, req.(*ListCaptureSessionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_GetCaptureSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CaptureSessionOpRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).GetCaptureSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_GetCaptureSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).GetCaptureSession(ctx, req.(*CaptureSessionOpRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_StopCaptureSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CaptureSessionOpRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).StopCaptureSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_StopCaptureSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).StopCaptureSession(ctx, req.(*CaptureSessionOpRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_DeleteCaptureSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CaptureSessionOpRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).DeleteCaptureSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_DeleteCaptureSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).DeleteCaptureSession(ctx, req.(*CaptureSessionOpRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_ListCapturePackets_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCapturePacketsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).ListCapturePackets(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_ListCapturePackets_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).ListCapturePackets(ctx, req.(*ListCapturePacketsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_GetCapturePacket_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetCapturePacketRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).GetCapturePacket(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_GetCapturePacket_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).GetCapturePacket(ctx, req.(*GetCapturePacketRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DCNetLab_CreatePlan_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CreatePlanRequest)
 	if err := dec(in); err != nil {
@@ -2144,6 +2400,34 @@ var DCNetLab_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteFaultScenario",
 			Handler:    _DCNetLab_DeleteFaultScenario_Handler,
+		},
+		{
+			MethodName: "CreateCaptureSession",
+			Handler:    _DCNetLab_CreateCaptureSession_Handler,
+		},
+		{
+			MethodName: "ListCaptureSessions",
+			Handler:    _DCNetLab_ListCaptureSessions_Handler,
+		},
+		{
+			MethodName: "GetCaptureSession",
+			Handler:    _DCNetLab_GetCaptureSession_Handler,
+		},
+		{
+			MethodName: "StopCaptureSession",
+			Handler:    _DCNetLab_StopCaptureSession_Handler,
+		},
+		{
+			MethodName: "DeleteCaptureSession",
+			Handler:    _DCNetLab_DeleteCaptureSession_Handler,
+		},
+		{
+			MethodName: "ListCapturePackets",
+			Handler:    _DCNetLab_ListCapturePackets_Handler,
+		},
+		{
+			MethodName: "GetCapturePacket",
+			Handler:    _DCNetLab_GetCapturePacket_Handler,
 		},
 		{
 			MethodName: "CreatePlan",

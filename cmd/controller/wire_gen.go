@@ -62,11 +62,18 @@ func wireApp(confServer *conf.Server, confData *conf.Data, logger log.Logger, sl
 	trafficUsecase := biz.NewTrafficUsecase(trafficRepo, programUsecase, trafficHistory, slogLogger)
 	faultRepo := data.NewFaultRepo(dataData)
 	faultUsecase := biz.NewFaultUsecase(faultRepo, powerUsecase, driver, slogLogger)
-	dcNetLabService := service.NewDCNetLabService(labUsecase, topologyUsecase, planUsecase, operationUsecase, powerUsecase, runtimeUsecase, programUsecase, packageUsecase, trafficUsecase, faultUsecase, slogLogger)
+	captureRepo := data.NewCaptureRepo(dataData)
+	captureManager := biz.NewCaptureManager(driver, confData, slogLogger)
+	captureUsecase, err := biz.NewCaptureUsecase(captureRepo, captureManager, slogLogger)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	dcNetLabService := service.NewDCNetLabService(labUsecase, topologyUsecase, planUsecase, operationUsecase, powerUsecase, runtimeUsecase, programUsecase, packageUsecase, trafficUsecase, faultUsecase, captureUsecase, slogLogger)
 	terminalUsecase := biz.NewTerminalUsecase(labRepo, topologyRepo, driver, slogLogger)
 	observerStore := data.NewObserverStore(dataData)
 	observerObserver := observer.New(observerStore, driver, slogLogger)
-	httpServer := server.NewHTTPServer(confServer, dcNetLabService, terminalUsecase, observerObserver, history, logger)
+	httpServer := server.NewHTTPServer(confServer, dcNetLabService, terminalUsecase, observerObserver, history, captureUsecase, logger)
 	grpcServer := server.NewGRPCServer(confServer, dcNetLabService, logger)
 	repoServer := server.NewRepoServer(confServer, packageUsecase, slogLogger)
 	metricsStore := data.NewMetricsStore(dataData)
@@ -75,7 +82,7 @@ func wireApp(confServer *conf.Server, confData *conf.Data, logger log.Logger, sl
 	trafficStore := data.NewTrafficStore(dataData)
 	trafficAgent := data.NewTrafficAgent(programAgent)
 	trafficCollector := traffic.NewCollector(trafficStore, trafficAgent, driver, trafficUsecase, trafficHistory, slogLogger)
-	app := newApp(confServer, logger, httpServer, grpcServer, repoServer, observerObserver, collector, trafficCollector)
+	app := newApp(confServer, logger, httpServer, grpcServer, repoServer, observerObserver, collector, trafficCollector, captureManager)
 	return app, func() {
 		cleanup()
 	}, nil

@@ -11,8 +11,8 @@
 | Iteration 2 | Server Program:Compute Server Container、Server Agent、trafficgen | ✅ 已完成，含 Package 制品部署 |
 | Iteration 3 | Daemon Framework | 🚧 进行中（Auto Start / Restart Policy / 存活 + 就绪检查 / 启动顺序已落地；剩就绪门控排序、配置渲染 + Provider、Daemon UI，留到接 Pingmesh 前再做） |
 | Iteration 4 | Traffic | ✅ 已完成，含真实环境验证 |
-| Iteration 5 | 原生抓包（AF_PACKET） | ⬜ 未开始 |
-| Iteration 6 | 故障实验 | ✅ 已完成，含真实环境验证（Link Down/Node Stop/Delay/Loss/Rate Limit/故障恢复/Traffic 联动均达成，Capture 联动待 It. 5） |
+| Iteration 5 | 原生抓包（AF_PACKET） | ✅ 已完成，含真实环境验证（API 26 项 + Playwright 9 项断言全过，It. 6 的 Capture 联动一并补验） |
+| Iteration 6 | 故障实验 | ✅ 已完成，含真实环境验证（Link Down/Node Stop/Delay/Loss/Rate Limit/故障恢复/Traffic 联动均达成，Capture 联动已随 It. 5 补验） |
 | Iteration 7 | 扩容和 Generation Rollback | ⬜ 未开始（Generation 快照已就绪） |
 | Iteration 8 | Pingmesh 集成 | ⬜ 未开始 |
 | Iteration 9 | 虚拟网络（VPC/VXLAN） | ⬜ 未开始 |
@@ -220,7 +220,7 @@ containerlab 依赖 Linux 内核（netlink、网络命名空间），Darwin 无�
 
 ### 故障注入子系统（设计 §17，Iteration 6）
 
-用户可以对拓扑里的一个节点或一条链路注入受控故障、观察 Traffic 曲线掉坑、再一键恢复（设计文档 Iteration 6 交付项：Link Down / Node Stop / Delay / Loss / Rate Limit / 故障恢复 全部达成；Interface Down 顺带一起做；Traffic 联动本轮只做真实环境验证，Capture 联动因 It. 5 尚未开工推迟）。
+用户可以对拓扑里的一个节点或一条链路注入受控故障、观察 Traffic 曲线掉坑、再一键恢复（设计文档 Iteration 6 交付项：Link Down / Node Stop / Delay / Loss / Rate Limit / 故障恢复 全部达成；Interface Down 顺带一起做；Traffic 联动本轮只做真实环境验证，Capture 联动已随 It. 5 落地补验）。
 
 - **资源建模**（`internal/model/fault.go` + biz/data/service 分层 + `pb` API，独立于 Program/Traffic）：单一 `FaultScenario` 资源，`Spec.Target` 区分 `node`/`link`（link 额外带 `side: a/b/both`），`Spec.Type` 覆盖 `node-stop`/`node-restart`/`link-down`/`interface-down`/`impairment`。**两处对设计文档字面的偏差**（讨论阶段与用户对齐过，见下文「已知偏差」）：Delay/Jitter/Loss/Rate Limit 合并成一个 `impairment` 类型而非四个独立类型（对齐 `tc netem` 本身"一张网卡一个 qdisc"的物理事实，四个独立类型会需要内部合并/回退逻辑，UI 层的独立并不能消掉底层的合并复杂度）；同一 target 同一时刻只允许一个生效故障，Recover 直接恢复固定基线（接口 up / 无 qdisc / 容器 running），不做故障前快照结构——故障前状态在当前平台里永远是部署时写入的标准基线，等价于快照但不用真存一份。
 - **执行方式**：`node-stop`/`node-restart` 直接复用 `PowerUsecase.StopNode`/`StartNode`（pause/unpause 语义，理由见下）；`link-down`/`interface-down`/`impairment` 走 `runtime.Driver` 新增的 `SetInterfaceState`/`ApplyImpairment`/`ClearImpairment` 三个方法（`internal/runtime/fault.go`），跟 `ConnectInternet` 一样直接 `docker exec` 跑 `ip link set <iface> up/down` 与 `tc qdisc replace/del dev <iface> root netem ...`，不经过 server agent；`tc qdisc replace`（而非 `add`）与 `ip link set`（本身幂等）让 Apply 不需要读现有状态。`node-restart` 是瞬时事件（Stop 紧接 Start），Apply 后 `Applied` 直接落回 `false`，Recover 对它直接拒绝（"已自动恢复"）。
@@ -244,6 +244,20 @@ containerlab 依赖 Linux 内核（netlink、网络命名空间），Darwin 无�
 - **真实环境验证**：故意删除一条链路两端的 veth 模拟漂移，确认 API 正确报出 `missing: true`、前端 Playwright 真实浏览器截图确认提示条文案和受影响节点列表正确、点击修复后提示条消失、节点 BGP/接口计数完全恢复、lab generation 和 ID 全程不变、且用户当时正在生效中的另一条 `impairment` 故障场景全程未受任何影响（修复操作与故障场景互不干扰，验证了两者的隔离性）。
 - **veth 对端级联丢失，非独有于整机重启**：用户用真实拓扑手动 `docker stop` 了一台 superspine，观察到 6 个健康节点（该 superspine 在拓扑图里的全部直连邻居：2 个 dcedge + 4 个 pod spine，度数正好是 6）同时被判定为漂移，追问"ECMP 应该还通，为什么会有 6 个节点受影响"。根因确认：veth 是内核里的成对对象，删掉一端（容器网络命名空间被销毁）内核会自动连带删掉对端，不管对端在哪个容器里——所以单个节点被手动 `docker stop`/`docker restart`（绕开平台，直接操作 Docker）会像多米诺骨牌一样，把它的每一个直连邻居也各弄丢一根接口，被波及节点数 = 该节点在拓扑图里的度数，与整机重启是否发生无关。同时用真实 BGP 会话状态和跨 fabric ping 验证了 ECMP 判断是对的——6 个邻居里没有一个真正断网，只是各丢了一条冗余链路中的一条。据此把 `driftBanner` 文案从"网络连接意外丢失"改成"网络接口意外消失…若拓扑存在冗余路径，受影响节点当前仍可能保持连通"，避免在冗余拓扑下把"丢了一条链路"渲染成"整个节点断网"；中间一版文案曾写"从内核消失"，用户指出拓扑页是仿真视角、"内核"是容器实现细节，不该出现在头条摘要里（呼应「仿真视图与管理视角分离」的既有原则），故删掉这个措辞，把实现层面的解释完全留给 hover 提示条里那段技术细节；也用这个真实损坏状态（被波及的 6 个健康节点 + 1 个 Exited 的 superspine）验证了一遍 `RepairLab`，确认它不仅补线，连已经 Exited 的容器本身也会被 `containerlab deploy --reconfigure` 一并拉起。
 
+### 原生抓包子系统（设计 §16，Iteration 5）
+
+用户可以在任意节点的建模接口上发起抓包、实时看包列表、点开单包看协议树与原始字节、下载 pcapng 用 Wireshark 打开（设计 Iteration 5 交付项全部达成；方案讨论记录见对话与下述偏差）。
+
+- **执行形态（讨论定案）**：纯 Go 静态二进制 `dcnetlab-capture`（`serverapps/capture` + `serverapps/internal/capture`，AF_PACKET 裸 syscall 不碰 libpcap），仿 node-agent 以单文件只读 bind mount **预装到所有节点**（交换机是主要抓包目标；语义即"NOS 自带 tcpdump"，`serverapps/` 目录语义随之扩为"容器内应用"）+ `ln -sf` 进 PATH 供终端手用。否决了宿主侧 nsenter（要特权）与按需 docker cp（破坏"产物即状态"）。开发期更新二进制需重新 Plan/Apply（单文件 bind mount 钉住旧 inode，与 agent 一致）。
+- **会话生命周期（结构性无孤儿）**：Controller 经 `runtime.Driver` 新增的 `ExecStream`（`docker exec -i`，本迭代对 Driver 的唯一扩展）启动 capture，stdout 回传 pcapng 流；capture 进程**监听 stdin，EOF 即自杀**——用户停止、controller 重启、连接断开三种结局统一收敛为管道关闭，另有 `--duration` 硬上限双保险。真实验证确认停止后容器内零残留进程。
+- **采集管道**（`internal/capture`）：Manager 把 exec 流 tee 到 `data/labs/<id>/captures/<会话>.pcapng`（边抓边写），同时用 gopacket/pcapgo 解出逐包元数据进内存环形窗口（1 万包，快照 + 200ms 批量推送给 WS 订阅者，慢消费者丢批由前端按 index 空洞检测提示）；会话结束窗口保留供查看器零 IO 回看，controller 重启后回退为按需解析 pcapng 文件。24h 定时清理录制文件（会话记录保留在 SQLite）；启动时把遗留 Running 会话置 Failed。
+- **解码全在 controller 侧**：容器内二进制只做抓 + snap 截断 + 用户态结构化过滤（协议枚举 arp/icmp/tcp/udp/bgp/vxlan + 源/目的前缀 + 端口，bgp/vxlan 是熟知端口语法糖）+ 方向过滤（`sll_pkttype`，方向位写入 pcapng EPB flags，Wireshark 同样可见）。协议范围 = 设计第一阶段（Ethernet/VLAN/ARP/IPv4/v6/ICMP/TCP/UDP/VXLAN，VXLAN 内层会话自动穿透）**+ BGP**——gopacket 没有 BGP 层，自写了最小 BGP-4 解码器（`internal/capture/bgp.go`：消息分帧、OPEN 要点、UPDATE 的 NLRI/withdrawn 前缀与 ORIGIN/AS_PATH/NEXT_HOP/MED/LOCAL_PREF、NOTIFICATION 错误码；AS_PATH 先按 4 字节解、段长不吻合回退 2 字节）。
+- **资源与 API**：`CaptureSession`（model/biz/data/service 全链路 + proto），创建即开始抓包、结束即定格（Running/Completed/Stopped/Failed 四态）；`/api/v1/labs/{labId}/captures` CRUD + stop + `packets` 分页 + 单包 detail + `/pcap` 下载（纯 HTTP 路由），WS `/ws/v1/labs/{labId}/captures/{id}`。策略限额按设计 §16.5：snap 默认 256B、时长默认 30s 上限 10min、单文件 100MB、单节点并发 2、录制保留 24h。**抓包目标口径 = 仿真视图**：拓扑链路端点 + vlanif/bond0，eth0/br0/macvlan 被 biz 校验拒绝（与 Observer 接口口径一致）；管理视角抓包经讨论确认不做。
+- **UI**：独立「抓包」页（列表 3s 轮询 / 创建对话框选设备→接口联动、方向、过滤器、时长 / 停止·下载·删除）；包查看器为**独立路由页**（Wireshark 三区：el-table-v2 虚拟滚动包列表（万级行）+ 协议树 + hex/ASCII 面板，WS 快照+增量实时推送、自动滚动开关、方向箭头列）；拓扑图节点抽屉加「抓包」标签页（接口/协议/时长快捷发起，成功即跳查看器）、链路抽屉加分端"在 X 端抓包"按钮。
+- **测试**：capture 二进制侧表驱动覆盖过滤器匹配（协议/前缀/端口/组合）与选项校验；controller 侧覆盖 BGP 解码器全消息类型与截断/垃圾输入、Summarize/Tree（含 VXLAN 内层）、环形窗口、argv 拼装（**首元素必须是工具路径**，吸取 trafficgen 模式参数漏传的教训）、Manager 全生命周期（假 driver 喂 pcapng 流：落盘一致性、方向解析、用户停止、订阅快照）、文件回读一致性；biz 侧覆盖校验规则（非法接口/方向/过滤器/未部署/并发限额）、创建即抓到读包、重启收敛、停止幂等、删除清理。
+- **真实环境验证**（my-dc，25 容器，TDD 断言脚本 + Playwright Firefox）：API 侧 26 项全过——预装与 PATH 软链、leaf fabric 口抓 BGP（过滤器命中、KEEPALIVE/UPDATE 摘要、方向、协议树、base64 原始字节）、server bond0 抓 ICMP（跨 fabric ping 双向 echo、源/目的正确）、eth0/br0/非法方向/超并发全被拒、停止后无孤儿进程、pcapng 魔数合法、**故障联动：link-down 恢复后抓到 BGP OPEN 会话重建现场**（补掉 It. 6 遗留的 Capture 联动验证）、删除清理干净。UI 侧 9 项全过：列表页/查看器实时出包/协议树/hex 渲染、console 零错误，截图交叉确认。
+- **验证发现并修复一个真 bug**：接口被 link-down 故障 admin down 时，AF_PACKET 的 `recvfrom` 返回 `ENETDOWN`，初版把它当致命错误、capture 进程退出——而"抓故障现场"恰是核心场景。修复为等待重试（socket 按 ifindex 绑定在接口 down/up 后自动恢复收包），单测覆盖不到这类内核行为，又一次印证"必须真实环境跑一遍"。另有两处验证脚本自身的测量缺陷（进程计数命中检查命令自身 cmdline、按接口名匹配链路误中对端同名接口），已修正并记录。
+
 ### 代码规范与工程化
 
 - [golang-style.md](golang-style.md) 为 Go 代码基线；golangci-lint（`.golangci.yml`，版本固定）+ 自研 `scripts/check-style.py`（空行语义）挂在 `make lint`，零告警纳入提交门禁。
@@ -260,6 +274,8 @@ containerlab 依赖 Linux 内核（netlink、网络命名空间），Darwin 无�
 7. **server 默认路由 exec 竞态**：`ip route replace default via <gw>` 在 zebra 尚未给 bond0 配地址时因 nexthop 不可达而失败（containerlab exec 与 FRR 启动并发），管理网默认路由反客为主、流量静默逃逸——加 `dev bond0 onlink` 让路由安装不依赖 nexthop 预先可达。
 8. **`docker network connect` 接口命名冲突**：Docker 按自身 endpoint 计数给新接口起名 `eth<n>`，不知道 containerlab 已把 veth 塞进命名空间占了 eth1+，撞名报 `file exists`；但失败会推进计数器，有界重试即可越过占用序号（Docker 28 的 `com.docker.network.endpoint.ifname` 选项可指定接口名，27 忽略之）。接口名不可假设，用 endpoint IP 反查。
 9. **多命令二进制的 `Program.Spec.Args` 必须自带模式名**：`dcnetlab-trafficgen` 按 `os.Args[1]` 分发子命令（`http-server`/`http-client`/…），只拼 flag（如 `--listen`/`--target`）会让进程立刻报 `unknown mode "--xxx"` 退出、RestartPolicy=Always 下无限崩溃重启——单测只断言了 flag 内容、没断言 `Args[0]`，这类"参数拼装漏了必需的第一位"问题必须在真实环境跑一次真实进程才会暴露，光靠 mock agent 的单测测不出来。
+10. **AF_PACKET 在接口 admin down 时 `recvfrom` 返回 `ENETDOWN`**：不是可忽略的瞬态错误码集合（EAGAIN/EINTR）里的一员，按致命错误处理会让抓包进程在 link-down 故障注入的瞬间退出——而"抓故障现场"正是抓包的核心场景。正确处理是等待重试：socket 按 ifindex 绑定，接口 down/up 后内核自动恢复投递（`packet_notifier` 重新挂钩），无需重开 socket。这类内核行为仿不出来，只能真实环境暴露（Iteration 5 验证发现）。
+11. **单文件 bind mount 钉住宿主文件的旧 inode**：`go build -o` 产出新 inode 后，已运行容器内看到的仍是旧二进制（capture/agent 同理），开发期更新容器内工具必须重新 Plan/Apply；`sha256sum` 容器内外对比是最快的确认手段。
 
 ## 与设计文档的已知偏差
 
@@ -271,15 +287,18 @@ containerlab 依赖 Linux 内核（netlink、网络命名空间），Darwin 无�
 6. **Daemon 未建独立资源**（设计 §9.7 的 `DaemonSpec` 内嵌 `ProgramSpec`）：存活 / 就绪检查、启动顺序等 Daemon 语义作为字段增量落在 `ProgramSpec` 上，"Daemon"即一种带健康检查的 simple Program——API、存储、agent 协议、UI 全部复用，迁移成本为零（有意为之，见"下一步计划"的建模决策）。
 7. **故障类型合并**：设计 §17 字面列了 Delay/Jitter/Loss/Rate Limit 四个独立故障类型，实现合并成一个 `impairment` 类型（字段可任意组合）——对齐 `tc netem` 本身"一张网卡一个 qdisc"的物理事实，四个独立类型并不能避免底层合并，只会把合并/回退逻辑转嫁给实现（有意为之，讨论阶段与用户对齐过，详见「故障注入子系统」）。
 8. **故障恢复不做快照结构**：设计 §17 要求"故障恢复必须基于故障前快照"，实现里同一 target 同一时刻只允许一个生效故障，Recover 恢复固定基线（接口 up / 无 qdisc / 容器 running）——当前平台里故障前状态永远是这个标准基线，二者事实等价，只是不存一份快照数据（有意为之，若未来要支持同一 target 叠加多个故障，需要重新引入真快照链）。
+9. **抓包 metadata 不独立持久化**：设计 §16.5 要求 pcap 保留 24h、metadata 保留 7 天，实现里包列表永远从 pcapng 现场解析，随文件 24h 一起消失（会话参数与计数仍在 SQLite）——省一套落盘管道，"抓包次日回看包明细"场景以下载 pcap 兜底（有意为之，讨论阶段与用户对齐过）。
+10. **`SavePayload` 开关未实现**：抓包总是落盘；snap 256B 已把体积压到几 MB 量级，"阅后即焚"模式收益配不上双路径成本（proto 未预留该字段，需要时再加）。
+11. **抓包 API 为 lab 作用域**：设计 §20.4 是顶层 `/api/v1/capture-sessions`，实现对齐仓库惯例用 `/api/v1/labs/{labId}/captures`（programs/traffic/faults 均此风格）。
 
 ## 下一步计划（按优先级）
 
 ### 迭代路线与排序
 
-原计划顺序为 It. 3 → It. 4 → It. 5 → It. 6；实际执行时与用户对齐后调整为 **It. 4 Traffic（已完成）→ It. 6 故障（已完成，含真实环境验证）→ It. 5 抓包 → It. 3 剩余 + It. 8 Pingmesh → It. 7 扩容 / Rollback → It. 9/10 虚拟网络 / EIP**，理由：
+原计划顺序为 It. 3 → It. 4 → It. 5 → It. 6；实际执行时与用户对齐后调整为 **It. 4 Traffic（已完成）→ It. 6 故障（已完成）→ It. 5 抓包（已完成，含真实环境验证）→ It. 3 剩余 + It. 8 Pingmesh → It. 7 扩容 / Rollback → It. 9/10 虚拟网络 / EIP**，理由：
 
 - **Traffic（It. 4）已提前于 It. 3 剩余项完成**：trafficgen 已就绪、演示价值高于就绪门控排序 / `GenericDaemonProvider`（两者暂无真实消费者，留到接 Pingmesh 前再做，避免为无消费者的抽象提前设计）。
-- **故障实验（It. 6）紧跟 Traffic 完成**：Link Down / Node Stop / Delay / Loss / Rate Limit / 故障恢复均已交付（详见「故障注入子系统」），"注入故障 → Traffic 曲线掉坑 → 恢复"这条平台最核心的演示闭环已经打通，Traffic 的指标管道被直接复用。抓包（It. 5，AF_PACKET）为独立能力，后置不损失价值，"Traffic 和 Capture 联动"里 Capture 那半句留到 It. 5 完成后补验证。快照结构按讨论阶段的结论简化为固定基线恢复（见「已知偏差」第 8 条），未引入独立的 FaultSession/快照资源。
+- **故障实验（It. 6）紧跟 Traffic 完成**：Link Down / Node Stop / Delay / Loss / Rate Limit / 故障恢复均已交付（详见「故障注入子系统」），"注入故障 → Traffic 曲线掉坑 → 恢复"这条平台最核心的演示闭环已经打通，Traffic 的指标管道被直接复用。抓包（It. 5，AF_PACKET）已完成，"Traffic 和 Capture 联动"里 Capture 那半句已在 It. 5 验证中补上（link-down 恢复后抓到 BGP 会话重建）。快照结构按讨论阶段的结论简化为固定基线恢复（见「已知偏差」第 8 条），未引入独立的 FaultSession/快照资源。
 - **Pingmesh（It. 8）提前到扩容之前**：它是 Daemon Framework 的首个真实消费者，尽早验证 DaemonProvider 接口设计是否成立；扩容 / Rollback（Generation 快照已就绪）不阻塞任何人，何时做都行。
 
 ### Iteration 3 剩余项拆解

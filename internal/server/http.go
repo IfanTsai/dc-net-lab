@@ -24,7 +24,7 @@ import (
 // /metrics and the web UI: the built files when WebDir is set, or a
 // reverse proxy to the Vite dev server when WebDevProxy is set (dev
 // mode with hot reload, WebDevProxy wins over WebDir).
-func NewHTTPServer(c *conf.Server, svc *service.DCNetLabService, term TerminalOpener, watcher TopologyWatcher, msrc MetricsSource, logger log.Logger) *khttp.Server {
+func NewHTTPServer(c *conf.Server, svc *service.DCNetLabService, term TerminalOpener, watcher TopologyWatcher, msrc MetricsSource, capfeed CaptureFeed, logger log.Logger) *khttp.Server {
 	srv := khttp.NewServer(
 		khttp.Address(c.HTTPAddr),
 		khttp.Middleware(recovery.Recovery(), logging.Server(logger)),
@@ -33,6 +33,8 @@ func NewHTTPServer(c *conf.Server, svc *service.DCNetLabService, term TerminalOp
 	v1.RegisterDCNetLabHTTPServer(srv, svc)
 	srv.HandleFunc("/ws/v1/labs/{labId}/nodes/{nodeId}/terminal", terminalHandler(term, logger))
 	srv.HandleFunc("/ws/v1/labs/{labId}/topology", topologyHandler(watcher))
+	srv.HandleFunc("/ws/v1/labs/{labId}/captures/{id}", captureHandler(capfeed))
+	srv.HandleFunc("/api/v1/labs/{labId}/captures/{id}/pcap", capturePcapHandler(capfeed))
 	srv.HandleFunc("/metrics", metricsHandler(msrc))
 
 	// The web UI handler is registered after the API routes so /api/v1

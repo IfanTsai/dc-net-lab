@@ -17,6 +17,7 @@ import (
 	kgrpc "github.com/go-kratos/kratos/v2/transport/grpc"
 	khttp "github.com/go-kratos/kratos/v2/transport/http"
 
+	"github.com/ifantsai/dcnetlab/internal/capture"
 	"github.com/ifantsai/dcnetlab/internal/conf"
 	"github.com/ifantsai/dcnetlab/internal/metrics"
 	"github.com/ifantsai/dcnetlab/internal/observer"
@@ -41,7 +42,7 @@ func main() {
 	flag.StringVar(&dc.Dir, "data-dir", "data", "directory for the database and artifacts")
 	flag.StringVar(&dc.Runtime, "runtime", "auto", "runtime driver: containerlab, noop or auto")
 	flag.StringVar(&dc.BinDir, "bin-dir", "",
-		"host directory with the dcnetlab-node-agent and dcnetlab-node-cli binaries (default: the controller binary's directory)")
+		"host directory with the dcnetlab-node-agent, dcnetlab-node-cli and dcnetlab-capture binaries (default: the controller binary's directory)")
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -92,8 +93,8 @@ func resolveBinDir(dir string, log *slog.Logger) string {
 // listen address is configured. The observer and the metrics and
 // traffic collectors run as transport servers too, so their poll
 // loops follow the app lifecycle.
-func newApp(c *conf.Server, logger klog.Logger, hs *khttp.Server, gs *kgrpc.Server, rs *server.RepoServer, obs *observer.Observer, mc *metrics.Collector, tc *traffic.Collector) *kratos.App {
-	servers := []transport.Server{hs, rs, obs, mc, tc}
+func newApp(c *conf.Server, logger klog.Logger, hs *khttp.Server, gs *kgrpc.Server, rs *server.RepoServer, obs *observer.Observer, mc *metrics.Collector, tc *traffic.Collector, cm *capture.Manager) *kratos.App {
+	servers := []transport.Server{hs, rs, obs, mc, tc, cm}
 	if c.GRPCAddr != "" {
 		servers = append(servers, gs)
 	}
