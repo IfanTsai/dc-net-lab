@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# DCNetLab launcher: one command to start/stop the two processes on
-# one machine — agent (data plane) and controller (control plane,
-# which also serves the web UI). They talk over localhost gRPC, the
-# same wiring a multi-machine install uses.
+# DCNetLab launcher: one command to start/stop the three processes on one
+# machine — agent (data plane), controller (control plane) and
+# the web server (UI). They are separate processes talking over
+# localhost gRPC/HTTP, the same wiring a multi-machine install uses.
 #
-#   scripts/dcnetlab up          build everything, start agent + controller
-#   scripts/dcnetlab up --dev    same URL, controller proxies to Vite (hot reload)
+#   scripts/dcnetlab up          build everything, start agent + controller + web
+#   scripts/dcnetlab up --dev    same URL, web proxies to Vite (hot reload)
 #   scripts/dcnetlab down        stop everything started by "up"
 #   scripts/dcnetlab status      show what is running
 #   scripts/dcnetlab logs        tail controller logs
@@ -17,8 +17,9 @@
 # DCNETLAB_RUNTIME=noop) it keeps running locally, artifacts only.
 #
 # Configuration via environment:
-#   DCNETLAB_LISTEN       controller address (default 127.0.0.1:8080,
+#   DCNETLAB_LISTEN       user-facing web address (default 127.0.0.1:8080,
 #                         or 0.0.0.0:8080 when forwarded into OrbStack)
+#   DCNETLAB_API_LISTEN   controller API address (default 127.0.0.1:8180)
 #   DCNETLAB_AGENT_LISTEN data plane agent gRPC address (default 127.0.0.1:50063)
 #   DCNETLAB_RUNTIME      runtime driver: auto|agent|noop (default auto)
 #   DCNETLAB_ORB_MACHINE  OrbStack machine used on macOS (default dcnetlab)
@@ -28,6 +29,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUN_DIR="$ROOT/.run"
 LISTEN="${DCNETLAB_LISTEN:-127.0.0.1:8080}"
+API_LISTEN="${DCNETLAB_API_LISTEN:-127.0.0.1:8180}"
 AGENT_LISTEN="${DCNETLAB_AGENT_LISTEN:-127.0.0.1:50063}"
 RUNTIME="${DCNETLAB_RUNTIME:-auto}"
 ORB_MACHINE="${DCNETLAB_ORB_MACHINE:-dcnetlab}"
@@ -36,6 +38,7 @@ ORB_MACHINE="${DCNETLAB_ORB_MACHINE:-dcnetlab}"
 ADVERTISE="${DCNETLAB_ADVERTISE:-}"
 AGENT_PID="$RUN_DIR/agent.pid"
 CTRL_PID="$RUN_DIR/controller.pid"
+WEB_PID="$RUN_DIR/web.pid"
 VITE_PID="$RUN_DIR/vite.pid"
 AGENT_LOG="$RUN_DIR/agent.log"
 CTRL_LOG="$RUN_DIR/controller.log"
@@ -93,7 +96,7 @@ maybe_exec_in_orb() {
   fi
 
   # Bind all interfaces inside the VM so the mac browser reaches the
-  # controller via the machine's .orb.local hostname.
+  # web server via the machine's .orb.local hostname.
   local listen="${DCNETLAB_LISTEN:-0.0.0.0:8080}"
 
   # When attached to a terminal, orb queries/resets terminal modes and
@@ -171,7 +174,7 @@ cmd_up() {
   local dev=0
   [ "${1:-}" = "--dev" ] && dev=1
 
-  if alive "$CTRL_PID" || alive "$AGENT_PID"; then
+  if alive "$CTRL_PID" || alive "$AGENT_PID" || alive "$WEB_PID"; then
     echo "already running; use 'down' first" >&2
     exit 1
   fi
@@ -180,6 +183,7 @@ cmd_up() {
   echo "building binaries..."
   (cd "$ROOT" && go build -o bin/dcnetlab-controller ./controller/cmd/controller)
   (cd "$ROOT" && go build -o bin/dcnetlab-agent ./agent/cmd/agent)
+  (cd "$ROOT" && go build -o bin/dcnetlab-web ./web/server)
   # Static binaries: baked into the node images and served as builtin
   # packages by the controller.
   (cd "$ROOT" && CGO_ENABLED=0 go build -o bin/dcnetlab-node-agent ./nodeapps/cmd/node-agent)
@@ -193,7 +197,7 @@ cmd_up() {
   fi
   ensure_web_natives
 
-  local web_args=()
+  local web_args=(--listen "$LISTEN" --controller "http://$API_LISTEN")
   if [ "$dev" = 0 ]; then
     echo "building web UI..."
     if ! (cd "$ROOT/web" && npm run build --silent >"$WEB_LOG" 2>&1); then
@@ -203,10 +207,10 @@ cmd_up() {
     fi
     web_args+=(--web-dir "$ROOT/web/dist")
   else
-    # Dev mode: the controller reverse-proxies UI requests (and the
+    # Dev mode: the web server reverse-proxies UI requests (and the
     # Vite HMR WebSocket) to the local dev server, so the browser
-    # stays on the controller port and still gets hot reload.
-    web_args+=(--web-dev-proxy "http://127.0.0.1:5173")
+    # stays on the web port and still gets hot reload.
+    web_args+=(--dev-proxy "http://127.0.0.1:5173")
   fi
 
   if [ "$RUNTIME" != noop ]; then
@@ -218,18 +222,22 @@ cmd_up() {
     echo $! >"$AGENT_PID"
   fi
 
-  echo "starting controller on $LISTEN (runtime: $RUNTIME)..."
+  echo "starting controller on $API_LISTEN (runtime: $RUNTIME)..."
   nohup "$ROOT/bin/dcnetlab-controller" \
-    --listen "$LISTEN" \
+    --listen "$API_LISTEN" \
     --data-dir "$ROOT/data" \
     --runtime "$RUNTIME" \
-    --agent "$AGENT_LISTEN" \
-    "${web_args[@]}" >"$CTRL_LOG" 2>&1 </dev/null &
+    --agent "$AGENT_LISTEN" >"$CTRL_LOG" 2>&1 </dev/null &
   echo $! >"$CTRL_PID"
+  wait_healthy "$API_LISTEN" controller "$CTRL_LOG"
+
+  echo "starting web server on $LISTEN..."
+  nohup "$ROOT/bin/dcnetlab-web" "${web_args[@]}" >"$WEB_LOG" 2>&1 </dev/null &
+  echo $! >"$WEB_PID"
 
   if [ "$dev" = 1 ]; then
     echo "starting Vite dev server..."
-    # The controller proxies to Vite over localhost, so Vite stays
+    # The web server proxies to Vite over localhost, so Vite stays
     # bound there even when forwarded into OrbStack.
     if command -v setsid >/dev/null 2>&1; then
       # setsid may fork, so the session leader writes its own pid;
@@ -243,7 +251,7 @@ cmd_up() {
     for _ in $(seq 1 20); do [ -s "$VITE_PID" ] && break; sleep 0.1; done
   fi
 
-  wait_healthy "$LISTEN" controller "$CTRL_LOG"
+  wait_healthy "$LISTEN" "web server" "$WEB_LOG"
   echo
   if [ "$dev" = 1 ]; then
     echo "DCNetLab is up:  http://${ADVERTISE:-$LISTEN}  (dev, hot reload)"
@@ -259,6 +267,7 @@ cmd_down() {
   command -v setsid >/dev/null 2>&1 && group=group
 
   stop_pid "$VITE_PID" "vite dev server" $group
+  stop_pid "$WEB_PID" "web server"
   stop_pid "$CTRL_PID" "controller"
   stop_pid "$AGENT_PID" "agent"
   echo "DCNetLab is down"
@@ -271,9 +280,14 @@ cmd_status() {
     echo "agent:      stopped"
   fi
   if alive "$CTRL_PID"; then
-    echo "controller: running (pid $(cat "$CTRL_PID"), http://${ADVERTISE:-$LISTEN})"
+    echo "controller: running (pid $(cat "$CTRL_PID"), http://$API_LISTEN)"
   else
     echo "controller: stopped"
+  fi
+  if alive "$WEB_PID"; then
+    echo "web:        running (pid $(cat "$WEB_PID"), http://${ADVERTISE:-$LISTEN})"
+  else
+    echo "web:        stopped"
   fi
   if alive "$VITE_PID"; then
     echo "vite dev:   running (pid $(cat "$VITE_PID"), hot reload via http://${ADVERTISE:-$LISTEN})"

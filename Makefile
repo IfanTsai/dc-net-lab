@@ -26,6 +26,7 @@ build:
 	$(GO) build ./...
 	$(GO) build -o bin/dcnetlab-controller ./controller/cmd/controller
 	$(GO) build -o bin/dcnetlab-agent ./agent/cmd/agent
+	$(GO) build -o bin/dcnetlab-web ./web/server
 	CGO_ENABLED=0 $(GO) build -o bin/dcnetlab-node-agent ./nodeapps/cmd/node-agent
 	CGO_ENABLED=0 $(GO) build -o bin/dcnetlab-node-cli ./nodeapps/cmd/node-cli
 	CGO_ENABLED=0 $(GO) build -o bin/dcnetlab-trafficgen ./nodeapps/cmd/trafficgen
@@ -62,8 +63,8 @@ golden:
 run: build
 	./bin/dcnetlab-controller --data-dir data
 
-# One-command start/stop of agent + controller (which serves the web
-# UI); "dev" serves the UI with hot reload through the controller port.
+# One-command start/stop of the three processes (agent, controller,
+# web); "dev" serves the UI with hot reload through the web port.
 up:
 	scripts/dcnetlab up
 
