@@ -16,7 +16,7 @@ mac 上的任何容器方案（Docker Desktop、OrbStack、colima）本质都是
 macOS                                        OrbStack 虚机「dcnetlab」(Ubuntu)
 ─────                                        ────────────────────────────────
 
-浏览器 ──── http://dcnetlab.orb.local:8080 ────► Controller (绑定 0.0.0.0:8080)
+浏览器 ──── http://dcnetlab.orb.local:8080 ────► web 服务 (绑定 0.0.0.0:8080,反代 controller)
                                                    │  REST / gRPC / WebSocket
 make up                                            │
   └─ scripts/dcnetlab (Darwin 检测)                 ├─ Runtime Driver → containerlab

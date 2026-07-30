@@ -1,14 +1,15 @@
 # DCNetLab
 
-数据中心网络仿真实验平台：Kratos（protobuf API）后端 + Vue 3 前端 + Containerlab 运行时。
+数据中心网络仿真实验平台：控制面 controller（Kratos，protobuf API）+ 数据面 agent（驱动 Containerlab）+ Vue 3 前端，三进程经 gRPC/HTTP 通信（见 docs/architecture.md）。
 
 ## 常用命令
 
 - `make init` — 安装工具链（buf / protoc 插件 / kratos / wire / golangci-lint，版本固定在 scripts/init-tools.sh）
 - `make api` — 从 api/ 下的 proto 重新生成 pb/ 下的代码（buf generate）
-- `make wire` — 修改 provider 后重新生成 cmd/controller/wire_gen.go
+- `make wire` — 修改 provider 后重新生成 controller/cmd/controller/wire_gen.go
 - `make build test lint` — 构建、测试、静态检查；提交前三者必须全部通过
 - `make golden` — 编译器模板变更后更新 golden 基线
+- `make images` — 重建节点镜像（dcnetlab/frr、dcnetlab/server、frr-edge）
 
 ## 代码规范
 
@@ -41,9 +42,15 @@ Commit message 必须遵循 [docs/git-commit-style.md](docs/git-commit-style.md)
 
 ## 架构约束
 
-- 分层严格单向：service → biz → data；service 不触达数据层，biz 不解析 HTTP/protobuf
+- 按组件分目录：controller/（控制面）、agent/（数据面 agent + clab 驱动）、
+  nodeapps/（交付进仿真容器的应用），三者的 internal 互不可见；
+  跨面共享只有 api/（proto 契约）、pb/ 与根 internal/（model/nodeagentapi/runtime）
+- controller 不直接接触 docker/containerlab，运行时操作一律经 runtime.Driver
+  （agentdriver → 数据面 agent gRPC；noop 降级）
+- 控制面内分层严格单向：service → biz → data；service 不触达数据层，biz 不解析 HTTP/protobuf
 - 每层同名文件（biz.go/data.go/service.go/server.go）持有该层 wire ProviderSet；
   biz 与 data 按功能模块同构拆分（lab/plan/topology/operation）
-- API 以 api/dcnetlab/v1/dcnetlab.proto 为唯一事实来源，生成代码在 pb/（勿手改）
+- API 以 api/ 下的 proto 为唯一事实来源（dcnetlab/agent/nodeagent 三个服务），
+  生成代码在 pb/（勿手改）
 - internal/model 是零依赖的共享资源模型；模块私有类型放各自包内
 - 新功能落地时同步更新 docs/progress.md

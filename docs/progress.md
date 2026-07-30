@@ -18,7 +18,7 @@
 | Iteration 9 | 虚拟网络（VPC/VXLAN） | ⬜ 未开始 |
 | Iteration 10 | EIP | ⬜ 未开始 |
 
-在迭代计划之外，已提前实现设计 §13 的 Observer 状态采集（含 WebSocket 实时推送）与拓扑页 Web 终端、DC/设备启停控制。
+在迭代计划之外，已提前实现设计 §13 的 Observer 状态采集（含 WebSocket 实时推送）与拓扑页 Web 终端、DC/设备启停控制；并完成**控制面 / 数据面架构分离**（agent + 镜像化分发 + 前后端部署分离，见下文与 [architecture.md](architecture.md)）。
 
 ## 已实现能力
 
@@ -265,10 +265,21 @@ containerlab 依赖 Linux 内核（netlink、网络命名空间），Darwin 无�
 - **真实环境验证**（my-dc，25 容器，TDD 断言脚本 + Playwright Firefox）：API 侧 26 项全过——预装与 PATH 软链、leaf fabric 口抓 BGP（过滤器命中、KEEPALIVE/UPDATE 摘要、方向、协议树、base64 原始字节）、server bond0 抓 ICMP（跨 fabric ping 双向 echo、源/目的正确）、eth0/br0/非法方向/超并发全被拒、停止后无孤儿进程、pcapng 魔数合法、**故障联动：link-down 恢复后抓到 BGP OPEN 会话重建现场**（补掉 It. 6 遗留的 Capture 联动验证）、删除清理干净。UI 侧 9 项全过：列表页/查看器实时出包/协议树/hex 渲染、console 零错误，截图交叉确认。
 - **验证发现并修复一个真 bug**：接口被 link-down 故障 admin down 时，AF_PACKET 的 `recvfrom` 返回 `ENETDOWN`，初版把它当致命错误、capture 进程退出——而"抓故障现场"恰是核心场景。修复为等待重试（socket 按 ifindex 绑定在接口 down/up 后自动恢复收包），单测覆盖不到这类内核行为，又一次印证"必须真实环境跑一遍"。另有两处验证脚本自身的测量缺陷（进程计数命中检查命令自身 cmdline、按接口名匹配链路误中对端同名接口），已修正并记录。
 
+### 控制面 / 数据面架构分离（agent）
+
+把此前"迭代外技术债"第 4 条整体落地（完整架构见 [architecture.md](architecture.md)）：
+
+- **目录分面**：单 Go module 顶层拆为 `controller/`（controller）、`agent/`（数据面 agent + clab 驱动）与 `nodeapps/`（交付进仿真容器的应用：node-agent/node-cli/trafficgen/capture），Go internal 规则强制三者互不可见；跨面共享收敛到 `api/`、`pb/` 与根 `internal/`（model/nodeagentapi/runtime）。
+- **agent**（`agent/cmd/agent`，gRPC :50063）：ContainerlabDriver 整体迁入数据面（`agent/internal/clab`），由 Agent gRPC API（`api/agent/v1`）对外提供——Deploy 随 RPC 携带 generation 产物文件（controller 与宿主机不再共享文件系统）、一次性/流式 exec 与交互终端（双向流，保住抓包的 stdin-EOF 生命线语义）、故障与电源操作、管理网拨号代理（controller → node-agent 的 gRPC 经此转发）、包制品库反代（`--repo-upstream`，多机部署时容器拉包回源）。错误分类跨网络保留（gRPC `Unavailable` ↔ `runtime.ErrUnavailable`）。
+- **controller 侧**：`agentdriver` 以同一 `runtime.Driver` 接口拨向 agent，biz 层零改动；`--runtime auto` 启动时 Ping 探测，不可达降级 noop。node-agent 拨号经 driver 的 `DialNode`（`grpc.WithContextDialer`）注入，跨机部署无需打通容器管理网。
+- **镜像化分发**：`make images` 构建 `dcnetlab/frr`（官方 FRR + 预装 capture）、`dcnetlab/server`（FRR + node-agent/node-cli）、`frr-edge`（+iptables），bind mount 分发通道整体退役（含经验 11 的 inode 钉住问题）；server 的 capture 不烤镜像，改由 Apply 新增的 `InstallCaptureTool` 步骤经包制品库下发（`PackageRef.links` 机制把入口软链到与交换机一致的路径），验证 pkg 分发通道。热升级仍走制品库，镜像只承担引导版本。
+- **前后端部署分离**：controller 退役 web 托管成为纯 API（:8180），新增独立 web 服务（`web/server`，:8080）托管 Vue 构建产物并反代 `/api` `/ws` `/metrics`；前端保持相对路径，浏览器单一源、无 CORS。dev 模式由 web 服务反代 Vite。
+- **单机形态不变**："一台机器，一个命令"仍成立——`make up` 依次拉起 agent、controller、web 三进程（localhost 通信），与多机部署共用同一条代码路径；多机部署只需把 agent 带外装到数据面机器并调整监听地址。
+
 ### 代码规范与工程化
 
 - [golang-style.md](golang-style.md) 为 Go 代码基线；golangci-lint（`.golangci.yml`，版本固定）+ 自研 `scripts/check-style.py`（空行语义）挂在 `make lint`，零告警纳入提交门禁。
-- `scripts/dcnetlab up|down|status|logs`（`make up`/`make down`）一键管理 Controller + 前端；`up --dev`（`make dev`）附带 Vite 热更新——controller 以 `--web-dev-proxy` 把非 API 请求（含 HMR WebSocket）反代到本机 Vite，浏览器始终只访问 controller 端口，不再需要 5173 直连（OrbStack 场景下 Vite 也无需再绑全部接口）。
+- `scripts/dcnetlab up|down|status|logs|images`（`make up`/`make down`/`make images`）一键管理 agent + controller + web 三进程与节点镜像；`up --dev`（`make dev`）附带 Vite 热更新——web 服务以 `--dev-proxy` 把 UI 请求（含 HMR WebSocket）反代到本机 Vite，浏览器始终只访问 web 端口，不需要 5173 直连（OrbStack 场景下 Vite 也无需再绑全部接口）。
 
 ## 关键经验记录
 
@@ -282,7 +293,7 @@ containerlab 依赖 Linux 内核（netlink、网络命名空间），Darwin 无�
 8. **`docker network connect` 接口命名冲突**：Docker 按自身 endpoint 计数给新接口起名 `eth<n>`，不知道 containerlab 已把 veth 塞进命名空间占了 eth1+，撞名报 `file exists`；但失败会推进计数器，有界重试即可越过占用序号（Docker 28 的 `com.docker.network.endpoint.ifname` 选项可指定接口名，27 忽略之）。接口名不可假设，用 endpoint IP 反查。
 9. **多命令二进制的 `Program.Spec.Args` 必须自带模式名**：`dcnetlab-trafficgen` 按 `os.Args[1]` 分发子命令（`http-server`/`http-client`/…），只拼 flag（如 `--listen`/`--target`）会让进程立刻报 `unknown mode "--xxx"` 退出、RestartPolicy=Always 下无限崩溃重启——单测只断言了 flag 内容、没断言 `Args[0]`，这类"参数拼装漏了必需的第一位"问题必须在真实环境跑一次真实进程才会暴露，光靠 mock agent 的单测测不出来。
 10. **AF_PACKET 在接口 admin down 时 `recvfrom` 返回 `ENETDOWN`**：不是可忽略的瞬态错误码集合（EAGAIN/EINTR）里的一员，按致命错误处理会让抓包进程在 link-down 故障注入的瞬间退出——而"抓故障现场"正是抓包的核心场景。正确处理是等待重试：socket 按 ifindex 绑定，接口 down/up 后内核自动恢复投递（`packet_notifier` 重新挂钩），无需重开 socket。这类内核行为仿不出来，只能真实环境暴露（Iteration 5 验证发现）。
-11. **单文件 bind mount 钉住宿主文件的旧 inode**：`go build -o` 产出新 inode 后，已运行容器内看到的仍是旧二进制（capture/agent 同理），开发期更新容器内工具必须重新 Plan/Apply；`sha256sum` 容器内外对比是最快的确认手段。
+11. **单文件 bind mount 钉住宿主文件的旧 inode**：`go build -o` 产出新 inode 后，已运行容器内看到的仍是旧二进制（capture/agent 同理），开发期更新容器内工具必须重新 Plan/Apply；`sha256sum` 容器内外对比是最快的确认手段。**该分发通道已随控制面/数据面分离整体退役**（工具烤镜像或走包制品库），经验保留备查——开发期更新容器内工具现在对应"重建镜像 + Plan/Apply"或 bump 包版本。
 
 ## 与设计文档的已知偏差
 
@@ -324,7 +335,7 @@ Auto Start 与 Restart Policy 已在"Program 的 systemd 化"一轮落地（`aut
 1. **Operation 进度仍为 HTTP 轮询**：Traffic 页面这轮同样保持轮询（列表 3 s、图表 5 s），未迁入现有 WebSocket 通道；故障实验若需要更低延迟的曲线联动，是把 Operation/Traffic 指标统一迁到 WebSocket 的合适时机。
 2. **Package 格式扩展**：deb（需 Debian 系 server 镜像）与 OCI Image 作为 `format` 扩展位；随 It. 7 扩缩容触碰镜像与装机链路时引入"集成进镜像"的预装通道（第一个搬进镜像的是 agent）。
 3. **多 DC 互联**：dcedge 每 DC 独享、共享 external 骨干层；DC 间流量（目的 10/8）已在边界 NAT 规则中预留不做转换，对应真实 DCI 语义。
-4. **控制面 / 数据面分离（宿主侧 runtime agent）**：Controller 与 docker 宿主现有四处耦合——子进程直调 `containerlab`/`docker` CLI、编译产物以宿主绝对路径作 bind mount 源、经管理网直拨容器内 agent 的 gRPC、agent 按管理网网关地址回拉软件包（假设 Controller 就在网关侧）。`runtime.Driver` 接口已是天然切分缝隙，做多宿主 / 多 DC（上条）时引入宿主侧 runtime agent（产物传输 + exec 流代理 + 双向网络打通）即可分离；单机场景不提前拆。详见 [macos.md](macos.md)「为什么必须进虚机」。
+4. ~~**控制面 / 数据面分离（宿主侧 runtime agent）**~~ ✅ 已落地：四处耦合（CLI 直调、bind mount 产物、管理网直拨、包回拉网关假设）全部由 agent 解开——产物随 Deploy RPC 传输、exec/终端走双向流、管理网访问走拨号代理、包拉取走 repo 反代（详见上文「控制面 / 数据面架构分离」与 [architecture.md](architecture.md)）。多宿主 / 多 DC 编排（一个 controller 管多个 agent）仍是后续项。
 
 ## 环境备注
 

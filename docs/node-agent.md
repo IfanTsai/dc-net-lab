@@ -1,13 +1,13 @@
 # node-agent 与容器内 CLI
 
-本文描述每台模拟 server 里运行的 `node-agent` daemon 的功能与运行逻辑，以及容器终端内的运维命令（`pkg` / `program`）。代码位于 `serverapps/` 子树（Go internal 规则保证 Controller 无法引用其实现），两侧共享的线上契约常量（端口、状态、类型、启动脚本）在 `internal/agentapi`。
+本文描述每台模拟 server 里运行的 `node-agent` daemon 的功能与运行逻辑，以及容器终端内的运维命令（`pkg` / `program`）。代码位于 `nodeapps/` 子树（Go internal 规则保证 Controller 无法引用其实现），两侧共享的线上契约常量（端口、状态、类型、启动脚本）在 `internal/nodeagentapi`。
 
 ## 定位与交付
 
 `node-agent` 是每台 server 容器内的进程监督 daemon，扮演真实服务器上 systemd + 包管理器后端的角色：
 
-- **交付**：宿主机构建产物 `dcnetlab-node-agent` / `dcnetlab-node-cli` 以单文件 bind mount 挂进容器（`/opt/dcnetlab/bin/{node-agent,node-cli}`，语义上等价于 OS 预装，无需构建镜像）；部署时 containerlab exec 执行统一的启动脚本（`agentapi.StartAgentScript`）——建状态目录、把工具软链进 `/usr/local/bin`（`node-agent`、`node-cli`、`pkg`、`program`）、后台拉起 daemon。
-- **通信**：gRPC 监听管理网 `:50061`（`--listen`），Controller 是唯一远程调用方；CLI 走本机 `127.0.0.1:50061`。**没有任意命令 RPC**——agent 只会安装来自 Controller 仓库的包、监督声明过的程序。
+- **交付**：静态二进制烤入 `dcnetlab/server` 镜像（`/opt/dcnetlab/bin/{node-agent,node-cli}`，等价于 OS 预装，见 `build/server/Dockerfile`）；部署时 containerlab exec 执行统一的启动脚本（`nodeagentapi.StartAgentScript`）——建状态目录、把工具软链进 `/usr/local/bin`（`node-agent`、`node-cli`、`pkg`、`program`）、后台拉起 daemon。热升级不重建镜像，走包制品库。
+- **通信**：gRPC 监听管理网 `:50061`（`--listen`），Controller 是唯一远程调用方（经 agent 的拨号代理到达，跨机部署无需打通管理网）；CLI 走本机 `127.0.0.1:50061`。**没有任意命令 RPC**——agent 只会安装来自 Controller 仓库的包、监督声明过的程序。
 - **自愈**：Observer 深度巡检（6 s）对 running 状态的 server 容器探测 agent 端口，拒连即通过 `docker exec` 重放同一份启动脚本。agent 被拉起即视为一次"服务器开机"（见下文 boot 语义），覆盖 agent 崩溃/OOM、宿主机挂起唤醒、容器被平台外重启等场景。
 
 ## 状态目录

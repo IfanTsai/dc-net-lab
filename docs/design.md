@@ -227,25 +227,28 @@ CLI 仅用于：
 │ Observer              Server Manager       Program Manager   │
 │ Daemon Manager        Traffic Manager      Capture Manager   │
 │ Fault Manager         Virtual Network Manager                │
-└─────────────┬────────────────────┬────────────────────────────┘
-              │ gRPC               │ Docker Engine API
-┌─────────────▼────────────┐   ┌───▼───────────────────────────┐
-│ Runtime Agent           │   │ Container Runtime             │
-│                         │   │                               │
-│ Netlink                 │   │ FRR Nodes                     │
-│ Namespace               │   │ Compute Server Containers     │
-│ AF_PACKET               │   │ Workload Containers           │
-│ qdisc                   │   │ External Service Containers   │
-│ nftables                │   │                               │
-└─────────────┬────────────┘   └───────────┬───────────────────┘
-              │                            │
-┌─────────────▼────────────────────────────▼───────────────────┐
-│                    Linux Network Stack                       │
-│ veth │ Bridge │ Route │ VRF │ VXLAN │ nftables │ conntrack │
-└──────────────────────────────────────────────────────────────┘
+└─────────────┬─────────────────────────────────────────────────┘
+              │ gRPC (Agent API)
+┌─────────────▼─────────────────────────────────────────────────┐
+│ Host Agent(数据面宿主机 daemon)                               │
+│                                                               │
+│ containerlab deploy/destroy │ docker exec / pause / netem     │
+│ 管理网拨号代理              │ 包制品库反代                    │
+└─────────────┬─────────────────────────────────────────────────┘
+              │ docker / containerlab CLI
+┌─────────────▼─────────────────────────────────────────────────┐
+│ Container Runtime                                             │
+│                                                               │
+│ FRR Nodes │ Compute Server Containers │ Workload Containers   │
+└─────────────┬─────────────────────────────────────────────────┘
+              │
+┌─────────────▼─────────────────────────────────────────────────┐
+│                    Linux Network Stack                        │
+│ veth │ Bridge │ Route │ VRF │ VXLAN │ nftables │ conntrack   │
+└───────────────────────────────────────────────────────────────┘
 ```
 
-Docker Engine 提供 REST API 和 Go SDK，Controller 可以通过 API 管理容器、镜像、Volume、日志和生命周期，不需要依赖用户执行 Docker CLI。Go SDK 支持与 Docker Engine 协商 API 版本，有利于兼容不同开发机环境。
+Controller 不直接接触容器运行时：所有运行时操作经 Agent gRPC 下发给数据面宿主机上的 `dcnetlab-agent`，由它本地驱动 docker 与 containerlab。单机部署时两者经 localhost 通信，多机部署链路不变（见 [architecture.md](architecture.md)）。
 
 ## 6. 数据中心物理网络设计
 
@@ -1141,17 +1144,19 @@ type RuntimeDriver interface {
 }
 ```
 
-第一阶段实现：
+当前实现：
 
 ```text
-ContainerlabRuntimeDriver
+AgentDriver(gRPC 客户端,拨向 agent;单机与多机同一条链路)
+NoopDriver(只产出物不部署的降级实现)
 ```
 
-后续支持：
+containerlab 驱动本体位于数据面（`agent/internal/clab`），由
+agent 持有；Deploy 随 RPC 携带 generation 产物文件，controller
+与容器宿主机不共享文件系统。后续支持：
 
 ```text
 NativeNamespaceRuntimeDriver
-RemoteLinuxRuntimeDriver
 KubernetesRuntimeDriver
 ```
 
@@ -1180,21 +1185,18 @@ Allocation Manifest
 
 Compiler 不负责分配 IP、ASN、VNI，也不负责决定拓扑关系。
 
-### 11.3 Runtime Agent
+### 11.3 Host Agent
 
-宿主机或 Linux VM 内运行 `dcnetlab-agent`，负责高权限网络操作：
+宿主机或 Linux VM 内运行 `dcnetlab-agent`（已落地，API 见
+`api/agent/v1`），承接 Controller 的全部运行时操作：
 
-* 创建和删除 veth。
-* 配置接口地址。
-* 配置 MTU。
-* 创建 Bridge、VRF 和 VXLAN。
-* 进入 Network Namespace。
-* 抓取报文。
-* 配置 qdisc。
-* 管理 nftables。
-* 查询 Namespace 和接口状态。
+* 接收 generation 产物并执行 containerlab deploy/destroy。
+* 容器内命令执行（一次性 exec、流式 exec、交互终端）。
+* 节点冻结/解冻（docker pause）、接口启停、netem 损伤。
+* 管理网拨号代理（Controller → node-agent 的 gRPC 经此转发）。
+* 包制品库反代（多机部署时容器拉包回源到 Controller）。
 
-接口使用 gRPC，不提供通用命令执行。
+接口使用 gRPC，exec 面向实验容器，不提供宿主机上的通用命令执行。
 
 ## 12. Planner、Reconciler 与 Operation
 
@@ -1490,13 +1492,13 @@ Capture API
        ↓
 Capture Manager
        ↓
-Runtime Agent
+Host Agent(流式 exec)
        ↓
-setns
+容器内 capture 工具(AF_PACKET)
        ↓
-AF_PACKET
+PCAPNG 字节流回传
        ↓
-Packet Decoder
+Packet Decoder(Controller 侧)
        ├── Metadata Stream
        └── PCAPNG Writer
 ```
@@ -2006,7 +2008,7 @@ DCNetLab Launcher
        ↓
 Create or Start Lima VM
        ↓
-Start Docker and Runtime Agent
+Start Docker and Host Agent
        ↓
 Start Controller and Vue UI
        ↓
@@ -2254,7 +2256,7 @@ Server 重启后 Required Daemon 自动恢复
 * 支持静态编译和单二进制交付。
 * 标准库具备成熟的并发、网络和 HTTP 能力。
 * Docker、gRPC、Netlink 和 eBPF 生态较完整。
-* Controller、Runtime Agent、Server Agent 和测试程序可以统一语言。
+* Controller、Host Agent、Node Agent 和测试程序可以统一语言。
 
 ### ADR-002：前端使用 Vue 3
 
