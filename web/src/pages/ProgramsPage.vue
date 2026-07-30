@@ -346,19 +346,19 @@ function healthTag(health: string): string {
 
     <el-table ref="tableRef" :data="programs" row-key="meta.id" v-loading="loading" @selection-change="onSelectionChange">
       <el-table-column type="selection" width="40" reserve-selection />
-      <el-table-column prop="meta.name" :label="t('common.name')" width="140" />
-      <el-table-column prop="spec.serverName" :label="t('programs.server')" width="170" />
-      <el-table-column :label="t('programs.package')" width="170">
+      <el-table-column prop="meta.name" :label="t('common.name')" width="120" />
+      <el-table-column prop="spec.serverName" :label="t('programs.server')" width="160" />
+      <el-table-column :label="t('programs.package')" width="150">
         <template #default="{ row }">
           <code>{{ row.spec.packageName }}@{{ row.spec.packageVersion }}</code>
         </template>
       </el-table-column>
-      <el-table-column :label="t('programs.command')">
+      <el-table-column :label="t('programs.command')" min-width="200">
         <template #default="{ row }">
-          <code>{{ row.spec.entrypoint }} {{ (row.spec.args ?? []).join(' ') }}</code>
+          <code class="cmd">{{ row.spec.entrypoint }} {{ (row.spec.args ?? []).join(' ') }}</code>
         </template>
       </el-table-column>
-      <el-table-column :label="t('programs.state')" width="160">
+      <el-table-column :label="t('programs.state')" width="150">
         <template #default="{ row }">
           <el-tag size="small" :type="stateTag(row.status.state)">{{ row.status.state }}</el-tag>
           <el-tag
@@ -383,30 +383,32 @@ function healthTag(health: string): string {
           <div class="sub error" v-else-if="row.status.lastError">{{ row.status.lastError }}</div>
         </template>
       </el-table-column>
-      <el-table-column :label="t('programs.type')" width="110">
+      <el-table-column :label="t('programs.type')" width="100">
         <template #default="{ row }">
           <span>{{ row.spec.type === 'oneshot' ? t('programs.typeOneshot') : t('programs.typeSimple') }}</span>
           <div class="sub" v-if="row.spec.autoStart">{{ t('programs.autoStart') }}</div>
           <div class="sub" v-if="row.spec.startupOrder">{{ t('programs.orderShort', { n: row.spec.startupOrder }) }}</div>
         </template>
       </el-table-column>
-      <el-table-column prop="spec.restartPolicy" :label="t('programs.restartPolicy')" width="105" />
-      <el-table-column :label="t('common.actions')" width="290">
+      <el-table-column prop="spec.restartPolicy" :label="t('programs.restartPolicy')" width="95" />
+      <el-table-column :label="t('common.actions')" width="200">
         <template #default="{ row }">
-          <el-button
-            size="small"
-            :type="row.status.state === 'Running' ? 'danger' : 'success'"
-            :loading="busy[row.meta.id]"
-            :disabled="!deployed"
-            @click="power(row)"
-          >
-            {{ row.status.state === 'Running' ? t('programs.stop') : row.spec.type === 'oneshot' ? t('programs.run') : t('programs.start') }}
-          </el-button>
-          <el-button size="small" :disabled="!deployed" @click="openUpgrade(row)">{{ t('programs.upgrade') }}</el-button>
-          <el-button size="small" :disabled="!deployed" @click="openLogs(row)">{{ t('programs.logs') }}</el-button>
-          <el-button size="small" type="danger" plain :loading="busy[row.meta.id]" @click="remove(row)">
-            {{ t('common.delete') }}
-          </el-button>
+          <div class="row-actions">
+            <el-button
+              size="small"
+              :type="row.status.state === 'Running' ? 'danger' : 'success'"
+              :loading="busy[row.meta.id]"
+              :disabled="!deployed"
+              @click="power(row)"
+            >
+              {{ row.status.state === 'Running' ? t('programs.stop') : row.spec.type === 'oneshot' ? t('programs.run') : t('programs.start') }}
+            </el-button>
+            <el-button size="small" :disabled="!deployed" @click="openUpgrade(row)">{{ t('programs.upgrade') }}</el-button>
+            <el-button size="small" :disabled="!deployed" @click="openLogs(row)">{{ t('programs.logs') }}</el-button>
+            <el-button size="small" type="danger" plain :loading="busy[row.meta.id]" @click="remove(row)">
+              {{ t('common.delete') }}
+            </el-button>
+          </div>
         </template>
       </el-table-column>
     </el-table>
@@ -569,6 +571,13 @@ function healthTag(health: string): string {
 .form-hint { margin-left: 10px; font-size: 12px; color: var(--el-text-color-secondary); }
 .sub { font-size: 11px; color: var(--el-text-color-secondary); }
 .sub.error { color: var(--el-color-danger); }
+/* el-table cells default to break-all, which shreds commands into
+   per-character lines; wrap at spaces and only break long tokens. */
+.cmd { word-break: normal; overflow-wrap: anywhere; }
+/* Four actions in a narrow column: wrap into tidy rows instead of
+   relying on el-button's sibling margin, which misaligns wrapped lines. */
+.row-actions { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.row-actions .el-button + .el-button { margin-left: 0; }
 .health-tag { margin-left: 6px; }
 .liveness-timing { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .batch-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding: 8px 12px; background: var(--el-fill-color-light); border-radius: 4px; }
