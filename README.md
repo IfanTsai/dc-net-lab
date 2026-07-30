@@ -7,9 +7,9 @@ DCNetLab 是面向数据中心物理网络与虚拟网络的本地化、可视�
 适用于网络方案验证、故障演练、协议行为研究与教学演示。
 
 <p align="center">
-  <img src="docs/images/demo.gif" alt="点击设备查看 BGP Loc-RIB,双击进入 vtysh 终端" width="900"/>
+  <img src="docs/images/demo.gif" alt="点击设备逐层查看 BGP Loc-RIB / RIB / FIB,双击进入 vtysh 终端" width="900"/>
 </p>
-<p align="center"><i>点击设备查看 BGP Loc-RIB → 双击进入 vtysh,一切都是真实协议栈</i></p>
+<p align="center"><i>点击设备逐层下钻 BGP Loc-RIB → RIB → FIB → 双击进入 vtysh,一切都是真实协议栈</i></p>
 
 ```
 Create Lab (Micro / Standard Profile)
@@ -35,8 +35,8 @@ Apply  编译 FRR 配置 + Containerlab 拓扑 → 写入 Generation 快照 → 
 
 **可视化与观测**
 
-- 分层 Clos 拓扑画布（Pod/机柜分组框），节点状态角标（运行/未收敛/暂停/异常）经 WebSocket 实时推送，状态漂移自动纠正；链路按接口真实观测状态自动置灰。
-- 节点五视角抽屉：模拟视角 / BGP Loc-RIB / RIB / FIB / 运行时，路由条目逐层漏斗递减，可对照选路与下装全过程。
+- 分层 Clos 拓扑画布（Pod/机柜分组框），节点状态角标（运行/未收敛/管理失联/暂停/异常）经 WebSocket 实时推送，状态漂移自动纠正；链路按接口真实观测状态自动置灰。
+- 节点详情抽屉：概览（状态速览 + 身份/网络配置）、监控、程序、路由、运行时、故障、抓包多视角，头部健康徽章与画布状态灯同源；路由视角内 BGP Loc-RIB / RIB / FIB 三层逐级下钻，条目漏斗递减，可对照选路与下装全过程。
 - 双击设备打开悬浮多标签 Web 终端（交换机进 vtysh、server 进 bash）；DC 与设备粒度一键启停。
 - 宿主 Docker/容器运行时导致的网络连接丢失（接口在内核里完全消失，区别于故障注入的管理性关闭）会在拓扑页弹出提示并一键修复，不触碰正在运行的容器与程序。
 
@@ -44,6 +44,16 @@ Apply  编译 FRR 配置 + Containerlab 拓扑 → 写入 Generation 快照 → 
 
 - FaultScenario 资源覆盖节点停止/重启（docker pause 语义）、链路/单端口中断（`ip link set` 管理性关闭）、网络损伤（`tc netem` 延迟/抖动/丢包/限速任意组合）；Apply/Recover 显式生命周期，同一目标同时只允许一个生效故障，删除前自动恢复，不留孤儿状态。
 - 拓扑图点哪坏哪：节点/链路详情抽屉内置快捷入口，一键注入即生效并联动 Traffic 实时指标，构成"注入故障 → 观测指标掉坑 → 恢复"的完整演示闭环；独立的故障列表页统一管理全部生效中与历史故障。
+
+**流量注入与监控**
+
+- TrafficScenario 资源编排内置 `trafficgen`（http/tcp/udp 六种模式，并发与目标速率可控），收发两端都是跑在 server 上的真实程序；实时速率、错误与 P50/P95/P99 时延曲线连续绘制，与故障注入构成"注入 → 掉坑 → 恢复"的完整演示闭环。
+- server 资源监控：CPU/内存/文件系统/磁盘/逐接口网络的实时采样（5 s 自动刷新）与历史曲线（30m–24h 窗口），同时以 Prometheus 兼容的 `/metrics` 端点暴露，可接外部采集体系。
+
+**原生抓包**
+
+- 自研 AF_PACKET 抓包工具预装于交换机镜像、server 经包制品库下发，容器内无需 tcpdump/Wireshark；会话式抓包（协议/地址/端口过滤、时长与包数上限），数据流式回传 controller 解码存储。
+- Wireshark 式三栏查看器：包列表 / 协议树 / hex 三栏字段级双向联动高亮，BGP 深度解码到 capability 与路径属性粒度；拓扑图上点节点/链路即可快捷发起。
 
 **服务器工作负载（模拟软件交付）**
 
@@ -53,7 +63,7 @@ Apply  编译 FRR 配置 + Containerlab 拓扑 → 写入 Generation 快照 → 
 
 ## 界面一览
 
-| 分层 Clos 拓扑画布 | 节点多视角抽屉(BGP Loc-RIB) |
+| 分层 Clos 拓扑画布 | 节点详情抽屉(BGP Loc-RIB) |
 |---|---|
 | ![拓扑画布](docs/images/topology.png) | ![节点抽屉](docs/images/node-drawer.png) |
 
@@ -191,4 +201,4 @@ proto 依赖（`google/api` 注解）由 buf 从 BSR 拉取并经 `buf.lock` 锁
 
 ## Roadmap
 
-按设计文档迭代顺序推进：Daemon 框架、Package 格式扩展（deb/OCI）与镜像预装通道、Traffic 编排、AF_PACKET 抓包、可视化扩容、VPC/VXLAN、EIP。
+按设计文档迭代顺序推进：Daemon 框架与 Pingmesh、Package 格式扩展（deb/OCI）与镜像预装通道、可视化扩容与 Rollback、VPC/VXLAN、EIP。
