@@ -7,6 +7,7 @@ import { useI18n } from 'vue-i18n'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import cytoscape, { type Core } from 'cytoscape'
 import type { Link, Node } from '../types/models'
+import { badgeColor, nodeBadge, roleColor } from '../utils/health'
 
 const { t } = useI18n()
 
@@ -24,11 +25,6 @@ let cy: Core | null = null
 const tierOrder: Record<string, number> = {
   external: 0, 'dc-edge': 1, superspine: 2, spine: 3, leaf: 4, server: 5,
 }
-const roleColor: Record<string, string> = {
-  external: '#909399', 'dc-edge': '#7952b3', superspine: '#409eff',
-  spine: '#337ecc', leaf: '#67c23a', server: '#e6a23c',
-}
-
 // Role glyphs (48x48 viewBox, white line art on the role colour):
 // external = cloud, dc-edge = router (circle + arrows), superspine =
 // core layers, spine = switch arrows, leaf = ToR with downlinks,
@@ -54,15 +50,6 @@ const roleGlyph: Record<string, string> = {
     '<rect x="14" y="13" width="20" height="9" rx="2"/>' +
     '<rect x="14" y="26" width="20" height="9" rx="2"/>' +
     '<path d="M18 17.5h.01M18 30.5h.01" stroke-width="3"/>',
-}
-
-// Observed-state badge colours drawn onto the icon's top-right corner.
-const badgeColor: Record<string, string> = {
-  ok: '#67c23a', // running, all BGP sessions established
-  warn: '#e6a23c', // running but BGP not fully converged
-  agent: '#9c6ade', // server only: running but the node-agent is unreachable
-  stopped: '#909399',
-  failed: '#f56c6c',
 }
 
 function roleIcon(role: string, badge = ''): string {
@@ -91,21 +78,6 @@ function iconFor(role: string, badge: string): string {
     iconCache.set(key, icon)
   }
   return icon
-}
-
-// nodeBadge derives the badge from the node's observed state; nodes
-// never observed (noop runtime, not yet swept) carry no badge.
-function nodeBadge(n: Node): string {
-  const s = n.status
-  if (!s?.lastObserved) return ''
-  if (s.runtimeState === 'Stopped') return 'stopped'
-  if (s.runtimeState !== 'Running') return 'failed'
-  if (s.bgpConfigured > 0 && s.bgpEstablished < s.bgpConfigured) return 'warn'
-  // A running server whose node-agent is unreachable cannot run
-  // programs; the dataplane is fine, so it gets its own badge
-  // (management plane lost) instead of the network warn.
-  if (s.agentState === 'Down') return 'agent'
-  return 'ok'
 }
 
 const roleIcons: Record<string, string> = Object.fromEntries(

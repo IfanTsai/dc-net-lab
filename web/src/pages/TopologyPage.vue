@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { QuestionFilled } from '@element-plus/icons-vue'
+import { Aim, Box, Document, Monitor, QuestionFilled, Search, TrendCharts, Warning } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useLabStore } from '../stores/lab'
 import { labApi } from '../api/lab'
 import { nodeCaptureInterfaces } from '../utils/capture'
+import { badgeColor, nodeBadge, roleColor } from '../utils/health'
 import type { FaultScenario, Link, LinkEndpoint, MetricsPoint, Node, NodeBGP, NodeBGPTable, NodeInventory, NodeMetrics, NodeRoutes, NodeRuntime } from '../types/models'
 import TopologyCanvas from '../components/TopologyCanvas.vue'
 import TerminalPanel from '../components/TerminalPanel.vue'
@@ -93,6 +94,49 @@ const ifaceRows = computed<IfaceRow[]>(() => {
   return rows
 })
 
+// --- Drawer header: the same badge the canvas paints on the icon,
+// rendered as a labelled chip with the legend tooltip ---
+const nodeHealth = computed(() => {
+  const node = selectedNode.value
+  if (!node) return null
+
+  const badge = nodeBadge(node)
+  if (!badge) return null
+
+  const key = { ok: 'badgeOk', warn: 'badgeWarn', agent: 'badgeAgent', stopped: 'badgeStopped', failed: 'badgeFailed' }[badge]!
+  return { color: badgeColor[badge], label: t(`topology.${key}`), tip: t(`topology.${key}Tip`) }
+})
+
+// Overview stat tiles: the three observed numbers an operator scans
+// first, coloured by whether they are fully converged.
+const statTiles = computed(() => {
+  const s = selectedNode.value?.status
+  if (!s?.lastObserved) return []
+
+  const bgpEst = s.bgpEstablished ?? 0
+  const bgpConf = s.bgpConfigured ?? 0
+  const ifUp = s.interfacesUp ?? 0
+  const ifTotal = s.interfacesTotal ?? 0
+  const bgpTone = bgpConf === 0 ? '' : bgpEst >= bgpConf ? 'ok' : 'warn'
+  const ifaceTone = ifTotal === 0 ? '' : ifUp >= ifTotal ? 'ok' : 'bad'
+  return [
+    { label: t('topology.bgpSessions'), value: `${bgpEst} / ${bgpConf}`, tone: bgpTone },
+    { label: t('topology.routes'), value: `${s.routeCount ?? 0}`, tone: '' },
+    { label: t('topology.interfacesUp'), value: `${ifUp} / ${ifTotal}`, tone: ifaceTone },
+  ]
+})
+
+// The network-config section only renders for roles that carry any
+// of its fields, so spine-class nodes don't get an empty box.
+const hasNetworkConfig = computed(() => {
+  const sp = selectedNode.value?.spec
+  if (!sp) return false
+
+  return Boolean(
+    sp.vlanId || sp.vlanIp || sp.address || sp.gatewayIp || sp.defaultGateway || sp.gatewayMac || sp.bgpPeers?.length,
+  )
+})
+
 // --- BGP configuration: compiled from the model, static per node ---
 const nodeBGP = ref<NodeBGP | null>(null)
 
@@ -151,12 +195,23 @@ const inventoryLoading = ref(false)
 const nodeMetrics = ref<NodeMetrics | null>(null)
 const metricsLoading = ref(false)
 
+// The routing tab folds the three route-table views (Loc-RIB → RIB
+// → FIB) behind one segmented switch so the tab bar stays readable.
+type InspectView = 'bgp-table' | 'routes' | 'fib'
+const inspectView = ref<InspectView>('bgp-table')
+const inspectOptions = computed(() => [
+  { label: t('topology.bgpTableView'), value: 'bgp-table' },
+  { label: t('topology.routesView'), value: 'routes' },
+  { label: t('topology.fibView'), value: 'fib' },
+])
+
 // Opening the drawer for another node resets to the simulated view;
 // observation sweeps replace the node object with the same id and
 // must not reset it.
 watch(selectedNode, (node, prev) => {
   if (!node || node.meta.id !== prev?.meta.id) {
     drawerTab.value = 'sim'
+    inspectView.value = 'bgp-table'
     nodeRuntime.value = null
     nodeRoutes.value = null
     nodeBGPTable.value = null
@@ -171,10 +226,8 @@ watch(selectedNode, (node, prev) => {
 })
 
 watch(drawerTab, (tab) => {
+  if (tab === 'inspect') void inspectRefresh[inspectView.value]()
   if (tab === 'runtime') void refreshRuntime()
-  if (tab === 'routes') void refreshRoutes()
-  if (tab === 'bgp-table') void refreshBGPTable()
-  if (tab === 'fib') void refreshFIB()
   if (tab === 'programs') void refreshInventory()
   if (tab === 'fault') void refreshFaults()
   if (tab === 'metrics') {
@@ -245,6 +298,18 @@ const refreshBGPTable = () => fetchView(nodeBGPTable, bgpTableLoading, labApi.no
 const refreshFIB = () => fetchView(nodeFIB, fibLoading, labApi.nodeFIB)
 const refreshInventory = () => fetchView(nodeInventory, inventoryLoading, labApi.nodeInventory)
 const refreshMetrics = () => fetchView(nodeMetrics, metricsLoading, labApi.nodeMetrics)
+
+const inspectRefresh: Record<InspectView, () => Promise<void>> = {
+  'bgp-table': refreshBGPTable,
+  routes: refreshRoutes,
+  fib: refreshFIB,
+}
+
+// Switching the segmented view fetches on demand, mirroring what
+// switching tabs used to do when each view was its own tab.
+watch(inspectView, (view) => {
+  if (drawerTab.value === 'inspect') void inspectRefresh[view]()
+})
 
 // --- Metrics formatting: protobuf int64 fields arrive as strings ---
 
@@ -755,57 +820,57 @@ async function deleteFault(f: FaultScenario) {
          compact width so the canvas stays usable. -->
     <el-drawer
       :model-value="!!selectedNode"
-      :title="selectedNode?.meta.name"
-      :size="drawerTab === 'metrics' ? '60%' : '420px'"
+      :size="drawerTab === 'metrics' ? '60%' : '540px'"
       :modal="false"
       @close="selectedNode = null"
     >
+      <template #header>
+        <div v-if="selectedNode" class="drawer-head">
+          <div class="drawer-id">
+            <span class="drawer-name" :title="selectedNode.meta.name">{{ selectedNode.meta.name }}</span>
+            <el-tag size="small" effect="dark" :color="roleColor[selectedNode.spec.role] ?? '#909399'" class="role-tag">
+              {{ selectedNode.spec.role }}
+            </el-tag>
+            <el-tooltip v-if="nodeHealth" :content="nodeHealth.tip" placement="bottom-start" :show-after="300">
+              <span class="health-chip">
+                <span class="health-dot" :style="{ background: nodeHealth.color }" />
+                {{ nodeHealth.label }}
+              </span>
+            </el-tooltip>
+          </div>
+          <el-button
+            v-if="deployed"
+            :type="selectedNode.meta.phase === 'Stopped' ? 'success' : 'danger'"
+            :loading="nodeBusy"
+            size="small"
+            plain
+            @click="powerNode"
+          >
+            {{ selectedNode.meta.phase === 'Stopped' ? t('topology.startNode') : t('topology.stopNode') }}
+          </el-button>
+        </div>
+      </template>
       <template v-if="selectedNode">
-        <el-button
-          v-if="deployed"
-          :type="selectedNode.meta.phase === 'Stopped' ? 'success' : 'danger'"
-          :loading="nodeBusy"
-          size="small"
-          class="node-power"
-          @click="powerNode"
-        >
-          {{ selectedNode.meta.phase === 'Stopped' ? t('topology.startNode') : t('topology.stopNode') }}
-        </el-button>
         <el-tabs v-model="drawerTab">
-          <el-tab-pane :label="t('topology.overview')" name="sim">
+          <el-tab-pane name="sim">
+            <template #label>
+              <span class="tab-label"><el-icon><Document /></el-icon>{{ t('topology.overview') }}</span>
+            </template>
+            <template v-if="statTiles.length">
+              <div class="stat-tiles">
+                <div v-for="tile in statTiles" :key="tile.label" class="stat-tile" :class="tile.tone">
+                  <div class="stat-value">{{ tile.value }}</div>
+                  <div class="stat-label">{{ tile.label }}</div>
+                </div>
+              </div>
+              <div v-if="selectedNode.status?.lastObserved" class="observed-at">
+                {{ t('topology.lastObserved') }} · {{ new Date(selectedNode.status.lastObserved).toLocaleTimeString() }}
+              </div>
+            </template>
+
+            <h4>{{ t('topology.identity') }}</h4>
             <el-descriptions :column="1" border size="small">
-              <el-descriptions-item :label="t('topology.role')">{{ selectedNode.spec.role }}</el-descriptions-item>
               <el-descriptions-item :label="t('topology.phase')">{{ selectedNode.meta.phase }}</el-descriptions-item>
-              <template v-if="selectedNode.status?.lastObserved">
-                <el-descriptions-item :label="t('topology.runtimeState')">
-                  {{ selectedNode.status.runtimeState }}
-                </el-descriptions-item>
-                <el-descriptions-item :label="t('topology.bgpSessions')">
-                  {{ selectedNode.status.bgpEstablished }} / {{ selectedNode.status.bgpConfigured }}
-                </el-descriptions-item>
-                <el-descriptions-item :label="t('topology.routes')">
-                  {{ selectedNode.status.routeCount }}
-                </el-descriptions-item>
-                <el-descriptions-item :label="t('topology.interfacesUp')">
-                  {{ selectedNode.status.interfacesUp }} / {{ selectedNode.status.interfacesTotal }}
-                </el-descriptions-item>
-                <el-descriptions-item :label="t('topology.gatewayRole')" v-if="selectedNode.status.vrrpState">
-                  <el-tag size="small" :type="selectedNode.status.vrrpState === 'Master' ? 'success' : 'info'">
-                    {{ selectedNode.status.vrrpState }}
-                  </el-tag>
-                </el-descriptions-item>
-                <el-descriptions-item :label="t('topology.agentState')" v-if="selectedNode.status.agentState">
-                  <el-tag size="small" :type="selectedNode.status.agentState === 'Up' ? 'success' : 'danger'">
-                    {{ selectedNode.status.agentState === 'Up' ? t('topology.agentUp') : t('topology.agentDown') }}
-                  </el-tag>
-                  <span v-if="selectedNode.status.agentState === 'Down'" class="agent-down-hint">
-                    {{ t('topology.agentDownHint') }}
-                  </span>
-                </el-descriptions-item>
-                <el-descriptions-item :label="t('topology.lastObserved')">
-                  {{ new Date(selectedNode.status.lastObserved).toLocaleTimeString() }}
-                </el-descriptions-item>
-              </template>
               <el-descriptions-item :label="t('topology.asn')" v-if="selectedNode.spec.asn">
                 {{ selectedNode.spec.asn }}
               </el-descriptions-item>
@@ -821,25 +886,36 @@ async function deleteFault(f: FaultScenario) {
               <el-descriptions-item :label="t('topology.mlagPeer')" v-if="selectedNode.spec.mlagPeer">
                 {{ selectedNode.spec.mlagPeer }}
               </el-descriptions-item>
-              <el-descriptions-item :label="t('topology.vlan')" v-if="selectedNode.spec.vlanId">
-                {{ selectedNode.spec.vlanId }}
-              </el-descriptions-item>
-              <el-descriptions-item :label="t('topology.vlanIp')" v-if="selectedNode.spec.vlanIp">
-                {{ selectedNode.spec.vlanIp }}
-              </el-descriptions-item>
-              <el-descriptions-item :label="t('topology.serverAddress')" v-if="selectedNode.spec.address">
-                {{ selectedNode.spec.address }}
-              </el-descriptions-item>
-              <el-descriptions-item :label="t('topology.gateway')" v-if="selectedNode.spec.gatewayIp || selectedNode.spec.defaultGateway">
-                {{ selectedNode.spec.gatewayIp ?? selectedNode.spec.defaultGateway }}
-              </el-descriptions-item>
-              <el-descriptions-item :label="t('topology.gatewayMac')" v-if="selectedNode.spec.gatewayMac">
-                {{ selectedNode.spec.gatewayMac }}
-              </el-descriptions-item>
-              <el-descriptions-item :label="t('topology.bgpPeers')" v-if="selectedNode.spec.bgpPeers?.length">
-                {{ selectedNode.spec.bgpPeers.join(', ') }}
+              <el-descriptions-item :label="t('topology.gatewayRole')" v-if="selectedNode.status?.vrrpState">
+                <el-tag size="small" :type="selectedNode.status.vrrpState === 'Master' ? 'success' : 'info'">
+                  {{ selectedNode.status.vrrpState }}
+                </el-tag>
               </el-descriptions-item>
             </el-descriptions>
+
+            <template v-if="hasNetworkConfig">
+              <h4>{{ t('topology.networkConfig') }}</h4>
+              <el-descriptions :column="1" border size="small">
+                <el-descriptions-item :label="t('topology.vlan')" v-if="selectedNode.spec.vlanId">
+                  {{ selectedNode.spec.vlanId }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('topology.vlanIp')" v-if="selectedNode.spec.vlanIp">
+                  {{ selectedNode.spec.vlanIp }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('topology.serverAddress')" v-if="selectedNode.spec.address">
+                  {{ selectedNode.spec.address }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('topology.gateway')" v-if="selectedNode.spec.gatewayIp || selectedNode.spec.defaultGateway">
+                  {{ selectedNode.spec.gatewayIp || selectedNode.spec.defaultGateway }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('topology.gatewayMac')" v-if="selectedNode.spec.gatewayMac">
+                  {{ selectedNode.spec.gatewayMac }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('topology.bgpPeers')" v-if="selectedNode.spec.bgpPeers?.length">
+                  {{ selectedNode.spec.bgpPeers.join(', ') }}
+                </el-descriptions-item>
+              </el-descriptions>
+            </template>
 
             <h4>{{ t('topology.interfaces') }}</h4>
             <el-table :data="ifaceRows" size="small">
@@ -885,76 +961,10 @@ async function deleteFault(f: FaultScenario) {
             </template>
           </el-tab-pane>
 
-          <el-tab-pane :label="t('faults.title')" name="fault">
-            <div class="runtime-toolbar">
-              <el-button size="small" :loading="faultBusy" @click="quickNodeFault('node-stop')">
-                {{ t('faults.typeNodeStop') }}
-              </el-button>
-              <el-button size="small" :loading="faultBusy" @click="quickNodeFault('node-restart')">
-                {{ t('faults.typeNodeRestart') }}
-              </el-button>
-            </div>
-            <el-table v-if="nodeFaults.length" :data="nodeFaults" size="small">
-              <el-table-column prop="meta.name" :label="t('common.name')" />
-              <el-table-column :label="t('faults.type')">
-                <template #default="{ row }">{{ faultTypeLabel(row.spec.type) }}</template>
-              </el-table-column>
-              <el-table-column :label="t('faults.state')" width="90">
-                <template #default="{ row }">
-                  <el-tag size="small" :type="row.status.applied ? 'danger' : 'info'">
-                    {{ row.status.applied ? t('faults.applied') : t('faults.recovered') }}
-                  </el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column :label="t('common.actions')" width="150">
-                <template #default="{ row }">
-                  <el-button
-                    v-if="row.spec.type !== 'node-restart' || !row.status.applied"
-                    size="small"
-                    :type="row.status.applied ? 'success' : 'danger'"
-                    :loading="faultBusy"
-                    @click="toggleFault(row)"
-                  >
-                    {{ row.status.applied ? t('faults.recover') : t('faults.apply') }}
-                  </el-button>
-                  <el-button size="small" type="danger" plain :loading="faultBusy" @click="deleteFault(row)">
-                    {{ t('common.delete') }}
-                  </el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-            <el-empty v-else :description="t('faults.recovered')" />
-          </el-tab-pane>
-
-          <el-tab-pane :label="t('captures.quickTitle')" name="capture">
-            <el-form label-width="90px">
-              <el-form-item :label="t('captures.interface')">
-                <el-select v-model="captureIface" style="width: 100%" :placeholder="t('captures.pickInterface')">
-                  <el-option v-for="i in captureIfaceOptions" :key="i.value" :label="i.label" :value="i.value" />
-                </el-select>
-              </el-form-item>
-              <el-form-item :label="t('captures.protocol')">
-                <el-select v-model="captureProto" clearable style="width: 100%" :placeholder="t('captures.anyProtocol')">
-                  <el-option v-for="p in ['arp', 'icmp', 'tcp', 'udp', 'bgp', 'vxlan']" :key="p" :label="p.toUpperCase()" :value="p" />
-                </el-select>
-              </el-form-item>
-              <el-form-item :label="t('captures.durationSeconds')">
-                <el-input-number v-model="captureDuration" :min="1" :max="600" controls-position="right" />
-              </el-form-item>
-            </el-form>
-            <div class="capture-quick-footer">
-              <span class="sub">{{ t('captures.quickHint') }}</span>
-              <el-button type="primary" size="small" :loading="captureBusy" :disabled="!captureIface" @click="quickNodeCapture">
-                {{ t('captures.quickStart') }}
-              </el-button>
-            </div>
-          </el-tab-pane>
-
-          <el-tab-pane
-            v-if="selectedNode.spec.role === 'server'"
-            :label="t('topology.metricsView')"
-            name="metrics"
-          >
+          <el-tab-pane v-if="selectedNode.spec.role === 'server'" name="metrics">
+            <template #label>
+              <span class="tab-label"><el-icon><TrendCharts /></el-icon>{{ t('topology.metricsView') }}</span>
+            </template>
             <div class="runtime-toolbar">
               <span class="runtime-hint">{{ t('topology.metricsHint') }}</span>
               <el-button size="small" :loading="metricsLoading" @click="refreshMetrics">
@@ -1064,11 +1074,10 @@ async function deleteFault(f: FaultScenario) {
             </template>
           </el-tab-pane>
 
-          <el-tab-pane
-            v-if="selectedNode.spec.role === 'server'"
-            :label="t('topology.programsView')"
-            name="programs"
-          >
+          <el-tab-pane v-if="selectedNode.spec.role === 'server'" name="programs">
+            <template #label>
+              <span class="tab-label"><el-icon><Box /></el-icon>{{ t('topology.programsView') }}</span>
+            </template>
             <div class="runtime-toolbar">
               <span class="runtime-hint">{{ t('topology.programsHint') }}</span>
               <el-button size="small" :loading="inventoryLoading" @click="refreshInventory">
@@ -1112,125 +1121,136 @@ async function deleteFault(f: FaultScenario) {
             </template>
           </el-tab-pane>
 
-          <el-tab-pane :label="t('topology.bgpTableView')" name="bgp-table">
-            <div class="runtime-toolbar">
-              <span class="runtime-hint" v-if="nodeBGPTable">
-                {{ t('topology.bgpTableHint', {
-                  routerId: nodeBGPTable.routerId ?? '—',
-                  as: nodeBGPTable.localAs ?? 0,
-                  count: nodeBGPTable.paths?.length ?? 0,
-                }) }}
-              </span>
-              <el-button size="small" :loading="bgpTableLoading" @click="refreshBGPTable">
-                {{ t('topology.refresh') }}
-              </el-button>
-            </div>
-            <el-table v-if="nodeBGPTable" :data="nodeBGPTable.paths ?? []" size="small" v-loading="bgpTableLoading">
-              <el-table-column :label="t('topology.routePrefix')" width="130">
-                <template #default="{ row }">
-                  <div>{{ row.prefix }}</div>
-                  <div class="sub">{{ row.asPath || t('topology.bgpLocalOrigin') }}</div>
-                </template>
-              </el-table-column>
-              <el-table-column :label="t('topology.bgpFlags')" width="76">
-                <template #default="{ row }">
-                  <div class="flags">
-                    <el-tag v-if="row.best" size="small" effect="plain" type="success">best</el-tag>
-                    <el-tag v-else-if="row.multipath" size="small" effect="plain" type="primary">multi</el-tag>
-                    <el-tag v-if="row.internal" size="small" effect="plain" type="warning">iBGP</el-tag>
-                    <el-tag v-if="row.valid === false" size="small" effect="plain" type="danger">invalid</el-tag>
-                  </div>
-                </template>
-              </el-table-column>
-              <el-table-column :label="t('topology.routeNexthop')">
-                <template #default="{ row }">
-                  <div>{{ row.nexthop }}</div>
-                  <div class="sub">{{ row.nexthopName }}</div>
-                </template>
-              </el-table-column>
-            </el-table>
-          </el-tab-pane>
+          <el-tab-pane name="inspect">
+            <template #label>
+              <span class="tab-label"><el-icon><Search /></el-icon>{{ t('topology.routingView') }}</span>
+            </template>
+            <el-segmented v-model="inspectView" :options="inspectOptions" block class="inspect-switch" />
 
-          <el-tab-pane :label="t('topology.routesView')" name="routes">
-            <div class="runtime-toolbar">
-              <span class="runtime-hint" v-if="nodeRoutes">
-                {{ t('topology.routesCount', { count: nodeRoutes.routes?.length ?? 0 }) }}
-              </span>
-              <el-button size="small" :loading="routesLoading" @click="refreshRoutes">
-                {{ t('topology.refresh') }}
-              </el-button>
-            </div>
-            <el-table v-if="nodeRoutes" :data="nodeRoutes.routes ?? []" size="small" v-loading="routesLoading">
-              <el-table-column :label="t('topology.routePrefix')" width="130">
-                <template #default="{ row }">
-                  <div>{{ row.prefix }}</div>
-                  <div class="sub">AD {{ row.distance ?? 0 }} / M {{ row.metric ?? 0 }}</div>
-                </template>
-              </el-table-column>
-              <el-table-column :label="t('topology.routeProtocol')" width="100">
-                <template #default="{ row }">
-                  <el-tag
-                    size="small"
-                    effect="plain"
-                    :type="row.protocol === 'bgp' ? 'primary' : row.protocol === 'connected' ? 'success' : 'info'"
-                  >
-                    {{ row.protocol }}
-                  </el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column :label="t('topology.routeNexthop')">
-                <template #default="{ row }">
-                  <div v-for="(nh, i) in row.nexthops ?? []" :key="i">
-                    <template v-if="nh.via">{{ nh.via }} </template>
-                    <span class="sub">{{ nh.interface }}</span>
-                  </div>
-                </template>
-              </el-table-column>
-            </el-table>
-          </el-tab-pane>
+            <template v-if="inspectView === 'bgp-table'">
+              <div class="runtime-toolbar">
+                <span class="runtime-hint" v-if="nodeBGPTable">
+                  {{ t('topology.bgpTableHint', {
+                    routerId: nodeBGPTable.routerId ?? '—',
+                    as: nodeBGPTable.localAs ?? 0,
+                    count: nodeBGPTable.paths?.length ?? 0,
+                  }) }}
+                </span>
+                <el-button size="small" :loading="bgpTableLoading" @click="refreshBGPTable">
+                  {{ t('topology.refresh') }}
+                </el-button>
+              </div>
+              <el-table v-if="nodeBGPTable" :data="nodeBGPTable.paths ?? []" size="small" v-loading="bgpTableLoading">
+                <el-table-column :label="t('topology.routePrefix')" width="130">
+                  <template #default="{ row }">
+                    <div>{{ row.prefix }}</div>
+                    <div class="sub">{{ row.asPath || t('topology.bgpLocalOrigin') }}</div>
+                  </template>
+                </el-table-column>
+                <el-table-column :label="t('topology.bgpFlags')" width="76">
+                  <template #default="{ row }">
+                    <div class="flags">
+                      <el-tag v-if="row.best" size="small" effect="plain" type="success">best</el-tag>
+                      <el-tag v-else-if="row.multipath" size="small" effect="plain" type="primary">multi</el-tag>
+                      <el-tag v-if="row.internal" size="small" effect="plain" type="warning">iBGP</el-tag>
+                      <el-tag v-if="row.valid === false" size="small" effect="plain" type="danger">invalid</el-tag>
+                    </div>
+                  </template>
+                </el-table-column>
+                <el-table-column :label="t('topology.routeNexthop')">
+                  <template #default="{ row }">
+                    <div>{{ row.nexthop }}</div>
+                    <div class="sub">{{ row.nexthopName }}</div>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </template>
 
-          <el-tab-pane :label="t('topology.fibView')" name="fib">
-            <div class="runtime-toolbar">
-              <span class="runtime-hint" v-if="nodeFIB">
-                {{ t('topology.fibCount', fibCounts) }}
-              </span>
-              <el-button size="small" :loading="fibLoading" @click="refreshFIB">
-                {{ t('topology.refresh') }}
-              </el-button>
-            </div>
-            <el-table v-if="nodeFIB" :data="nodeFIB.routes ?? []" size="small" v-loading="fibLoading">
-              <el-table-column :label="t('topology.routePrefix')" width="130">
-                <template #default="{ row }">
-                  <div>{{ row.prefix }}</div>
-                  <div class="sub">M {{ row.metric ?? 0 }}</div>
-                </template>
-              </el-table-column>
-              <el-table-column :label="t('topology.routeProtocol')" width="100">
-                <template #default="{ row }">
-                  <div class="flags">
+            <template v-else-if="inspectView === 'routes'">
+              <div class="runtime-toolbar">
+                <span class="runtime-hint" v-if="nodeRoutes">
+                  {{ t('topology.routesCount', { count: nodeRoutes.routes?.length ?? 0 }) }}
+                </span>
+                <el-button size="small" :loading="routesLoading" @click="refreshRoutes">
+                  {{ t('topology.refresh') }}
+                </el-button>
+              </div>
+              <el-table v-if="nodeRoutes" :data="nodeRoutes.routes ?? []" size="small" v-loading="routesLoading">
+                <el-table-column :label="t('topology.routePrefix')" width="130">
+                  <template #default="{ row }">
+                    <div>{{ row.prefix }}</div>
+                    <div class="sub">AD {{ row.distance ?? 0 }} / M {{ row.metric ?? 0 }}</div>
+                  </template>
+                </el-table-column>
+                <el-table-column :label="t('topology.routeProtocol')" width="100">
+                  <template #default="{ row }">
                     <el-tag
                       size="small"
                       effect="plain"
-                      :type="row.protocol === 'bgp' ? 'primary' : row.protocol === 'kernel' ? 'success' : 'info'"
+                      :type="row.protocol === 'bgp' ? 'primary' : row.protocol === 'connected' ? 'success' : 'info'"
                     >
                       {{ row.protocol }}
                     </el-tag>
-                    <el-tag v-if="row.kind === 'local'" size="small" effect="plain" type="warning">local</el-tag>
-                  </div>
-                </template>
-              </el-table-column>
-              <el-table-column :label="t('topology.routeNexthop')">
-                <template #default="{ row }">
-                  <div v-for="(nh, i) in row.nexthops ?? []" :key="i">
-                    <template v-if="nh.via">{{ nh.via }} </template>
-                    <span class="sub">{{ nh.interface }}</span>
-                  </div>
-                </template>
-              </el-table-column>
-            </el-table>
+                  </template>
+                </el-table-column>
+                <el-table-column :label="t('topology.routeNexthop')">
+                  <template #default="{ row }">
+                    <div v-for="(nh, i) in row.nexthops ?? []" :key="i">
+                      <template v-if="nh.via">{{ nh.via }} </template>
+                      <span class="sub">{{ nh.interface }}</span>
+                    </div>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </template>
+
+            <template v-else>
+              <div class="runtime-toolbar">
+                <span class="runtime-hint" v-if="nodeFIB">
+                  {{ t('topology.fibCount', fibCounts) }}
+                </span>
+                <el-button size="small" :loading="fibLoading" @click="refreshFIB">
+                  {{ t('topology.refresh') }}
+                </el-button>
+              </div>
+              <el-table v-if="nodeFIB" :data="nodeFIB.routes ?? []" size="small" v-loading="fibLoading">
+                <el-table-column :label="t('topology.routePrefix')" width="130">
+                  <template #default="{ row }">
+                    <div>{{ row.prefix }}</div>
+                    <div class="sub">M {{ row.metric ?? 0 }}</div>
+                  </template>
+                </el-table-column>
+                <el-table-column :label="t('topology.routeProtocol')" width="100">
+                  <template #default="{ row }">
+                    <div class="flags">
+                      <el-tag
+                        size="small"
+                        effect="plain"
+                        :type="row.protocol === 'bgp' ? 'primary' : row.protocol === 'kernel' ? 'success' : 'info'"
+                      >
+                        {{ row.protocol }}
+                      </el-tag>
+                      <el-tag v-if="row.kind === 'local'" size="small" effect="plain" type="warning">local</el-tag>
+                    </div>
+                  </template>
+                </el-table-column>
+                <el-table-column :label="t('topology.routeNexthop')">
+                  <template #default="{ row }">
+                    <div v-for="(nh, i) in row.nexthops ?? []" :key="i">
+                      <template v-if="nh.via">{{ nh.via }} </template>
+                      <span class="sub">{{ nh.interface }}</span>
+                    </div>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </template>
+
           </el-tab-pane>
 
-          <el-tab-pane :label="t('topology.runtimeView')" name="runtime">
+          <el-tab-pane name="runtime">
+            <template #label>
+              <span class="tab-label"><el-icon><Monitor /></el-icon>{{ t('topology.runtimeView') }}</span>
+            </template>
             <div class="runtime-toolbar">
               <span class="runtime-hint">{{ t('topology.runtimeHint') }}</span>
               <el-button size="small" :loading="runtimeLoading" @click="refreshRuntime">
@@ -1261,26 +1281,117 @@ async function deleteFault(f: FaultScenario) {
               </el-table>
             </template>
           </el-tab-pane>
+
+          <el-tab-pane name="fault">
+            <template #label>
+              <span class="tab-label"><el-icon><Warning /></el-icon>{{ t('faults.title') }}</span>
+            </template>
+            <div class="runtime-toolbar">
+              <el-button size="small" :loading="faultBusy" @click="quickNodeFault('node-stop')">
+                {{ t('faults.typeNodeStop') }}
+              </el-button>
+              <el-button size="small" :loading="faultBusy" @click="quickNodeFault('node-restart')">
+                {{ t('faults.typeNodeRestart') }}
+              </el-button>
+            </div>
+            <el-table v-if="nodeFaults.length" :data="nodeFaults" size="small">
+              <el-table-column prop="meta.name" :label="t('common.name')" />
+              <el-table-column :label="t('faults.type')">
+                <template #default="{ row }">{{ faultTypeLabel(row.spec.type) }}</template>
+              </el-table-column>
+              <el-table-column :label="t('faults.state')" width="90">
+                <template #default="{ row }">
+                  <el-tag size="small" :type="row.status.applied ? 'danger' : 'info'">
+                    {{ row.status.applied ? t('faults.applied') : t('faults.recovered') }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column :label="t('common.actions')" width="150">
+                <template #default="{ row }">
+                  <el-button
+                    v-if="row.spec.type !== 'node-restart' || !row.status.applied"
+                    size="small"
+                    :type="row.status.applied ? 'success' : 'danger'"
+                    :loading="faultBusy"
+                    @click="toggleFault(row)"
+                  >
+                    {{ row.status.applied ? t('faults.recover') : t('faults.apply') }}
+                  </el-button>
+                  <el-button size="small" type="danger" plain :loading="faultBusy" @click="deleteFault(row)">
+                    {{ t('common.delete') }}
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+            <el-empty v-else :description="t('faults.recovered')" />
+          </el-tab-pane>
+
+          <el-tab-pane name="capture">
+            <template #label>
+              <span class="tab-label"><el-icon><Aim /></el-icon>{{ t('captures.quickTitle') }}</span>
+            </template>
+            <el-form label-width="100px">
+              <el-form-item :label="t('captures.interface')">
+                <el-select v-model="captureIface" style="width: 100%" :placeholder="t('captures.pickInterface')">
+                  <el-option v-for="i in captureIfaceOptions" :key="i.value" :label="i.label" :value="i.value" />
+                </el-select>
+              </el-form-item>
+              <el-form-item :label="t('captures.protocol')">
+                <el-select v-model="captureProto" clearable style="width: 100%" :placeholder="t('captures.anyProtocol')">
+                  <el-option v-for="p in ['arp', 'icmp', 'tcp', 'udp', 'bgp', 'vxlan']" :key="p" :label="p.toUpperCase()" :value="p" />
+                </el-select>
+              </el-form-item>
+              <el-form-item :label="t('captures.durationSeconds')">
+                <el-input-number v-model="captureDuration" :min="1" :max="600" controls-position="right" />
+              </el-form-item>
+            </el-form>
+            <div class="capture-quick-footer">
+              <span class="sub">{{ t('captures.quickHint') }}</span>
+              <el-button type="primary" size="small" :loading="captureBusy" :disabled="!captureIface" @click="quickNodeCapture">
+                {{ t('captures.quickStart') }}
+              </el-button>
+            </div>
+          </el-tab-pane>
         </el-tabs>
       </template>
     </el-drawer>
 
-    <el-drawer :model-value="!!selectedLink" :title="selectedLink?.meta.name" size="420px" :modal="false" @close="selectedLink = null">
+    <el-drawer :model-value="!!selectedLink" size="540px" :modal="false" @close="selectedLink = null">
+      <template #header>
+        <div v-if="selectedLink" class="drawer-head">
+          <div class="drawer-id">
+            <span class="drawer-name" :title="selectedLink.meta.name">{{ selectedLink.meta.name }}</span>
+            <el-tag size="small" effect="plain" class="kind-tag">{{ linkKindLabel(selectedLink) }}</el-tag>
+          </div>
+        </div>
+      </template>
       <template v-if="selectedLink">
-        <el-descriptions :column="1" border size="small">
-          <el-descriptions-item :label="t('topology.kind')">
-            {{ linkKindLabel(selectedLink) }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('topology.endpointA')">
-            {{ selectedLink.spec.endpointA.nodeName }}:{{ selectedLink.spec.endpointA.interface }}
-            <template v-if="selectedLink.spec.endpointA.address">({{ selectedLink.spec.endpointA.address }})</template>
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('topology.endpointB')">
-            {{ selectedLink.spec.endpointB.nodeName }}:{{ selectedLink.spec.endpointB.interface }}
-            <template v-if="selectedLink.spec.endpointB.address">({{ selectedLink.spec.endpointB.address }})</template>
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('topology.mtu')">{{ selectedLink.spec.mtu }}</el-descriptions-item>
-        </el-descriptions>
+        <div class="link-endpoints">
+          <div class="endpoint">
+            <div class="endpoint-node" :title="selectedLink.spec.endpointA.nodeName">{{ selectedLink.spec.endpointA.nodeName }}</div>
+            <div class="endpoint-iface">{{ selectedLink.spec.endpointA.interface }}</div>
+            <div v-if="selectedLink.spec.endpointA.address" class="endpoint-addr">
+              {{ selectedLink.spec.endpointA.address }}
+            </div>
+          </div>
+          <div class="link-wire">
+            <span class="wire-line" />
+            <span class="wire-mtu">MTU {{ selectedLink.spec.mtu }}</span>
+          </div>
+          <div class="endpoint">
+            <div class="endpoint-node" :title="selectedLink.spec.endpointB.nodeName">{{ selectedLink.spec.endpointB.nodeName }}</div>
+            <div class="endpoint-iface">{{ selectedLink.spec.endpointB.interface }}</div>
+            <div v-if="selectedLink.spec.endpointB.address" class="endpoint-addr">
+              {{ selectedLink.spec.endpointB.address }}
+            </div>
+          </div>
+        </div>
+        <div
+          v-if="!selectedLink.spec.endpointA.address && !selectedLink.spec.endpointB.address"
+          class="observed-at l2-note"
+        >
+          {{ t('topology.l2NoAddress') }}
+        </div>
 
         <h4>{{ t('faults.title') }}</h4>
         <div class="fault-actions">
@@ -1300,16 +1411,6 @@ async function deleteFault(f: FaultScenario) {
           <el-input-number v-model="impairForm.rateKbit" :min="0" :max="10000000" :placeholder="t('faults.rateKbit')" size="small" controls-position="right" />
           <el-button size="small" type="warning" :loading="faultBusy" @click="quickImpairment">
             {{ t('faults.typeImpairment') }}
-          </el-button>
-        </div>
-
-        <h4>{{ t('captures.quickTitle') }}</h4>
-        <div class="fault-actions">
-          <el-button size="small" :loading="captureBusy" @click="quickEndpointCapture(selectedLink.spec.endpointA)">
-            {{ t('captures.captureEndpoint', { name: selectedLink.spec.endpointA.nodeName }) }}
-          </el-button>
-          <el-button size="small" :loading="captureBusy" @click="quickEndpointCapture(selectedLink.spec.endpointB)">
-            {{ t('captures.captureEndpoint', { name: selectedLink.spec.endpointB.nodeName }) }}
           </el-button>
         </div>
 
@@ -1341,6 +1442,16 @@ async function deleteFault(f: FaultScenario) {
             </template>
           </el-table-column>
         </el-table>
+
+        <h4>{{ t('captures.quickTitle') }}</h4>
+        <div class="fault-actions">
+          <el-button size="small" :loading="captureBusy" @click="quickEndpointCapture(selectedLink.spec.endpointA)">
+            {{ t('captures.captureEndpoint', { name: selectedLink.spec.endpointA.nodeName }) }}
+          </el-button>
+          <el-button size="small" :loading="captureBusy" @click="quickEndpointCapture(selectedLink.spec.endpointB)">
+            {{ t('captures.captureEndpoint', { name: selectedLink.spec.endpointB.nodeName }) }}
+          </el-button>
+        </div>
       </template>
     </el-drawer>
   </div>
@@ -1355,7 +1466,6 @@ async function deleteFault(f: FaultScenario) {
 }
 .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 .header-actions { display: flex; gap: 12px; align-items: center; }
-.node-power { margin-bottom: 12px; }
 .header h2 { margin: 0; }
 .hint { font-size: 12px; font-weight: normal; color: var(--el-text-color-secondary); margin-left: 8px; }
 .drift-banner { margin-bottom: 12px; }
@@ -1369,7 +1479,51 @@ async function deleteFault(f: FaultScenario) {
 .page :deep(.el-overlay) { pointer-events: none; }
 .page :deep(.el-drawer) { pointer-events: auto; }
 .body { flex: 1; min-height: 0; }
-h4 { margin: 16px 0 8px; }
+
+/* Drawer chrome: a compact identity header (name + role + health)
+   instead of the stock oversized title, with a divider to the body. */
+.page :deep(.el-drawer__header) { margin-bottom: 0; padding: 14px 20px; border-bottom: 1px solid var(--el-border-color-lighter); }
+.page :deep(.el-drawer__body) { padding: 16px 20px; }
+.drawer-head { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-right: 8px; }
+.drawer-id { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.drawer-name { font-size: 16px; font-weight: 600; color: var(--el-text-color-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.role-tag { border: none; }
+.kind-tag { max-width: 220px; }
+.health-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--el-text-color-regular); background: var(--el-fill-color-light); border-radius: 10px; padding: 2px 8px; white-space: nowrap; cursor: default; }
+.health-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+/* Section titles: small muted label with a trailing hairline. */
+h4 { display: flex; align-items: center; gap: 8px; margin: 18px 0 8px; font-size: 12px; font-weight: 600; color: var(--el-text-color-secondary); }
+h4::after { content: ''; flex: 1; height: 1px; background: var(--el-border-color-lighter); }
+
+/* Overview stat tiles. */
+.stat-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.stat-tile { background: var(--el-fill-color-light); border-radius: 8px; padding: 10px 12px; }
+.stat-value { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--el-text-color-primary); }
+.stat-tile.ok .stat-value { color: var(--el-color-success); }
+.stat-tile.warn .stat-value { color: var(--el-color-warning); }
+.stat-tile.bad .stat-value { color: var(--el-color-danger); }
+.stat-label { margin-top: 2px; font-size: 11px; color: var(--el-text-color-secondary); }
+.observed-at { margin-top: 6px; text-align: right; font-size: 11px; color: var(--el-text-color-secondary); }
+
+/* Query tab view switch. */
+.inspect-switch { margin-bottom: 12px; }
+.tab-label { display: inline-flex; align-items: center; gap: 4px; }
+.tab-label .el-icon { font-size: 14px; }
+/* Icons widen the labels; tighten item padding so all tabs fit the
+   compact drawer without scroll arrows. */
+.page :deep(.el-tabs__item) { padding: 0 9px; }
+
+/* Link drawer: the two endpoints drawn as cards joined by a wire. */
+.link-endpoints { display: flex; align-items: stretch; gap: 10px; }
+.endpoint { flex: 1; min-width: 0; background: var(--el-fill-color-light); border-radius: 8px; padding: 10px 12px; }
+.endpoint-node { font-size: 13px; font-weight: 600; color: var(--el-text-color-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.endpoint-iface { margin-top: 2px; font-size: 12px; color: var(--el-text-color-regular); }
+.endpoint-addr { margin-top: 2px; font-size: 11px; color: var(--el-text-color-secondary); font-variant-numeric: tabular-nums; }
+.link-wire { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-width: 64px; }
+.wire-line { width: 100%; height: 2px; border-radius: 1px; background: var(--el-border-color); }
+.wire-mtu { font-size: 11px; color: var(--el-text-color-secondary); white-space: nowrap; }
+.l2-note { text-align: left; }
 .runtime-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; }
 .runtime-hint { font-size: 12px; color: var(--el-text-color-secondary); }
 .sub { font-size: 11px; color: var(--el-text-color-secondary); }
@@ -1381,7 +1535,6 @@ h4 { margin: 16px 0 8px; }
    screens don't stretch the charts. */
 .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); column-gap: 20px; align-items: start; }
 .page :deep(.el-drawer) { max-width: 900px; }
-.agent-down-hint { margin-left: 8px; font-size: 12px; color: var(--el-color-danger); }
 .flags { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
 .fault-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 .capture-quick-footer { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
