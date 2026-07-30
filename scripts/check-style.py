@@ -9,7 +9,7 @@
      return 上方紧贴的注释视为 return 的一部分,空行要求移到注释组之前。
   3. 不允许连续两个及以上空行。
 
-扫描 internal/ 与 cmd/ 下的手写 Go 文件,排除 pb/ 与 wire_gen.go。
+扫描 internal/、controller/、agent/、nodeapps/ 与 web/server/ 下的手写 Go 文件,排除 pb/ 与 wire_gen.go。
 """
 
 import glob
@@ -22,8 +22,12 @@ CASE_PAT = re.compile(r"^(case .*|default):$")
 
 
 def go_files():
-    files = glob.glob("internal/**/*.go", recursive=True) + glob.glob(
-        "cmd/**/*.go", recursive=True
+    files = (
+        glob.glob("internal/**/*.go", recursive=True)
+        + glob.glob("controller/**/*.go", recursive=True)
+        + glob.glob("agent/**/*.go", recursive=True)
+        + glob.glob("nodeapps/**/*.go", recursive=True)
+        + glob.glob("web/server/**/*.go", recursive=True)
     )
 
     return [f for f in files if "/pb/" not in f and "wire_gen" not in f]

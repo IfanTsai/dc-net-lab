@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
-# DCNetLab launcher: one command to start/stop the controller and web UI.
+# DCNetLab launcher: one command to start/stop the two processes on
+# one machine — agent (data plane) and controller (control plane,
+# which also serves the web UI). They talk over localhost gRPC, the
+# same wiring a multi-machine install uses.
 #
-#   scripts/dcnetlab up          build backend + web UI, start controller serving both
+#   scripts/dcnetlab up          build everything, start agent + controller
 #   scripts/dcnetlab up --dev    same URL, controller proxies to Vite (hot reload)
 #   scripts/dcnetlab down        stop everything started by "up"
 #   scripts/dcnetlab status      show what is running
 #   scripts/dcnetlab logs        tail controller logs
-#   scripts/dcnetlab edge-image  build the FRR edge image for internet access
+#   scripts/dcnetlab images      build the dcnetlab/frr, dcnetlab/server and edge images
+#   scripts/dcnetlab edge-image  build only the FRR edge image for internet access
 #
 # On macOS the script re-execs itself inside an OrbStack machine so
 # deploys run against a real Linux kernel; without OrbStack (or with
@@ -15,7 +19,8 @@
 # Configuration via environment:
 #   DCNETLAB_LISTEN       controller address (default 127.0.0.1:8080,
 #                         or 0.0.0.0:8080 when forwarded into OrbStack)
-#   DCNETLAB_RUNTIME      runtime driver: auto|containerlab|noop (default auto)
+#   DCNETLAB_AGENT_LISTEN data plane agent gRPC address (default 127.0.0.1:50063)
+#   DCNETLAB_RUNTIME      runtime driver: auto|agent|noop (default auto)
 #   DCNETLAB_ORB_MACHINE  OrbStack machine used on macOS (default dcnetlab)
 
 set -euo pipefail
@@ -23,15 +28,19 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUN_DIR="$ROOT/.run"
 LISTEN="${DCNETLAB_LISTEN:-127.0.0.1:8080}"
+AGENT_LISTEN="${DCNETLAB_AGENT_LISTEN:-127.0.0.1:50063}"
 RUNTIME="${DCNETLAB_RUNTIME:-auto}"
 ORB_MACHINE="${DCNETLAB_ORB_MACHINE:-dcnetlab}"
 # Host:port printed in URLs; set by the macOS forwarder below so links
 # point at the OrbStack machine instead of the VM-internal address.
 ADVERTISE="${DCNETLAB_ADVERTISE:-}"
+AGENT_PID="$RUN_DIR/agent.pid"
 CTRL_PID="$RUN_DIR/controller.pid"
-WEB_PID="$RUN_DIR/web.pid"
+VITE_PID="$RUN_DIR/vite.pid"
+AGENT_LOG="$RUN_DIR/agent.log"
 CTRL_LOG="$RUN_DIR/controller.log"
 WEB_LOG="$RUN_DIR/web.log"
+VITE_LOG="$RUN_DIR/vite.log"
 
 alive() { [ -f "$1" ] && kill -0 "$(cat "$1")" 2>/dev/null; }
 
@@ -49,12 +58,12 @@ stop_pid() { # stop_pid <pidfile> <name> [group]
   rm -f "$1"
 }
 
-wait_healthy() {
+wait_healthy() { # wait_healthy <base> <name> <log>
   for _ in $(seq 1 50); do
-    if curl -sf "http://$LISTEN/api/v1/healthz" >/dev/null 2>&1; then return 0; fi
+    if curl -sf "http://$1/api/v1/healthz" >/dev/null 2>&1; then return 0; fi
     sleep 0.2
   done
-  echo "controller did not become healthy; see $CTRL_LOG" >&2
+  echo "$2 did not become healthy; see $3" >&2
   return 1
 }
 
@@ -142,22 +151,41 @@ ensure_web_natives() {
   rm -rf "$tmp"
 }
 
+# Node images with the platform tooling baked in. Tags must match
+# containerlab.DefaultOptions. Built from the repo root so the
+# Dockerfiles can COPY the static binaries out of bin/.
+ensure_node_images() {
+  command -v docker >/dev/null 2>&1 || return 0
+
+  if ! docker image inspect dcnetlab/frr:10.2.1 >/dev/null 2>&1; then
+    echo "building dcnetlab/frr image..."
+    docker build -q -t dcnetlab/frr:10.2.1 -f "$ROOT/build/frr/Dockerfile" "$ROOT"
+  fi
+  if ! docker image inspect dcnetlab/server:10.2.1 >/dev/null 2>&1; then
+    echo "building dcnetlab/server image..."
+    docker build -q -t dcnetlab/server:10.2.1 -f "$ROOT/build/server/Dockerfile" "$ROOT"
+  fi
+}
+
 cmd_up() {
   local dev=0
   [ "${1:-}" = "--dev" ] && dev=1
 
-  if alive "$CTRL_PID"; then
-    echo "already running (pid $(cat "$CTRL_PID")); use 'down' first" >&2
+  if alive "$CTRL_PID" || alive "$AGENT_PID"; then
+    echo "already running; use 'down' first" >&2
     exit 1
   fi
   mkdir -p "$RUN_DIR"
 
-  echo "building controller..."
-  (cd "$ROOT" && go build -o bin/dcnetlab-controller ./cmd/controller)
-  # Static binaries bind-mounted into server containers by the compiler.
-  (cd "$ROOT" && CGO_ENABLED=0 go build -o bin/dcnetlab-node-agent ./serverapps/node-agent)
-  (cd "$ROOT" && CGO_ENABLED=0 go build -o bin/dcnetlab-node-cli ./serverapps/node-cli)
-  (cd "$ROOT" && CGO_ENABLED=0 go build -o bin/dcnetlab-trafficgen ./serverapps/trafficgen)
+  echo "building binaries..."
+  (cd "$ROOT" && go build -o bin/dcnetlab-controller ./controller/cmd/controller)
+  (cd "$ROOT" && go build -o bin/dcnetlab-agent ./agent/cmd/agent)
+  # Static binaries: baked into the node images and served as builtin
+  # packages by the controller.
+  (cd "$ROOT" && CGO_ENABLED=0 go build -o bin/dcnetlab-node-agent ./nodeapps/cmd/node-agent)
+  (cd "$ROOT" && CGO_ENABLED=0 go build -o bin/dcnetlab-node-cli ./nodeapps/cmd/node-cli)
+  (cd "$ROOT" && CGO_ENABLED=0 go build -o bin/dcnetlab-trafficgen ./nodeapps/cmd/trafficgen)
+  (cd "$ROOT" && CGO_ENABLED=0 go build -o bin/dcnetlab-capture ./nodeapps/cmd/capture)
 
   if [ ! -d "$ROOT/web/node_modules" ]; then
     echo "installing web dependencies..."
@@ -173,12 +201,21 @@ cmd_up() {
       tail -n 20 "$WEB_LOG" >&2
       exit 1
     fi
-    web_args=(--web-dir "$ROOT/web/dist")
+    web_args+=(--web-dir "$ROOT/web/dist")
   else
-    # Dev mode: the controller reverse-proxies web requests (and the
+    # Dev mode: the controller reverse-proxies UI requests (and the
     # Vite HMR WebSocket) to the local dev server, so the browser
     # stays on the controller port and still gets hot reload.
-    web_args=(--web-dev-proxy "http://127.0.0.1:5173")
+    web_args+=(--web-dev-proxy "http://127.0.0.1:5173")
+  fi
+
+  if [ "$RUNTIME" != noop ]; then
+    ensure_node_images
+    echo "starting agent on $AGENT_LISTEN..."
+    nohup "$ROOT/bin/dcnetlab-agent" \
+      --listen "$AGENT_LISTEN" \
+      --data-dir "$ROOT/data/agent" >"$AGENT_LOG" 2>&1 </dev/null &
+    echo $! >"$AGENT_PID"
   fi
 
   echo "starting controller on $LISTEN (runtime: $RUNTIME)..."
@@ -186,28 +223,31 @@ cmd_up() {
     --listen "$LISTEN" \
     --data-dir "$ROOT/data" \
     --runtime "$RUNTIME" \
+    --agent "$AGENT_LISTEN" \
     "${web_args[@]}" >"$CTRL_LOG" 2>&1 </dev/null &
   echo $! >"$CTRL_PID"
-  wait_healthy
 
   if [ "$dev" = 1 ]; then
     echo "starting Vite dev server..."
-    # The controller proxies to Vite over loopback, so Vite stays
-    # bound to localhost even when forwarded into OrbStack.
+    # The controller proxies to Vite over localhost, so Vite stays
+    # bound there even when forwarded into OrbStack.
     if command -v setsid >/dev/null 2>&1; then
       # setsid may fork, so the session leader writes its own pid;
       # "down" kills that process group to take npm and vite with it.
-      (cd "$ROOT/web" && WEB_PID="$WEB_PID" setsid bash -c 'echo $$ >"$WEB_PID"; exec npm run dev' >"$WEB_LOG" 2>&1 </dev/null &)
+      (cd "$ROOT/web" && VITE_PID="$VITE_PID" setsid bash -c 'echo $$ >"$VITE_PID"; exec npm run dev' >"$VITE_LOG" 2>&1 </dev/null &)
     else
       # macOS has no setsid; record the npm pid directly, npm forwards
       # signals to vite so a plain kill in "down" is enough.
-      (cd "$ROOT/web" && nohup npm run dev >"$WEB_LOG" 2>&1 </dev/null & echo $! >"$WEB_PID")
+      (cd "$ROOT/web" && nohup npm run dev >"$VITE_LOG" 2>&1 </dev/null & echo $! >"$VITE_PID")
     fi
-    for _ in $(seq 1 20); do [ -s "$WEB_PID" ] && break; sleep 0.1; done
-    echo
+    for _ in $(seq 1 20); do [ -s "$VITE_PID" ] && break; sleep 0.1; done
+  fi
+
+  wait_healthy "$LISTEN" controller "$CTRL_LOG"
+  echo
+  if [ "$dev" = 1 ]; then
     echo "DCNetLab is up:  http://${ADVERTISE:-$LISTEN}  (dev, hot reload)"
   else
-    echo
     echo "DCNetLab is up:  http://${ADVERTISE:-$LISTEN}"
   fi
 }
@@ -218,34 +258,50 @@ cmd_down() {
   local group=""
   command -v setsid >/dev/null 2>&1 && group=group
 
-  stop_pid "$WEB_PID" "web dev server" $group
+  stop_pid "$VITE_PID" "vite dev server" $group
   stop_pid "$CTRL_PID" "controller"
+  stop_pid "$AGENT_PID" "agent"
   echo "DCNetLab is down"
 }
 
 cmd_status() {
+  if alive "$AGENT_PID"; then
+    echo "agent:      running (pid $(cat "$AGENT_PID"), grpc://$AGENT_LISTEN)"
+  else
+    echo "agent:      stopped"
+  fi
   if alive "$CTRL_PID"; then
     echo "controller: running (pid $(cat "$CTRL_PID"), http://${ADVERTISE:-$LISTEN})"
   else
     echo "controller: stopped"
   fi
-  if alive "$WEB_PID"; then
-    echo "web dev:    running (pid $(cat "$WEB_PID"), hot reload via http://${ADVERTISE:-$LISTEN})"
-  else
-    echo "web dev:    stopped"
+  if alive "$VITE_PID"; then
+    echo "vite dev:   running (pid $(cat "$VITE_PID"), hot reload via http://${ADVERTISE:-$LISTEN})"
   fi
 }
 
 cmd_logs() { tail -n 100 -f "$CTRL_LOG"; }
 
-# Build the FRR + iptables image used by dcedge/external when a lab
-# enables internet access. Tag must match containerlab.DefaultOptions.
-# Routed through the macOS forwarder so the image lands in the same
-# docker daemon the controller deploys with.
-cmd_edge_image() { docker build -t dcnetlab/frr-edge:10.2.1 "$ROOT/build/frr-edge"; }
+# Build the node images. Tags must match containerlab.DefaultOptions.
+# Routed through the macOS forwarder so the images land in the same
+# docker daemon the agent deploys with. The static binaries must
+# exist in bin/ (make build).
+cmd_images() {
+  docker build -t dcnetlab/frr:10.2.1 -f "$ROOT/build/frr/Dockerfile" "$ROOT"
+  docker build -t dcnetlab/server:10.2.1 -f "$ROOT/build/server/Dockerfile" "$ROOT"
+  docker build -t dcnetlab/frr-edge:10.2.1 "$ROOT/build/frr-edge"
+}
+
+cmd_edge_image() {
+  docker image inspect dcnetlab/frr:10.2.1 >/dev/null 2>&1 || {
+    echo "base image dcnetlab/frr:10.2.1 missing; run 'make images' first" >&2
+    exit 1
+  }
+  docker build -t dcnetlab/frr-edge:10.2.1 "$ROOT/build/frr-edge"
+}
 
 case "${1:-}" in
-  up|down|status|logs|edge-image) maybe_exec_in_orb "$@" ;;
+  up|down|status|logs|images|edge-image) maybe_exec_in_orb "$@" ;;
 esac
 
 case "${1:-}" in
@@ -253,6 +309,7 @@ case "${1:-}" in
   down) cmd_down ;;
   status) cmd_status ;;
   logs) cmd_logs ;;
+  images) cmd_images ;;
   edge-image) cmd_edge_image ;;
-  *) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  *) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

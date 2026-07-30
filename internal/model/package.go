@@ -14,6 +14,15 @@ const (
 	BuiltinPackageEntrypoint = "dcnetlab-trafficgen"
 )
 
+// Builtin capture package identity. Switch images bake the capture
+// tool in; servers receive it through the package repository during
+// apply, landing at the same in-container paths via spec links.
+const (
+	CapturePackageName       = "capture"
+	CapturePackageVersion    = "0.1.0"
+	CapturePackageEntrypoint = "dcnetlab-capture"
+)
+
 // Package is one versioned program artifact in the controller's
 // repository: a tar.gz archive with a manifest.json and the
 // executables. Meta.Name is the package name; one Package resource
@@ -30,6 +39,10 @@ type PackageSpec struct {
 	Format      string `json:"format"`
 	Entrypoint  string `json:"entrypoint"`
 	Description string `json:"description,omitempty"`
+	// Links are absolute in-container paths the agent symlinks to the
+	// installed entrypoint (tools that must appear at conventional
+	// locations, e.g. the capture tool).
+	Links []string `json:"links,omitempty"`
 }
 
 // PackageStatus is what the controller derived from the payload.

@@ -1,0 +1,215 @@
+// Agent is the gRPC surface of dcnetlab-agent, the data
+// plane daemon running on every machine that hosts lab containers.
+// It exposes the runtime driver operations (deploy, exec, faults) the
+// controller previously performed through local docker/containerlab
+// CLIs, so the controller no longer needs to share a machine with the
+// container runtime. The controller is its only client; on a
+// single-machine install both talk over localhost.
+syntax = "proto3";
+
+package agent.v1;
+
+option go_package = "github.com/ifantsai/dcnetlab/pb/agent/v1;v1";
+
+service Agent {
+  // Ping reports the agent is reachable and whether the containerlab
+  // runtime behind it is usable; the controller calls it at startup
+  // to decide between the agent and noop drivers.
+  rpc Ping(PingRequest) returns (PingReply);
+  // Deploy materialises the artifact files under the agent's data
+  // directory and runs `containerlab deploy` on them.
+  rpc Deploy(DeployRequest) returns (DeployReply);
+  // Destroy materialises the artifact files (the agent may have been
+  // reinstalled since the deploy) and runs `containerlab destroy`.
+  rpc Destroy(DeployRequest) returns (DeployReply);
+  // Exec runs one command inside a lab container and returns its
+  // combined output.
+  rpc Exec(ExecRequest) returns (ExecReply);
+  // ExecStream runs a long-lived non-interactive command inside a lab
+  // container. The client sends Start first; the server streams raw
+  // stdout chunks. Closing the client side closes the command's
+  // stdin — the in-container tool's stop signal — after which the
+  // server reaps the process and ends the stream.
+  rpc ExecStream(stream ExecStreamRequest) returns (stream ExecStreamReply);
+  // Terminal attaches an interactive shell inside a lab container
+  // under a pseudo-terminal. The client sends Start first, then
+  // stdin bytes and resize events; the server streams terminal
+  // output.
+  rpc Terminal(stream TerminalRequest) returns (stream TerminalReply);
+  // Dial proxies one TCP connection into the lab management network
+  // (e.g. to a node-agent's gRPC port). The client sends Start with
+  // the target address, then payload bytes; the server relays bytes
+  // both ways until either side closes.
+  rpc Dial(stream DialRequest) returns (stream DialReply);
+  // NodeStates reports the live container state of each named node.
+  rpc NodeStates(NodeStatesRequest) returns (NodeStatesReply);
+  // NodeAddress returns a node's management-network IP.
+  rpc NodeAddress(NodeRequest) returns (AddressReply);
+  // NodeGateway returns the host-side gateway IP of a node's
+  // management network.
+  rpc NodeGateway(NodeRequest) returns (AddressReply);
+  // StartNodes resumes previously stopped (frozen) nodes.
+  rpc StartNodes(NodeSetRequest) returns (NodeSetReply);
+  // StopNodes freezes the named nodes in place (docker pause).
+  rpc StopNodes(NodeSetRequest) returns (NodeSetReply);
+  // EnsureImage verifies a container image is available on the host.
+  rpc EnsureImage(EnsureImageRequest) returns (EnsureImageReply);
+  // ConnectInternet attaches a node to the shared WAN network and
+  // routes its non-fabric traffic to the real internet.
+  rpc ConnectInternet(NodeRequest) returns (ConnectInternetReply);
+  // SetInterfaceState brings a node's interface administratively up
+  // or down.
+  rpc SetInterfaceState(SetInterfaceStateRequest) returns (SetInterfaceStateReply);
+  // ApplyImpairment shapes egress traffic on a node's interface with
+  // a netem qdisc.
+  rpc ApplyImpairment(ApplyImpairmentRequest) returns (ImpairmentReply);
+  // ClearImpairment removes a previously applied netem qdisc; a no-op
+  // if none is present.
+  rpc ClearImpairment(ClearImpairmentRequest) returns (ImpairmentReply);
+}
+
+message PingRequest {}
+
+message PingReply {
+  // runtime_available is true when the containerlab binary and the
+  // docker daemon are both usable on this host.
+  bool runtime_available = 1;
+  // detail explains an unavailable runtime (missing binary, daemon
+  // down) for the controller's log.
+  string detail = 2;
+}
+
+// DeployRequest carries a complete generation artifact. key is an
+// opaque, path-safe identifier of the generation ("<lab>/<gen>");
+// the agent materialises the files under its own data directory at
+// that key and runs containerlab there, so repeated calls for the
+// same key are idempotent.
+message DeployRequest {
+  string key = 1;
+  // files maps a path relative to the generation directory to its
+  // content (topology YAML plus per-node configs).
+  map<string, bytes> files = 2;
+}
+
+message DeployReply {}
+
+message ExecRequest {
+  string lab_name = 1;
+  string node_name = 2;
+  repeated string cmd = 3;
+}
+
+message ExecReply {
+  // output is the command's combined stdout/stderr, returned also
+  // when the command failed (the error arrives as a gRPC status).
+  bytes output = 1;
+}
+
+message ExecStreamRequest {
+  // start must be set on the first message and only there.
+  ExecRequest start = 1;
+}
+
+message ExecStreamReply {
+  // stdout is one chunk of the command's raw standard output.
+  bytes stdout = 1;
+}
+
+message TerminalRequest {
+  // start must be set on the first message and only there.
+  TerminalStart start = 1;
+  // stdin feeds keystrokes to the shell.
+  bytes stdin = 2;
+  // resize adjusts the pseudo-terminal window.
+  TerminalResize resize = 3;
+}
+
+message TerminalStart {
+  string lab_name = 1;
+  string node_name = 2;
+  repeated string cmd = 3;
+}
+
+message TerminalResize {
+  uint32 cols = 1;
+  uint32 rows = 2;
+}
+
+message TerminalReply {
+  bytes stdout = 1;
+}
+
+message DialRequest {
+  // address is the "host:port" target on the lab management network;
+  // set on the first message and only there.
+  string address = 1;
+  bytes data = 2;
+}
+
+message DialReply {
+  bytes data = 1;
+}
+
+message NodeStatesRequest {
+  string lab_name = 1;
+  repeated string node_names = 2;
+}
+
+message NodeStatesReply {
+  // states maps node name to its docker container state ("running",
+  // "paused", "exited", ... or "missing").
+  map<string, string> states = 1;
+}
+
+message NodeRequest {
+  string lab_name = 1;
+  string node_name = 2;
+}
+
+message AddressReply {
+  string address = 1;
+}
+
+message NodeSetRequest {
+  string lab_name = 1;
+  repeated string node_names = 2;
+}
+
+message NodeSetReply {}
+
+message EnsureImageRequest {
+  string image = 1;
+}
+
+message EnsureImageReply {}
+
+message ConnectInternetReply {}
+
+message SetInterfaceStateRequest {
+  string lab_name = 1;
+  string node_name = 2;
+  string interface = 3;
+  bool up = 4;
+}
+
+message SetInterfaceStateReply {}
+
+// Impairment mirrors runtime.Impairment: the netem parameter set of
+// one interface. Zero fields are omitted from the qdisc.
+message ApplyImpairmentRequest {
+  string lab_name = 1;
+  string node_name = 2;
+  string interface = 3;
+  int32 delay_ms = 4;
+  int32 jitter_ms = 5;
+  double loss_percent = 6;
+  int32 rate_kbit = 7;
+}
+
+message ClearImpairmentRequest {
+  string lab_name = 1;
+  string node_name = 2;
+  string interface = 3;
+}
+
+message ImpairmentReply {}

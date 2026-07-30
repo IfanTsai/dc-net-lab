@@ -50,6 +50,10 @@ message PackageRef {
   // entrypoint is the executable inside the unpacked archive,
   // relative to its root; the agent marks it executable.
   string entrypoint = 5;
+  // links are absolute in-container paths the agent symlinks to the
+  // installed entrypoint, so tools delivered as packages appear at
+  // their conventional locations (e.g. the capture tool on PATH).
+  repeated string links = 6;
 }
 
 message InstallPackageRequest {

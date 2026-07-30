@@ -39,7 +39,11 @@ type PackageRef struct {
 	Url     string                 `protobuf:"bytes,4,opt,name=url,proto3" json:"url,omitempty"`
 	// entrypoint is the executable inside the unpacked archive,
 	// relative to its root; the agent marks it executable.
-	Entrypoint    string `protobuf:"bytes,5,opt,name=entrypoint,proto3" json:"entrypoint,omitempty"`
+	Entrypoint string `protobuf:"bytes,5,opt,name=entrypoint,proto3" json:"entrypoint,omitempty"`
+	// links are absolute in-container paths the agent symlinks to the
+	// installed entrypoint, so tools delivered as packages appear at
+	// their conventional locations (e.g. the capture tool on PATH).
+	Links         []string `protobuf:"bytes,6,rep,name=links,proto3" json:"links,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -107,6 +111,13 @@ func (x *PackageRef) GetEntrypoint() string {
 		return x.Entrypoint
 	}
 	return ""
+}
+
+func (x *PackageRef) GetLinks() []string {
+	if x != nil {
+		return x.Links
+	}
+	return nil
 }
 
 type InstallPackageRequest struct {
@@ -1135,7 +1146,7 @@ var File_nodeagent_v1_nodeagent_proto protoreflect.FileDescriptor
 
 const file_nodeagent_v1_nodeagent_proto_rawDesc = "" +
 	"\n" +
-	"\x1cnodeagent/v1/nodeagent.proto\x12\fnodeagent.v1\"\x84\x01\n" +
+	"\x1cnodeagent/v1/nodeagent.proto\x12\fnodeagent.v1\"\x9a\x01\n" +
 	"\n" +
 	"PackageRef\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
@@ -1144,7 +1155,8 @@ const file_nodeagent_v1_nodeagent_proto_rawDesc = "" +
 	"\x03url\x18\x04 \x01(\tR\x03url\x12\x1e\n" +
 	"\n" +
 	"entrypoint\x18\x05 \x01(\tR\n" +
-	"entrypoint\"K\n" +
+	"entrypoint\x12\x14\n" +
+	"\x05links\x18\x06 \x03(\tR\x05links\"K\n" +
 	"\x15InstallPackageRequest\x122\n" +
 	"\apackage\x18\x01 \x01(\v2\x18.nodeagent.v1.PackageRefR\apackage\"\x15\n" +
 	"\x13InstallPackageReply\"D\n" +
