@@ -33,12 +33,23 @@ type PlanRepo interface {
 	ReplaceTopology(labID string, nodes []*model.Node, links []*model.Link, allocs []model.Allocation) error
 	ListNodes(labID string) ([]*model.Node, error)
 	ListLinks(labID string) ([]*model.Link, error)
+	ListPrograms(labID string) ([]*model.Program, error)
 	UpdateNode(n *model.Node) error
 	CreatePlan(p *model.Plan) error
 	UpdatePlan(p *model.Plan) error
 	GetPlan(id string) (*model.Plan, error)
 	SaveGeneration(labID string, generation int64, snap *DesiredStateSnapshot) error
-	ListGenerations(labID string) ([]int64, error)
+	GetGeneration(labID string, generation int64) (*DesiredStateSnapshot, error)
+	ListGenerations(labID string) ([]GenerationInfo, error)
+}
+
+// GenerationInfo summarises one retained generation snapshot — the
+// rollback targets a lab can return to.
+type GenerationInfo struct {
+	Generation int64
+	CreatedAt  time.Time
+	NodeCount  int
+	LinkCount  int
 }
 
 // PlanUsecase owns the declarative change flow: compute a previewable
@@ -48,24 +59,46 @@ type PlanUsecase struct {
 	ops      *operation.Manager
 	driver   runtime.Driver
 	programs *ProgramUsecase
+	traffic  *TrafficUsecase
+	faults   *FaultUsecase
 	dataDir  string
 	log      *slog.Logger
 }
 
 // NewPlanUsecase wires the plan usecase.
-func NewPlanUsecase(repo PlanRepo, ops *operation.Manager, driver runtime.Driver, programs *ProgramUsecase, c *conf.Data, log *slog.Logger) *PlanUsecase {
-	return &PlanUsecase{repo: repo, ops: ops, driver: driver, programs: programs, dataDir: c.Dir, log: log}
+func NewPlanUsecase(repo PlanRepo, ops *operation.Manager, driver runtime.Driver,
+	programs *ProgramUsecase, traffic *TrafficUsecase, faults *FaultUsecase,
+	c *conf.Data, log *slog.Logger) *PlanUsecase {
+	return &PlanUsecase{
+		repo: repo, ops: ops, driver: driver,
+		programs: programs, traffic: traffic, faults: faults,
+		dataDir: c.Dir, log: log,
+	}
 }
 
-// CreatePlan builds the desired topology for the lab, persists it as
-// desired state and returns a previewable plan.
+// CreatePlan rebuilds the desired topology for the lab, diffs it
+// against the deployed generation, persists it as desired state and
+// returns a previewable plan. The deployed base pins every piece of
+// identity the spec does not carry (rack numbers, addresses, ASNs,
+// interface indices), so unchanged nodes and links rebuild
+// bit-for-bit and the plan lists only actual changes.
 func (uc *PlanUsecase) CreatePlan(labID string) (*model.Plan, error) {
 	lab, err := uc.repo.GetLab(labID)
 	if err != nil {
 		return nil, fmt.Errorf("get lab: %w", err)
 	}
 
-	builder, err := topology.NewBuilder(lab.Meta.ID, lab.Spec)
+	var base *topology.Base
+	if lab.Meta.Generation > 0 {
+		snap, err := uc.repo.GetGeneration(labID, lab.Meta.Generation)
+		if err != nil {
+			return nil, fmt.Errorf("load deployed generation %d: %w", lab.Meta.Generation, err)
+		}
+
+		base = &topology.Base{Nodes: snap.Nodes, Links: snap.Links}
+	}
+
+	builder, err := topology.NewBuilder(lab.Meta.ID, lab.Spec, base)
 	if err != nil {
 		return nil, fmt.Errorf("create topology builder: %w", err)
 	}
@@ -75,35 +108,42 @@ func (uc *PlanUsecase) CreatePlan(labID string) (*model.Plan, error) {
 		return nil, fmt.Errorf("build topology: %w", err)
 	}
 
+	curNodes, err := uc.repo.ListNodes(labID)
+	if err != nil {
+		return nil, fmt.Errorf("list nodes: %w", err)
+	}
+
+	curLinks, err := uc.repo.ListLinks(labID)
+	if err != nil {
+		return nil, fmt.Errorf("list links: %w", err)
+	}
+
+	carryOverIdentity(res, curNodes, curLinks)
+
+	programs, err := uc.repo.ListPrograms(labID)
+	if err != nil {
+		return nil, fmt.Errorf("list programs: %w", err)
+	}
+
+	ops, warnings := planChanges(base, res, programs)
+
+	var newAllocs []model.Allocation
+	for _, a := range res.Allocations {
+		if builder.IsNewAllocation(a) {
+			newAllocs = append(newAllocs, a)
+		}
+	}
+
 	plan := &model.Plan{
 		ID:             model.NewID("plan"),
 		LabID:          lab.Meta.ID,
 		BaseGeneration: lab.Meta.Generation,
 		NewGeneration:  lab.Meta.Generation + 1,
 		State:          model.PlanPending,
-		Allocations:    res.Allocations,
+		Operations:     ops,
+		Allocations:    newAllocs,
+		Warnings:       warnings,
 		CreatedAt:      time.Now().UTC(),
-	}
-
-	for _, n := range res.Nodes {
-		summary := fmt.Sprintf("%s (%s)", n.Meta.Name, n.Spec.Role)
-		if n.Spec.IsRouter() {
-			summary = fmt.Sprintf("%s (%s, AS%d, lo %s)", n.Meta.Name, n.Spec.Role, n.Spec.ASN, n.Spec.Loopback)
-		}
-
-		plan.Operations = append(plan.Operations, model.PlanOperation{
-			Type: model.PlanCreateNode, Target: n.Meta.Name, Summary: summary,
-		})
-	}
-
-	for _, l := range res.Links {
-		plan.Operations = append(plan.Operations, model.PlanOperation{
-			Type:   model.PlanCreateLink,
-			Target: l.Meta.Name,
-			Summary: fmt.Sprintf("%s:%s (%s) <-> %s:%s (%s)",
-				l.Spec.EndpointA.NodeName, l.Spec.EndpointA.Interface, l.Spec.EndpointA.Address,
-				l.Spec.EndpointB.NodeName, l.Spec.EndpointB.Interface, l.Spec.EndpointB.Address),
-		})
 	}
 
 	plan.Operations = append(plan.Operations,
@@ -111,9 +151,9 @@ func (uc *PlanUsecase) CreatePlan(labID string) (*model.Plan, error) {
 		model.PlanOperation{Type: model.PlanDeployTopology, Target: lab.Meta.Name, Summary: "deploy topology via " + uc.driver.Name()},
 	)
 
-	// The first release replaces the whole desired topology per plan;
-	// desired state is persisted at plan time so the plan is exactly
-	// what apply will deploy.
+	// Desired state is persisted at plan time so the plan is exactly
+	// what apply will deploy; the persisted allocation set is the full
+	// one, not the diff — it seeds the next rebuild's restore.
 	if err := uc.repo.ReplaceTopology(lab.Meta.ID, res.Nodes, res.Links, res.Allocations); err != nil {
 		return nil, fmt.Errorf("persist desired topology: %w", err)
 	}
@@ -133,9 +173,147 @@ func (uc *PlanUsecase) CreatePlan(labID string) (*model.Plan, error) {
 // GetPlan returns one plan by ID.
 func (uc *PlanUsecase) GetPlan(id string) (*model.Plan, error) { return uc.repo.GetPlan(id) }
 
-// ListGenerations returns the stored generation numbers of a lab.
-func (uc *PlanUsecase) ListGenerations(labID string) ([]int64, error) {
+// ListGenerations returns the retained generation snapshots of a lab,
+// newest first.
+func (uc *PlanUsecase) ListGenerations(labID string) ([]GenerationInfo, error) {
 	return uc.repo.ListGenerations(labID)
+}
+
+// CreateRollbackPlan creates a plan whose desired state is a retained
+// generation snapshot. It goes through the same diff preview and
+// (incremental) apply as any other plan; generation numbers keep
+// increasing — a rollback is a roll-forward to old content. Programs
+// pruned by an earlier scale-in are not resurrected: the rollback
+// restores the network, not the workloads that lived on it.
+func (uc *PlanUsecase) CreateRollbackPlan(labID string, generation int64) (*model.Plan, error) {
+	lab, err := uc.repo.GetLab(labID)
+	if err != nil {
+		return nil, fmt.Errorf("get lab: %w", err)
+	}
+
+	if lab.Meta.Generation == 0 {
+		return nil, fmt.Errorf("lab %q has no deployed generation to roll back from", lab.Meta.Name)
+	}
+
+	if generation == lab.Meta.Generation {
+		return nil, fmt.Errorf("generation %d is already deployed", generation)
+	}
+
+	target, err := uc.repo.GetGeneration(labID, generation)
+	if err != nil {
+		return nil, fmt.Errorf("load generation %d: %w", generation, err)
+	}
+
+	baseSnap, err := uc.repo.GetGeneration(labID, lab.Meta.Generation)
+	if err != nil {
+		return nil, fmt.Errorf("load deployed generation %d: %w", lab.Meta.Generation, err)
+	}
+
+	base := &topology.Base{Nodes: baseSnap.Nodes, Links: baseSnap.Links}
+	res := &topology.Result{
+		Nodes:       target.Nodes,
+		Links:       target.Links,
+		Allocations: topology.DeriveAllocations(target.Nodes, target.Links),
+	}
+
+	curNodes, err := uc.repo.ListNodes(labID)
+	if err != nil {
+		return nil, fmt.Errorf("list nodes: %w", err)
+	}
+
+	curLinks, err := uc.repo.ListLinks(labID)
+	if err != nil {
+		return nil, fmt.Errorf("list links: %w", err)
+	}
+
+	carryOverIdentity(res, curNodes, curLinks)
+	resetReAddedResources(res, curNodes, curLinks)
+
+	programs, err := uc.repo.ListPrograms(labID)
+	if err != nil {
+		return nil, fmt.Errorf("list programs: %w", err)
+	}
+
+	ops, warnings := planChanges(base, res, programs)
+
+	baseHeld := make(map[string]bool)
+	for _, a := range topology.DeriveAllocations(base.Nodes, base.Links) {
+		baseHeld[a.Pool+"|"+a.Owner] = true
+	}
+
+	var newAllocs []model.Allocation
+	for _, a := range res.Allocations {
+		if !baseHeld[a.Pool+"|"+a.Owner] {
+			newAllocs = append(newAllocs, a)
+		}
+	}
+
+	plan := &model.Plan{
+		ID:             model.NewID("plan"),
+		LabID:          lab.Meta.ID,
+		BaseGeneration: lab.Meta.Generation,
+		NewGeneration:  lab.Meta.Generation + 1,
+		State:          model.PlanPending,
+		Operations:     ops,
+		Allocations:    newAllocs,
+		Warnings:       warnings,
+		CreatedAt:      time.Now().UTC(),
+	}
+
+	plan.Operations = append(plan.Operations,
+		model.PlanOperation{Type: model.PlanRenderConfig, Target: lab.Meta.Name, Summary: "render FRR and Containerlab artifacts"},
+		model.PlanOperation{Type: model.PlanDeployTopology, Target: lab.Meta.Name, Summary: "deploy topology via " + uc.driver.Name()},
+	)
+
+	if err := uc.repo.ReplaceTopology(lab.Meta.ID, res.Nodes, res.Links, res.Allocations); err != nil {
+		return nil, fmt.Errorf("persist desired topology: %w", err)
+	}
+
+	if err := uc.repo.CreatePlan(plan); err != nil {
+		return nil, fmt.Errorf("persist plan: %w", err)
+	}
+
+	// The spec must follow the snapshot so the next regular plan
+	// rebuilds the rolled-back shape instead of re-applying the
+	// current one.
+	lab.Spec = target.Lab.Spec
+	lab.Meta.Phase = model.PhasePlanning
+	if err := uc.repo.UpdateLab(lab); err != nil {
+		return nil, fmt.Errorf("update lab: %w", err)
+	}
+
+	return plan, nil
+}
+
+// resetReAddedResources clears the snapshot-era runtime identity of
+// nodes and links a rollback brings back: their containers do not
+// exist yet, so they start Pending like any other planned creation.
+func resetReAddedResources(res *topology.Result, curNodes []*model.Node, curLinks []*model.Link) {
+	nodeExists := make(map[string]bool, len(curNodes))
+	for _, n := range curNodes {
+		nodeExists[n.Meta.Name] = true
+	}
+
+	linkExists := make(map[string]bool, len(curLinks))
+	for _, l := range curLinks {
+		linkExists[l.Meta.Name] = true
+	}
+
+	for _, n := range res.Nodes {
+		if !nodeExists[n.Meta.Name] {
+			n.Meta.Phase = model.PhasePending
+			n.Meta.ObservedGeneration = 0
+			n.Status = model.NodeStatus{}
+		}
+	}
+
+	for _, l := range res.Links {
+		if !linkExists[l.Meta.Name] {
+			l.Meta.Phase = model.PhasePending
+			l.Meta.ObservedGeneration = 0
+			l.Status = model.LinkStatus{}
+		}
+	}
 }
 
 // ApplyPlan compiles artifacts, saves the generation snapshot and
@@ -168,6 +346,17 @@ func (uc *PlanUsecase) ApplyPlan(planID string) (*model.Operation, error) {
 	links, err := uc.repo.ListLinks(lab.Meta.ID)
 	if err != nil {
 		return nil, fmt.Errorf("list links: %w", err)
+	}
+
+	// A first apply deploys from scratch; every later one is applied
+	// incrementally against the deployed generation, so unchanged
+	// containers are never restarted.
+	var baseSnap *DesiredStateSnapshot
+	if plan.BaseGeneration > 0 {
+		baseSnap, err = uc.repo.GetGeneration(lab.Meta.ID, plan.BaseGeneration)
+		if err != nil {
+			return nil, fmt.Errorf("load deployed generation %d: %w", plan.BaseGeneration, err)
+		}
 	}
 
 	op, err := uc.ops.Create(lab.Meta.ID, model.OperationApplyPlan, model.ResourceRef{Type: "plan", ID: planID})
@@ -217,7 +406,34 @@ func (uc *PlanUsecase) ApplyPlan(planID string) (*model.Operation, error) {
 				&DesiredStateSnapshot{Lab: lab, Nodes: nodes, Links: links})
 		}},
 		{Name: "DeployTopology", Fn: func(ctx context.Context) error {
-			return uc.driver.Deploy(ctx, genDir)
+			if baseSnap == nil {
+				return uc.driver.Deploy(ctx, genDir)
+			}
+
+			base := &topology.Base{Nodes: baseSnap.Nodes, Links: baseSnap.Links}
+			inc, err := buildIncrement(lab.Meta.Name, base, nodes, links,
+				generationDir(uc.dataDir, lab.Meta.ID, plan.BaseGeneration), genDir)
+			if err != nil {
+				return err
+			}
+
+			if err := writeIncrement(inc, genDir); err != nil {
+				return err
+			}
+
+			if inc.Empty() {
+				return nil
+			}
+
+			return uc.driver.DeployIncrement(ctx, genDir)
+		}},
+		// A scale-in leaves records pointing at resources that no
+		// longer exist: programs on removed servers, traffic scenarios
+		// that lost an endpoint, faults on removed targets. Clean them
+		// up before program restore so nothing tries to reach the dead
+		// agents.
+		{Name: "PruneRemovedResources", Fn: func(ctx context.Context) error {
+			return uc.pruneRemovedResources(ctx, lab, baseSnap, nodes, links)
 		}},
 		{Name: "ConnectInternet", Fn: func(ctx context.Context) error {
 			return uc.connectInternet(ctx, lab, nodes)
@@ -230,15 +446,19 @@ func (uc *PlanUsecase) ApplyPlan(planID string) (*model.Operation, error) {
 		}},
 		// Fresh server containers boot without the capture tool (it is
 		// not baked into their image); deliver it through the package
-		// repository so server-side capture works like on switches.
+		// repository so server-side capture works like on switches. An
+		// incremental apply scopes both this and the program restore
+		// to the servers it created: the surviving agents kept their
+		// packages and running programs (whose reinstall the agent
+		// would refuse anyway).
 		{Name: "InstallCaptureTool", Fn: func(ctx context.Context) error {
-			return uc.programs.InstallCaptureTool(ctx, lab, nodes)
+			return uc.programs.InstallCaptureTool(ctx, lab, restoreScope(baseSnap, nodes))
 		}},
-		// Redeploying wipes the server containers and everything the
-		// agents were running; push the persisted program desired
+		// A full redeploy wipes the server containers and everything
+		// the agents were running; push the persisted program desired
 		// state back onto the fresh agents.
 		{Name: "RestorePrograms", Fn: func(ctx context.Context) error {
-			return uc.programs.RestorePrograms(ctx, lab, nodes)
+			return uc.programs.RestorePrograms(ctx, lab, restoreScope(baseSnap, nodes))
 		}},
 	}...)
 
@@ -342,6 +562,56 @@ func (uc *PlanUsecase) RepairLab(labID string) (*model.Operation, error) {
 	})
 
 	return op, nil
+}
+
+// pruneRemovedResources drops the records that reference nodes or
+// links a plan removed. Traffic scenarios go first through their
+// regular delete (stopping the surviving endpoint's program on its
+// live agent), then the remaining programs of removed servers and the
+// faults on removed targets are cleaned up record-only.
+func (uc *PlanUsecase) pruneRemovedResources(ctx context.Context, lab *model.Lab,
+	baseSnap *DesiredStateSnapshot, nodes []*model.Node, links []*model.Link) error {
+	if baseSnap == nil {
+		return nil
+	}
+
+	nodeKept := make(map[string]bool, len(nodes))
+	for _, n := range nodes {
+		nodeKept[n.Meta.Name] = true
+	}
+
+	linkKept := make(map[string]bool, len(links))
+	for _, l := range links {
+		linkKept[l.Meta.Name] = true
+	}
+
+	removedNodes := make(map[string]bool)
+	for _, n := range baseSnap.Nodes {
+		if !nodeKept[n.Meta.Name] {
+			removedNodes[n.Meta.Name] = true
+		}
+	}
+
+	removedLinks := make(map[string]bool)
+	for _, l := range baseSnap.Links {
+		if !linkKept[l.Meta.Name] {
+			removedLinks[l.Meta.Name] = true
+		}
+	}
+
+	if len(removedNodes) == 0 && len(removedLinks) == 0 {
+		return nil
+	}
+
+	if err := uc.traffic.PruneForRemovedServers(ctx, lab.Meta.ID, removedNodes); err != nil {
+		return err
+	}
+
+	if err := uc.programs.PruneServerPrograms(lab.Meta.ID, removedNodes); err != nil {
+		return err
+	}
+
+	return uc.faults.PruneForRemovedTargets(lab.Meta.ID, removedNodes, removedLinks)
 }
 
 // connectInternet attaches every external router to the WAN network

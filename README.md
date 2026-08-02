@@ -26,6 +26,7 @@ Apply  编译 FRR 配置 + Containerlab 拓扑 → 写入 Generation 快照 → 
 **声明式网络编排**
 
 - Lab → Plan → Apply 三段式变更：先预览后落地，Generation 快照可追溯；IPAM 与按角色分段的 ASN 分配器自动编址。
+- 可视化扩缩容与版本回滚：拓扑图上右键点哪扩哪（加 Pod / 加机柜 / 调 Server 数），改动即刻以幽灵设备（绿色虚线）与待删标红画在图上，确认后 Plan 给出精确 diff 预览（新增/变更/删除分组 + 影响预警），Apply 增量执行——存量设备零重启、地址与编号永不重排；Generation 历史一键回滚，同样走 diff 预览与增量应用。
 - 资源模型是唯一事实来源，FRR 配置与 Containerlab 拓扑 YAML 全部为编译产物（Golden 测试保障）。
 
 **真实协议栈与接入模型**
@@ -201,4 +202,4 @@ proto 依赖（`google/api` 注解）由 buf 从 BSR 拉取并经 `buf.lock` 锁
 
 ## Roadmap
 
-按设计文档迭代顺序推进：Daemon 框架与 Pingmesh、Package 格式扩展（deb/OCI）与镜像预装通道、可视化扩容与 Rollback、VPC/VXLAN、EIP。
+按设计文档迭代顺序推进：Daemon 框架与 Pingmesh、Package 格式扩展（deb/OCI）与镜像预装通道、VPC/VXLAN、EIP。

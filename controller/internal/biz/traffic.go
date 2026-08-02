@@ -396,6 +396,33 @@ func (uc *TrafficUsecase) ListTrafficScenarios(labID string) ([]*model.TrafficSc
 	return uc.repo.ListTrafficScenarios(labID)
 }
 
+// PruneForRemovedServers deletes every scenario that lost an endpoint
+// to a scale-in: a client without its server (or vice versa) only
+// produces failure noise. Deletion goes through the regular path, so
+// the surviving endpoint's program is stopped and removed from its
+// live agent while the removed side falls back to a record-only
+// delete.
+func (uc *TrafficUsecase) PruneForRemovedServers(ctx context.Context, labID string, removedServers map[string]bool) error {
+	scenarios, err := uc.repo.ListTrafficScenarios(labID)
+	if err != nil {
+		return fmt.Errorf("list traffic scenarios: %w", err)
+	}
+
+	for _, s := range scenarios {
+		if !removedServers[s.Spec.SourceServerName] && !removedServers[s.Spec.DestServerName] {
+			continue
+		}
+
+		if err := uc.DeleteTrafficScenario(ctx, labID, s.Meta.ID); err != nil {
+			return fmt.Errorf("delete traffic scenario %s: %w", s.Meta.Name, err)
+		}
+
+		uc.log.Info("pruned traffic scenario of removed server", "scenario", s.Meta.Name)
+	}
+
+	return nil
+}
+
 // TrafficScenarioHistory returns the collected points of one scenario
 // within [start, end]; a zero end defaults to now, a zero start to
 // end minus 30 minutes.

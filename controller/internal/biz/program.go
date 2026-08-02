@@ -724,7 +724,9 @@ func (uc *ProgramUsecase) GetProgramLogs(ctx context.Context, labID, id string, 
 
 // RestorePrograms pushes the persisted program desired state back
 // onto the (fresh) agents after a deploy: install packages and
-// programs, start what is desired running. Called as an apply step.
+// programs, start what is desired running. Called as an apply step;
+// nodes is the restore scope — every node after a full redeploy, only
+// the freshly created ones after an incremental apply.
 func (uc *ProgramUsecase) RestorePrograms(ctx context.Context, lab *model.Lab, nodes []*model.Node) error {
 	programs, err := uc.repo.ListPrograms(lab.Meta.ID)
 	if err != nil {
@@ -746,9 +748,9 @@ func (uc *ProgramUsecase) RestorePrograms(ctx context.Context, lab *model.Lab, n
 		return programs[i].Meta.Name < programs[j].Meta.Name
 	})
 
-	// Every plan rebuilds the topology with fresh node IDs; the
-	// stable server identity across generations is its name, so
-	// programs re-bind by name and pick up the new ID.
+	// The stable server identity across generations is its name, so
+	// programs re-bind by name and pick up the current ID (plans keep
+	// IDs of surviving nodes, but a re-added server is a new row).
 	byName := make(map[string]*model.Node, len(nodes))
 	for _, n := range nodes {
 		byName[n.Meta.Name] = n
@@ -757,9 +759,11 @@ func (uc *ProgramUsecase) RestorePrograms(ctx context.Context, lab *model.Lab, n
 	for _, p := range programs {
 		server, ok := byName[p.Spec.ServerName]
 		if !ok || server.Spec.Role != model.RoleServer {
-			// The plan removed the server; the program is orphaned but
-			// kept so the user can see and delete it.
-			uc.log.Warn("program server gone after apply", "program", p.Meta.Name, "server", p.Spec.ServerName)
+			// Outside the restore scope: on a full redeploy the plan
+			// removed the server; on an incremental apply the program
+			// lives on a surviving server whose agent was never
+			// touched and needs no restore.
+			uc.log.Debug("program outside restore scope", "program", p.Meta.Name, "server", p.Spec.ServerName)
 
 			continue
 		}
@@ -772,6 +776,30 @@ func (uc *ProgramUsecase) RestorePrograms(ctx context.Context, lab *model.Lab, n
 		if err := uc.repo.UpdateProgram(p); err != nil {
 			return fmt.Errorf("update program: %w", err)
 		}
+	}
+
+	return nil
+}
+
+// PruneServerPrograms deletes the program records of servers a plan
+// removed. Their agents died with the containers, so only the
+// controller-side rows are cleaned up — there is no agent to talk to.
+func (uc *ProgramUsecase) PruneServerPrograms(labID string, removedServers map[string]bool) error {
+	programs, err := uc.repo.ListPrograms(labID)
+	if err != nil {
+		return fmt.Errorf("list programs: %w", err)
+	}
+
+	for _, p := range programs {
+		if !removedServers[p.Spec.ServerName] {
+			continue
+		}
+
+		if err := uc.repo.DeleteProgram(p.Meta.ID); err != nil {
+			return fmt.Errorf("delete program %s: %w", p.Meta.Name, err)
+		}
+
+		uc.log.Info("pruned program of removed server", "program", p.Meta.Name, "server", p.Spec.ServerName)
 	}
 
 	return nil

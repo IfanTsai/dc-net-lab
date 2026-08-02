@@ -485,6 +485,35 @@ func (uc *FaultUsecase) ListFaultScenarios(labID string) ([]*model.FaultScenario
 	return uc.repo.ListFaultScenarios(labID)
 }
 
+// PruneForRemovedTargets deletes fault records whose target node or
+// link a plan removed. Recovery is skipped deliberately: the faulted
+// interfaces and containers died with the scale-in, so there is
+// nothing left to restore — going through the regular delete would
+// fail trying to recover into a container that no longer exists.
+func (uc *FaultUsecase) PruneForRemovedTargets(labID string, removedNodes, removedLinks map[string]bool) error {
+	scenarios, err := uc.repo.ListFaultScenarios(labID)
+	if err != nil {
+		return fmt.Errorf("list fault scenarios: %w", err)
+	}
+
+	for _, s := range scenarios {
+		t := s.Spec.Target
+		nodeGone := t.Kind == model.FaultTargetNode && removedNodes[t.NodeName]
+		linkGone := t.Kind == model.FaultTargetLink && removedLinks[t.LinkName]
+		if !nodeGone && !linkGone {
+			continue
+		}
+
+		if err := uc.repo.DeleteFaultScenario(s.Meta.ID); err != nil {
+			return fmt.Errorf("delete fault scenario %s: %w", s.Meta.Name, err)
+		}
+
+		uc.log.Info("pruned fault scenario of removed target", "scenario", s.Meta.Name)
+	}
+
+	return nil
+}
+
 // get loads a scenario of the lab, translating a lab mismatch into
 // ErrNotFound like the traffic usecase does.
 func (uc *FaultUsecase) get(labID, id string) (*model.FaultScenario, error) {

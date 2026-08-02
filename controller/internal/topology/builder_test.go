@@ -15,7 +15,7 @@ func buildProfile(t *testing.T, profile model.ProfileName) *Result {
 		ASNs:     DefaultASNRanges(),
 	}
 
-	b, err := NewBuilder("lab-test", spec)
+	b, err := NewBuilder("lab-test", spec, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

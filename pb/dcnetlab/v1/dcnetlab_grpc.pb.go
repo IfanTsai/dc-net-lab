@@ -32,6 +32,8 @@ const (
 	DCNetLab_StartLab_FullMethodName                  = "/dcnetlab.v1.DCNetLab/StartLab"
 	DCNetLab_StopLab_FullMethodName                   = "/dcnetlab.v1.DCNetLab/StopLab"
 	DCNetLab_RepairLab_FullMethodName                 = "/dcnetlab.v1.DCNetLab/RepairLab"
+	DCNetLab_UpdateLabTopology_FullMethodName         = "/dcnetlab.v1.DCNetLab/UpdateLabTopology"
+	DCNetLab_RollbackLab_FullMethodName               = "/dcnetlab.v1.DCNetLab/RollbackLab"
 	DCNetLab_ListNodes_FullMethodName                 = "/dcnetlab.v1.DCNetLab/ListNodes"
 	DCNetLab_ListLinks_FullMethodName                 = "/dcnetlab.v1.DCNetLab/ListLinks"
 	DCNetLab_ListAllocations_FullMethodName           = "/dcnetlab.v1.DCNetLab/ListAllocations"
@@ -109,6 +111,15 @@ type DCNetLabClient interface {
 	// against the lab's current generation, so already-running
 	// containers and their programs are left untouched.
 	RepairLab(ctx context.Context, in *RepairLabRequest, opts ...grpc.CallOption) (*OperationRef, error)
+	// UpdateLabTopology changes the desired fabric shape (scale out /
+	// scale in). It only edits the spec: the change materialises through
+	// the regular Plan (diff preview) / Apply (incremental deploy) flow.
+	UpdateLabTopology(ctx context.Context, in *UpdateLabTopologyRequest, opts ...grpc.CallOption) (*Lab, error)
+	// RollbackLab creates a plan whose desired state is a retained
+	// generation snapshot. The returned plan previews the diff like any
+	// other and is applied through ApplyPlan; generation numbers keep
+	// increasing (roll-forward to old content).
+	RollbackLab(ctx context.Context, in *RollbackLabRequest, opts ...grpc.CallOption) (*Plan, error)
 	// --- Topology ---
 	ListNodes(ctx context.Context, in *ListNodesRequest, opts ...grpc.CallOption) (*ListNodesReply, error)
 	ListLinks(ctx context.Context, in *ListLinksRequest, opts ...grpc.CallOption) (*ListLinksReply, error)
@@ -325,6 +336,26 @@ func (c *dCNetLabClient) RepairLab(ctx context.Context, in *RepairLabRequest, op
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(OperationRef)
 	err := c.cc.Invoke(ctx, DCNetLab_RepairLab_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) UpdateLabTopology(ctx context.Context, in *UpdateLabTopologyRequest, opts ...grpc.CallOption) (*Lab, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Lab)
+	err := c.cc.Invoke(ctx, DCNetLab_UpdateLabTopology_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) RollbackLab(ctx context.Context, in *RollbackLabRequest, opts ...grpc.CallOption) (*Plan, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Plan)
+	err := c.cc.Invoke(ctx, DCNetLab_RollbackLab_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -883,6 +914,15 @@ type DCNetLabServer interface {
 	// against the lab's current generation, so already-running
 	// containers and their programs are left untouched.
 	RepairLab(context.Context, *RepairLabRequest) (*OperationRef, error)
+	// UpdateLabTopology changes the desired fabric shape (scale out /
+	// scale in). It only edits the spec: the change materialises through
+	// the regular Plan (diff preview) / Apply (incremental deploy) flow.
+	UpdateLabTopology(context.Context, *UpdateLabTopologyRequest) (*Lab, error)
+	// RollbackLab creates a plan whose desired state is a retained
+	// generation snapshot. The returned plan previews the diff like any
+	// other and is applied through ApplyPlan; generation numbers keep
+	// increasing (roll-forward to old content).
+	RollbackLab(context.Context, *RollbackLabRequest) (*Plan, error)
 	// --- Topology ---
 	ListNodes(context.Context, *ListNodesRequest) (*ListNodesReply, error)
 	ListLinks(context.Context, *ListLinksRequest) (*ListLinksReply, error)
@@ -1055,6 +1095,12 @@ func (UnimplementedDCNetLabServer) StopLab(context.Context, *StopLabRequest) (*O
 }
 func (UnimplementedDCNetLabServer) RepairLab(context.Context, *RepairLabRequest) (*OperationRef, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RepairLab not implemented")
+}
+func (UnimplementedDCNetLabServer) UpdateLabTopology(context.Context, *UpdateLabTopologyRequest) (*Lab, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateLabTopology not implemented")
+}
+func (UnimplementedDCNetLabServer) RollbackLab(context.Context, *RollbackLabRequest) (*Plan, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RollbackLab not implemented")
 }
 func (UnimplementedDCNetLabServer) ListNodes(context.Context, *ListNodesRequest) (*ListNodesReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListNodes not implemented")
@@ -1358,6 +1404,42 @@ func _DCNetLab_RepairLab_Handler(srv interface{}, ctx context.Context, dec func(
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DCNetLabServer).RepairLab(ctx, req.(*RepairLabRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_UpdateLabTopology_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateLabTopologyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).UpdateLabTopology(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_UpdateLabTopology_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).UpdateLabTopology(ctx, req.(*UpdateLabTopologyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_RollbackLab_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RollbackLabRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).RollbackLab(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_RollbackLab_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).RollbackLab(ctx, req.(*RollbackLabRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2350,6 +2432,14 @@ var DCNetLab_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RepairLab",
 			Handler:    _DCNetLab_RepairLab_Handler,
+		},
+		{
+			MethodName: "UpdateLabTopology",
+			Handler:    _DCNetLab_UpdateLabTopology_Handler,
+		},
+		{
+			MethodName: "RollbackLab",
+			Handler:    _DCNetLab_RollbackLab_Handler,
 		},
 		{
 			MethodName: "ListNodes",

@@ -203,10 +203,7 @@ func leafExec(n *model.Node, access, trunk []string) []string {
 	}
 
 	for _, p := range access {
-		cmds = append(cmds,
-			fmt.Sprintf("ip link set %s master br0", p),
-			fmt.Sprintf("bridge vlan add dev %s vid %d pvid untagged", p, vid),
-		)
+		cmds = append(cmds, AccessPortAttach(p, vid)...)
 	}
 
 	for _, p := range trunk {
@@ -236,6 +233,17 @@ func leafExec(n *model.Node, access, trunk []string) []string {
 	}
 
 	return cmds
+}
+
+// AccessPortAttach returns the commands attaching one server-facing
+// access port to a leaf's VLAN bridge. Shared between the full exec
+// list rendered at compile time and the delta commands an incremental
+// deploy runs on a surviving leaf that gained a server port.
+func AccessPortAttach(iface string, vlanID int) []string {
+	return []string{
+		fmt.Sprintf("ip link set %s master br0", iface),
+		fmt.Sprintf("bridge vlan add dev %s vid %d pvid untagged", iface, vlanID),
+	}
 }
 
 // fabricSupernet mirrors topology.DefaultPools: every simulated

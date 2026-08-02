@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { CaptureFilter, CapturePacketDetail, CaptureSession, FaultImpairment, FaultScenario, FaultTarget, HealthCheck, Lab, Link, MetricsPoint, MTRPathScan, Node, NodeBGP, NodeBGPTable, NodeInventory, NodeMetrics, NodeMTR, NodeRoutes, NodeRuntime, Operation, Package, Plan, ProfileInfo, Program, ProgramOpResult, ServerInstallResult, TopologySpec, TrafficAssertion, TrafficPoint, TrafficScenario } from '../types/models'
+import type { CaptureFilter, CapturePacketDetail, CaptureSession, FaultImpairment, FaultScenario, FaultTarget, GenerationInfo, HealthCheck, Lab, Link, MetricsPoint, MTRPathScan, Node, NodeBGP, NodeBGPTable, NodeInventory, NodeMetrics, NodeMTR, NodeRoutes, NodeRuntime, Operation, Package, Plan, ProfileInfo, Program, ProgramOpResult, ServerInstallResult, TopologySpec, TrafficAssertion, TrafficPoint, TrafficScenario } from '../types/models'
 
 const base = '/api/v1'
 
@@ -29,8 +29,12 @@ export const labApi = {
   operations: (id: string) =>
     api.get<{ operations: Operation[] }>(`${base}/labs/${id}/operations`).then((r) => r.operations),
   generations: (id: string) =>
-    // int64 fields are strings in protobuf JSON.
-    api.get<{ generations: string[] }>(`${base}/labs/${id}/generations`).then((r) => r.generations),
+    api.get<{ generations: GenerationInfo[] }>(`${base}/labs/${id}/generations`).then((r) => r.generations ?? []),
+  updateTopology: (id: string, topology: TopologySpec) =>
+    api.put<Lab>(`${base}/labs/${id}/topology`, { topology }),
+  // int64 fields are strings in protobuf JSON.
+  rollback: (id: string, generation: string) =>
+    api.post<Plan>(`${base}/labs/${id}/rollback`, { generation }),
 
   start: (id: string) => api.post<{ operationId: string }>(`${base}/labs/${id}/start`),
   stop: (id: string) => api.post<{ operationId: string }>(`${base}/labs/${id}/stop`),

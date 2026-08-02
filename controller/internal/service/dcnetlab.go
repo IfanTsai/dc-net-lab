@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -123,6 +124,29 @@ func (s *DCNetLabService) RepairLab(ctx context.Context, req *v1.RepairLabReques
 	}
 
 	return &v1.OperationRef{OperationId: op.ID}, nil
+}
+
+func (s *DCNetLabService) UpdateLabTopology(ctx context.Context, req *v1.UpdateLabTopologyRequest) (*v1.Lab, error) {
+	topo := topologySpecToModel(req.Topology)
+	if topo == nil {
+		return nil, asAPIError(fmt.Errorf("topology is required"))
+	}
+
+	lab, err := s.labs.UpdateTopology(req.LabId, *topo)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return labToPB(lab), nil
+}
+
+func (s *DCNetLabService) RollbackLab(ctx context.Context, req *v1.RollbackLabRequest) (*v1.Plan, error) {
+	plan, err := s.plans.CreateRollbackPlan(req.LabId, req.Generation)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return planToPB(plan), nil
 }
 
 func (s *DCNetLabService) StartNode(ctx context.Context, req *v1.StartNodeRequest) (*v1.Node, error) {
@@ -740,16 +764,28 @@ func (s *DCNetLabService) ListOperations(ctx context.Context, req *v1.ListOperat
 }
 
 func (s *DCNetLabService) ListGenerations(ctx context.Context, req *v1.ListGenerationsRequest) (*v1.ListGenerationsReply, error) {
+	lab, err := s.labs.GetLab(req.LabId)
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
 	gens, err := s.plans.ListGenerations(req.LabId)
 	if err != nil {
 		return nil, asAPIError(err)
 	}
 
-	if gens == nil {
-		gens = []int64{}
+	reply := &v1.ListGenerationsReply{Generations: make([]*v1.GenerationInfo, 0, len(gens))}
+	for _, g := range gens {
+		reply.Generations = append(reply.Generations, &v1.GenerationInfo{
+			Generation: g.Generation,
+			CreatedAt:  timePB(g.CreatedAt),
+			NodeCount:  int32(g.NodeCount),
+			LinkCount:  int32(g.LinkCount),
+			Deployed:   g.Generation == lab.Meta.Generation,
+		})
 	}
 
-	return &v1.ListGenerationsReply{Generations: gens}, nil
+	return reply, nil
 }
 
 // --- Profiles & health ---

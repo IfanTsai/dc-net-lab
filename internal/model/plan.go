@@ -7,6 +7,7 @@ type PlanOperationType string
 
 const (
 	PlanCreateNode      PlanOperationType = "CreateNode"
+	PlanUpdateNode      PlanOperationType = "UpdateNode"
 	PlanDeleteNode      PlanOperationType = "DeleteNode"
 	PlanCreateLink      PlanOperationType = "CreateLink"
 	PlanDeleteLink      PlanOperationType = "DeleteLink"

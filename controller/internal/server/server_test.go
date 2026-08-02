@@ -82,13 +82,13 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 	history := metrics.NewHistory(dc, log)
 	t.Cleanup(history.Close)
 	programs := biz.NewProgramUsecase(d, data.NewProgramAgent(runtime.NoopDriver{}, log), runtime.NoopDriver{}, packages, history, sc, log)
-	plans := biz.NewPlanUsecase(d, ops, runtime.NoopDriver{}, programs, dc, log)
 	opsUC := biz.NewOperationUsecase(d, log)
 	power := biz.NewPowerUsecase(d, ops, runtime.NoopDriver{}, log)
 	rt := biz.NewRuntimeUsecase(d, d, runtime.NoopDriver{}, log)
 	trafficHistory := traffic.NewHistory()
 	trafficUC := biz.NewTrafficUsecase(d, programs, trafficHistory, log)
 	faultUC := biz.NewFaultUsecase(d, power, runtime.NoopDriver{}, log)
+	plans := biz.NewPlanUsecase(d, ops, runtime.NoopDriver{}, programs, trafficUC, faultUC, dc, log)
 	captureMgr := capture.NewManager(runtime.NoopDriver{}, dataDir, log)
 	captureUC, err := biz.NewCaptureUsecase(d, captureMgr, log)
 	if err != nil {
@@ -222,11 +222,23 @@ func TestLabLifecycle(t *testing.T) {
 		t.Errorf("frr configs: %d, want 9", len(matches))
 	}
 
-	// Generation snapshot is stored (int64 = string on the wire).
-	gens := doJSON[map[string][]string](t, "GET",
+	// Generation snapshot is stored (int64 = string on the wire) and
+	// summarised with its topology size and deployed marker.
+	type wireGeneration struct {
+		Generation string `json:"generation"`
+		NodeCount  int    `json:"nodeCount"`
+		LinkCount  int    `json:"linkCount"`
+		Deployed   bool   `json:"deployed"`
+	}
+
+	gens := doJSON[map[string][]wireGeneration](t, "GET",
 		fmt.Sprintf("%s/labs/%s/generations", base, lab.Meta.ID), nil, http.StatusOK)
-	if len(gens["generations"]) != 1 || gens["generations"][0] != "1" {
+	if len(gens["generations"]) != 1 || gens["generations"][0].Generation != "1" {
 		t.Errorf("generations: %v", gens)
+	}
+
+	if g := gens["generations"][0]; !g.Deployed || g.NodeCount != 9 || g.LinkCount != 13 {
+		t.Errorf("generation summary: %+v", g)
 	}
 
 	// Applying the same plan twice is rejected with a Kratos error.

@@ -67,6 +67,7 @@ const OperationDCNetLabListPrograms = "/dcnetlab.v1.DCNetLab/ListPrograms"
 const OperationDCNetLabListTrafficScenarios = "/dcnetlab.v1.DCNetLab/ListTrafficScenarios"
 const OperationDCNetLabRecoverFaultScenario = "/dcnetlab.v1.DCNetLab/RecoverFaultScenario"
 const OperationDCNetLabRepairLab = "/dcnetlab.v1.DCNetLab/RepairLab"
+const OperationDCNetLabRollbackLab = "/dcnetlab.v1.DCNetLab/RollbackLab"
 const OperationDCNetLabScanMTRPaths = "/dcnetlab.v1.DCNetLab/ScanMTRPaths"
 const OperationDCNetLabStartLab = "/dcnetlab.v1.DCNetLab/StartLab"
 const OperationDCNetLabStartNode = "/dcnetlab.v1.DCNetLab/StartNode"
@@ -77,6 +78,7 @@ const OperationDCNetLabStopLab = "/dcnetlab.v1.DCNetLab/StopLab"
 const OperationDCNetLabStopNode = "/dcnetlab.v1.DCNetLab/StopNode"
 const OperationDCNetLabStopProgram = "/dcnetlab.v1.DCNetLab/StopProgram"
 const OperationDCNetLabStopTrafficScenario = "/dcnetlab.v1.DCNetLab/StopTrafficScenario"
+const OperationDCNetLabUpdateLabTopology = "/dcnetlab.v1.DCNetLab/UpdateLabTopology"
 const OperationDCNetLabUpgradeProgram = "/dcnetlab.v1.DCNetLab/UpgradeProgram"
 const OperationDCNetLabUploadPackage = "/dcnetlab.v1.DCNetLab/UploadPackage"
 
@@ -211,6 +213,11 @@ type DCNetLabHTTPServer interface {
 	// against the lab's current generation, so already-running
 	// containers and their programs are left untouched.
 	RepairLab(context.Context, *RepairLabRequest) (*OperationRef, error)
+	// RollbackLab RollbackLab creates a plan whose desired state is a retained
+	// generation snapshot. The returned plan previews the diff like any
+	// other and is applied through ApplyPlan; generation numbers keep
+	// increasing (roll-forward to old content).
+	RollbackLab(context.Context, *RollbackLabRequest) (*Plan, error)
 	// ScanMTRPaths ScanMTRPaths repeats an mtr probe several times to sample
 	// different ECMP branches: each run is a fresh process, so tcp/udp
 	// naturally gets a new ephemeral source port per run — the same
@@ -231,6 +238,10 @@ type DCNetLabHTTPServer interface {
 	StopNode(context.Context, *StopNodeRequest) (*Node, error)
 	StopProgram(context.Context, *ProgramOpRequest) (*Program, error)
 	StopTrafficScenario(context.Context, *TrafficScenarioOpRequest) (*TrafficScenario, error)
+	// UpdateLabTopology UpdateLabTopology changes the desired fabric shape (scale out /
+	// scale in). It only edits the spec: the change materialises through
+	// the regular Plan (diff preview) / Apply (incremental deploy) flow.
+	UpdateLabTopology(context.Context, *UpdateLabTopologyRequest) (*Lab, error)
 	UpgradeProgram(context.Context, *UpgradeProgramRequest) (*Program, error)
 	// UploadPackage --- Packages ---
 	// Packages are versioned program artifacts (tar.gz with a
@@ -249,6 +260,8 @@ func RegisterDCNetLabHTTPServer(s *http.Server, srv DCNetLabHTTPServer) {
 	r.POST("/api/v1/labs/{id}/start", _DCNetLab_StartLab0_HTTP_Handler(srv))
 	r.POST("/api/v1/labs/{id}/stop", _DCNetLab_StopLab0_HTTP_Handler(srv))
 	r.POST("/api/v1/labs/{id}/repair", _DCNetLab_RepairLab0_HTTP_Handler(srv))
+	r.PUT("/api/v1/labs/{lab_id}/topology", _DCNetLab_UpdateLabTopology0_HTTP_Handler(srv))
+	r.POST("/api/v1/labs/{lab_id}/rollback", _DCNetLab_RollbackLab0_HTTP_Handler(srv))
 	r.GET("/api/v1/labs/{lab_id}/nodes", _DCNetLab_ListNodes0_HTTP_Handler(srv))
 	r.GET("/api/v1/labs/{lab_id}/links", _DCNetLab_ListLinks0_HTTP_Handler(srv))
 	r.GET("/api/v1/labs/{lab_id}/allocations", _DCNetLab_ListAllocations0_HTTP_Handler(srv))
@@ -460,6 +473,56 @@ func _DCNetLab_RepairLab0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Con
 			return err
 		}
 		reply := out.(*OperationRef)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_UpdateLabTopology0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in UpdateLabTopologyRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabUpdateLabTopology)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.UpdateLabTopology(ctx, req.(*UpdateLabTopologyRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*Lab)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_RollbackLab0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in RollbackLabRequest
+		if err := ctx.Bind(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabRollbackLab)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.RollbackLab(ctx, req.(*RollbackLabRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*Plan)
 		return ctx.Result(200, reply)
 	}
 }
@@ -1806,6 +1869,11 @@ type DCNetLabHTTPClient interface {
 	// against the lab's current generation, so already-running
 	// containers and their programs are left untouched.
 	RepairLab(ctx context.Context, req *RepairLabRequest, opts ...http.CallOption) (rsp *OperationRef, err error)
+	// RollbackLab RollbackLab creates a plan whose desired state is a retained
+	// generation snapshot. The returned plan previews the diff like any
+	// other and is applied through ApplyPlan; generation numbers keep
+	// increasing (roll-forward to old content).
+	RollbackLab(ctx context.Context, req *RollbackLabRequest, opts ...http.CallOption) (rsp *Plan, err error)
 	// ScanMTRPaths ScanMTRPaths repeats an mtr probe several times to sample
 	// different ECMP branches: each run is a fresh process, so tcp/udp
 	// naturally gets a new ephemeral source port per run — the same
@@ -1826,6 +1894,10 @@ type DCNetLabHTTPClient interface {
 	StopNode(ctx context.Context, req *StopNodeRequest, opts ...http.CallOption) (rsp *Node, err error)
 	StopProgram(ctx context.Context, req *ProgramOpRequest, opts ...http.CallOption) (rsp *Program, err error)
 	StopTrafficScenario(ctx context.Context, req *TrafficScenarioOpRequest, opts ...http.CallOption) (rsp *TrafficScenario, err error)
+	// UpdateLabTopology UpdateLabTopology changes the desired fabric shape (scale out /
+	// scale in). It only edits the spec: the change materialises through
+	// the regular Plan (diff preview) / Apply (incremental deploy) flow.
+	UpdateLabTopology(ctx context.Context, req *UpdateLabTopologyRequest, opts ...http.CallOption) (rsp *Lab, err error)
 	UpgradeProgram(ctx context.Context, req *UpgradeProgramRequest, opts ...http.CallOption) (rsp *Program, err error)
 	// UploadPackage --- Packages ---
 	// Packages are versioned program artifacts (tar.gz with a
@@ -2549,6 +2621,23 @@ func (c *DCNetLabHTTPClientImpl) RepairLab(ctx context.Context, in *RepairLabReq
 	return &out, nil
 }
 
+// RollbackLab RollbackLab creates a plan whose desired state is a retained
+// generation snapshot. The returned plan previews the diff like any
+// other and is applied through ApplyPlan; generation numbers keep
+// increasing (roll-forward to old content).
+func (c *DCNetLabHTTPClientImpl) RollbackLab(ctx context.Context, in *RollbackLabRequest, opts ...http.CallOption) (*Plan, error) {
+	var out Plan
+	pattern := "/api/v1/labs/{lab_id}/rollback"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationDCNetLabRollbackLab))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // ScanMTRPaths ScanMTRPaths repeats an mtr probe several times to sample
 // different ECMP branches: each run is a fresh process, so tcp/udp
 // naturally gets a new ephemeral source port per run — the same
@@ -2683,6 +2772,22 @@ func (c *DCNetLabHTTPClientImpl) StopTrafficScenario(ctx context.Context, in *Tr
 	opts = append(opts, http.Operation(OperationDCNetLabStopTrafficScenario))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdateLabTopology UpdateLabTopology changes the desired fabric shape (scale out /
+// scale in). It only edits the spec: the change materialises through
+// the regular Plan (diff preview) / Apply (incremental deploy) flow.
+func (c *DCNetLabHTTPClientImpl) UpdateLabTopology(ctx context.Context, in *UpdateLabTopologyRequest, opts ...http.CallOption) (*Lab, error) {
+	var out Lab
+	pattern := "/api/v1/labs/{lab_id}/topology"
+	path := binding.EncodeURL(pattern, in, false)
+	opts = append(opts, http.Operation(OperationDCNetLabUpdateLabTopology))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "PUT", path, in, &out, opts...)
 	if err != nil {
 		return nil, err
 	}

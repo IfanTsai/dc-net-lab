@@ -13,7 +13,7 @@
 | Iteration 4 | Traffic | ✅ 已完成，含真实环境验证 |
 | Iteration 5 | 原生抓包（AF_PACKET） | ✅ 已完成，含真实环境验证（API 26 项 + Playwright 9 项断言全过，It. 6 的 Capture 联动一并补验） |
 | Iteration 6 | 故障实验 | ✅ 已完成，含真实环境验证（Link Down/Node Stop/Delay/Loss/Rate Limit/故障恢复/Traffic 联动均达成，Capture 联动已随 It. 5 补验） |
-| Iteration 7 | 扩容和 Generation Rollback | ⬜ 未开始（Generation 快照已就绪） |
+| Iteration 7 | 扩容和 Generation Rollback | ✅ 已完成，含真实环境验证（扩容/缩容/回滚 45 项 API 断言 + Playwright 8 项 UI 断言全过，存量设备全程零重启） |
 | Iteration 8 | Pingmesh 集成 | ⬜ 未开始 |
 | Iteration 9 | 虚拟网络（VPC/VXLAN） | ⬜ 未开始 |
 | Iteration 10 | EIP | ⬜ 未开始 |
@@ -297,6 +297,30 @@ containerlab 依赖 Linux 内核（netlink、网络命名空间），Darwin 无�
 - **测试**：biz 侧新增 scan 校验（icmp 拒绝并说明原因、tcp 缺端口、空目标）、samples/cycles 双钳制、未运行短路,以及核心的**按路径去重分组**表驱动测试（假 driver 按序吐两种 mtr 报告,断言 4 次采样归并为 2 条路径且计数正确）；`RunMTR`/`RunMTRScan` 公共逻辑抽为 `validateMTRProtocolPort`/`normalizeMTRCycles`/`resolveMTRTarget`/`runOneMTRProbe`,一期用例全部保持通过。
 - **真实环境验证**（dc1,25 容器,完整 Plan/Apply 新部署 + Playwright Chromium）：sysctl 经部署链路注入到 leaf/superspine/server 三种角色确认生效；API 直测 icmp 扫描拒绝、tcp 扫描 6-10 条路径分组正确；UI 逐项验证——链路抽屉双向探测（含上述 ECMP 绕行现象）、单次探测洋红路径、hop 行点击光环 + 平移居中、换目标后前后路径虚实叠加、扫描模式表单联动（协议自动跳 TCP/端口出现/采样数）、扫描结果四色四路径同屏、快速 Ping 秒回,全程 console 0 错误。
 
+### 扩缩容与 Generation Rollback（设计 §26 Iteration 7）
+
+用户可以对已部署的实验做可视化扩容/缩容（加 Pod / 加机柜 / 调每机柜 Server 数），Plan 升级为真正的 diff 预览，且**存量设备全程零重启**；Generation 列表 + 一键回滚补完声明式闭环（设计交付项 Add Pod/Rack/Leaf/Server、Plan Diff、Generation Snapshot、Rollback 全部达成；Add Leaf 按机柜模型解释为 Add Rack=MLAG 对，与用户对齐）。
+
+- **Spike 先行（决定整体方案）**：containerlab 0.77 无法向已存在的 lab 增量添加节点——`deploy` 对已部署 lab 是硬拒绝，`--node-filter`/`--reconfigure` 组合也过不了检查。真实验证出三件套替代路径：**agent 直接 `docker run` 创建新容器**（复刻 clab 的全套标签/privileged/管理网/hostname/restart=always，实测 `containerlab inspect`/`destroy` 完全认领手工容器为 lab 成员）+ **`clab tools veth create` 补线**（新↔新、新↔旧任意两个运行中容器）+ **`clab destroy --node-filter` 删单节点**（原生支持）。
+- **Diff 化 Plan（地基）**：`topology.Builder` 增加 `Base`（上一代已部署快照），重建时钉住 spec 里不可见、容器里很可见的全部身份——每 pod 槽位的**全局 rack 编号**（新 rack 取从未用过的编号，杜绝"pod-1 加机柜导致 pod-2 全部改名"）、链路的 **eth 序号**（按节点续接存量最大值，已 apply 的缩容释放的序号可安全复用——内核里 veth 真没了，等价交换机拔线后的空闲端口）、分配器按 owner **Restore 钉定**地址与 ASN。`CreatePlan` 以部署代快照为 base diff 出 Create/Update/Delete 三类操作，`carryOverIdentity` 让未变节点保留 ID/Phase/Status（Program 的 ServerID 跨 plan 不再漂移）；Plan.Allocations 只列新增分配；缩容波及的 Program 以 PlanWarning 预告。
+- **增量 Apply**：apply 流水线按 `BaseGeneration` 分流——首次 apply 全量 `deploy --reconfigure`，之后一律增量：controller 对比新旧代产物差异生成 `increment.json`（随产物一起进 gen 目录、随 Deploy RPC 到 agent；`DeployRequest.increment` 标志复用同一 RPC），agent 按序执行：建新容器 → 补 veth → 新节点跑完整 exec 列表 → 存量节点跑 delta exec（如 leaf 给新 server 挂 access 口，命令与编译器 `AccessPortAttach` 单一来源）→ 存量 FRR 配置热更新（`docker cp` 新 frr.conf + **`frr-reload.py` 差量应用**，官方镜像自带；删邻居先于删容器，存量邻居优雅拆会话）→ 删容器（veth 对随之消失）。配置变更检测直接**逐字节比较新旧代 `frr.conf` 产物**，不维护"哪种模型变更影响哪份配置"的语义映射；旧文件读不到就保守 reload（frr-reload 只应用差量，天然幂等）。失败重试幂等：新节点一律先删后建、缺容器的删除视为成功。
+- **缩容级联（PruneRemovedResources 步骤）**：Traffic 场景先走常规删除（存活端程序经在线 agent 正常停删、消失端降级只删记录）→ 被删 server 上的 Program 只删记录（agent 已随容器消亡）→ 目标被删的 Fault 只删记录（**刻意跳过 Recover**——故障接口已随缩容消失，常规删除会对不存在的容器执行恢复而失败）。增量 apply 的 `InstallCaptureTool`/`RestorePrograms` 范围收窄到新建 server（存量 agent 与运行中程序不动——agent 的 Install 本就拒绝重装运行中的程序，全量恢复会必然超时失败）。
+- **扩缩容 UI**：Labs 页新增「扩缩容」对话框（核心层数量 + 逐 pod 的 Spine/机柜/Server 计数、加删 Pod；pod 名钉在槽位上禁止改名，新 pod 自动取未用过的默认名），提交即进 Plan 预览；Plan 预览升级为 diff 视图——彩色操作标签（绿建/黄改/红删）+ `+N ~N -N` 计数 + 警告条（如"server 将连同 N 个程序一起删除"）。`UpdateLabTopology` 只改 spec（internetAccess 钉在创建时值），变更一律走 Plan/Apply；扩缩容后 profile 落为 custom。
+- **Rollback**：`ListGenerations` 升级返回快照摘要（时间/节点数/链路数/当前标记）；`RollbackLab` 以历史快照为 desired 生成一份**普通的 Pending Plan**（diff 预览、增量 apply 全复用），generation 号继续递增——回滚是"roll-forward 到旧内容"；lab spec 同步回快照值，后续常规 plan 继续在回滚形态上迭代。被缩容清理的 Program 不随回滚复活（回滚恢复的是网络，不是曾在其上的负载——已写入确认弹窗文案）。Labs 页「历史版本」对话框列出快照并一键回滚（当前代禁用）。
+- **真实环境验证**（dc1，standard 25 容器，TDD 断言脚本 + Playwright Chromium）：扩容（pod-1 加 rack-5：4 节点 9 链路，diff 精确、地址/编号/接口全部不重排，spine 配置热更新出新邻居、新 server 跨 Pod ping 通、agent 可用可部署程序）→ 缩容（4 删 9 删、警告命中、程序级联清理、spine 配置删邻居）→ 回滚到扩容代（重建 rack-5 全部接线、跨 fabric ping 通、拒绝回滚到当前代）→ 恢复原始形态，**四次 apply 存量 25 容器的 StartedAt 全程未变**；UI 三对话框 + diff 预览 + console 零错误，像素级截图核验。
+- **验证发现并修复一个真问题（经验记录第 12 条）**：首次回滚失败于 `spine-1:eth7 file exists`——`docker rm -f` 后容器 **netns 的销毁是异步的**（WSL2 上可滞后数分钟），缩容删掉的 leaf 的 veth 对端在 spine 上并不立即消失，紧接着的回滚按同序号建线即撞车（数分钟后陈旧接口自行消失，printf 级排查确认 netns 短暂泄漏是根因）。修复：agent 建线前对两端做防御性 `ip link del`——增量里的链路按模型必然不存在，任何占名接口都是残留（陈旧对端或上次失败的半成品），删了再建，同时让补线天然幂等。单测/mock 复现不了内核 netns 生命周期，又一次印证"必须真实环境跑一遍"。
+
+### 拓扑页所见即所得扩缩容（It. 7 后续）
+
+把扩缩容从 Labs 页表单搬到拓扑画布上直接操作：右键点哪扩哪，改动即刻以幽灵/标红形式画在图上，确认后走同一条 diff Plan + 增量 Apply 链路。
+
+- **右键菜单**（cytoscape `cxttap` → Vue 浮动菜单，teleport 到 body）：右键设备会落到其所属机柜/Pod 的菜单（比瞄准框边容易，且框上沿常被穿越的链路占据命中——实测右键框顶命中的是 edge）；Pod 菜单提供加机柜、每机柜加/减 Server、加/删 Spine、删 Pod；机柜菜单额外提供"删除本机柜"；画布空白处提供"添加 Pod"。受 spec 槽位制约束的操作以禁用态 + 原因提示呈现（仅尾部机柜可删、每 Pod 至少一柜、同一草稿内加删机柜不混合）。
+- **草稿与幽灵预览**（`useScaleDraft` composable）：操作只改客户端草稿（克隆的 `TopologySpec`），画布同步画出**幽灵元素**——新机柜/Pod 为绿色虚线框 + 占位设备 + 示意接线（锚定在所属框**下方**空白区，compound 框自动扩展包住；放右侧会压到相邻 Pod，截图核验后改掉），待删对象红色虚线并连带标红其链路与整框；幽灵命名复刻 builder 追加式编号规则（仅作视觉提示，权威以 Plan 为准，真实验证两者一致）。顶部浮出"待确认的扩缩容"横幅（变更摘要 + 预览/放弃）。
+- **确认链路**：预览 = `UpdateLabTopology` + `CreatePlan` → 复用抽出的 `PlanPreviewDialog` 共享组件（Labs 页同步重构复用）→ Apply → `OperationProgress`，完成后清草稿刷新拓扑；预览后放弃会把 spec 与 desired 恢复基线（代价是一份空 diff 的 no-op plan）。提交后幽灵停画——desired 拓扑此时已含计划节点，再画就重影。
+- **顺带修一个既有 bug**：拓扑页为非模态抽屉设的 `.page :deep(.el-overlay){pointer-events:none}` 连带废掉了页内 `el-dialog` 的点击（el-dialog 默认不 teleport），Plan 对话框的按钮点击会穿透到画布——补 `.el-dialog{pointer-events:auto}` 例外。另放宽 `fillPodNames`：Pod 身份按名字而非槽位匹配，删除中间 Pod 不再被误判为改名拒绝（重复名仍拒绝）。
+- **测试钩子**：画布把 cytoscape 实例挂到 `window.__dcnetlabCy`（canvas 渲染对 DOM 断言不可见，e2e 需借它定位元素坐标与断言幽灵/标红数量）。
+- **真实环境验证**（dc1，Playwright Chromium，16 项断言全过）：右键 spine 弹出 Pod 菜单 → 加机柜 → 幽灵 rack-5（4 设备 9 接线，编号预测与后端一致）+ 横幅出现 → rack-1 删除项正确禁用（加删混合保护）→ 预览计划（13 项新增）→ Apply 真实增量部署（25→29 容器）→ 画布 29 设备、幽灵消失 → 右键新 rack-5 的 leaf → "删除本机柜"可用 → 4 设备标红 → 预览（13 项删除）→ Apply 缩回 25 容器；全程 console 零错误，幽灵/标红/菜单像素级截图核验。
+
 ### 控制面 / 数据面架构分离（agent）
 
 把此前"迭代外技术债"第 4 条整体落地（完整架构见 [architecture.md](architecture.md)）：
@@ -326,6 +350,7 @@ containerlab 依赖 Linux 内核（netlink、网络命名空间），Darwin 无�
 9. **多命令二进制的 `Program.Spec.Args` 必须自带模式名**：`dcnetlab-trafficgen` 按 `os.Args[1]` 分发子命令（`http-server`/`http-client`/…），只拼 flag（如 `--listen`/`--target`）会让进程立刻报 `unknown mode "--xxx"` 退出、RestartPolicy=Always 下无限崩溃重启——单测只断言了 flag 内容、没断言 `Args[0]`，这类"参数拼装漏了必需的第一位"问题必须在真实环境跑一次真实进程才会暴露，光靠 mock agent 的单测测不出来。
 10. **AF_PACKET 在接口 admin down 时 `recvfrom` 返回 `ENETDOWN`**：不是可忽略的瞬态错误码集合（EAGAIN/EINTR）里的一员，按致命错误处理会让抓包进程在 link-down 故障注入的瞬间退出——而"抓故障现场"正是抓包的核心场景。正确处理是等待重试：socket 按 ifindex 绑定，接口 down/up 后内核自动恢复投递（`packet_notifier` 重新挂钩），无需重开 socket。这类内核行为仿不出来，只能真实环境暴露（Iteration 5 验证发现）。
 11. **单文件 bind mount 钉住宿主文件的旧 inode**：`go build -o` 产出新 inode 后，已运行容器内看到的仍是旧二进制（capture/agent 同理），开发期更新容器内工具必须重新 Plan/Apply；`sha256sum` 容器内外对比是最快的确认手段。**该分发通道已随控制面/数据面分离整体退役**（工具烤镜像或走包制品库），经验保留备查——开发期更新容器内工具现在对应"重建镜像 + Plan/Apply"或 bump 包版本。
+12. **`docker rm -f` 后容器 netns 的销毁是异步的**（WSL2 上可滞后数分钟）：被删容器的 veth 对端接口在幸存容器里不会立即消失（`LOWER_UP` 依旧、对端 netns 短暂泄漏存活），紧接着按同名重建 veth 会撞 `file exists`。"缩容后立刻回滚"正是这种时序。对策不是等待或轮询，而是**建线前对两端做防御性 `ip link del`**——模型保证该链路当下不该存在，任何占名接口都是残留，删一端即拆整对，且让操作幂等（Iteration 7 验证发现）。
 
 ## 与设计文档的已知偏差
 
@@ -345,11 +370,11 @@ containerlab 依赖 Linux 内核（netlink、网络命名空间），Darwin 无�
 
 ### 迭代路线与排序
 
-原计划顺序为 It. 3 → It. 4 → It. 5 → It. 6；实际执行时与用户对齐后调整为 **It. 4 Traffic（已完成）→ It. 6 故障（已完成）→ It. 5 抓包（已完成，含真实环境验证）→ It. 3 剩余 + It. 8 Pingmesh → It. 7 扩容 / Rollback → It. 9/10 虚拟网络 / EIP**，理由：
+原计划顺序为 It. 3 → It. 4 → It. 5 → It. 6；实际执行时与用户对齐后调整为 **It. 4 Traffic（已完成）→ It. 6 故障（已完成）→ It. 5 抓包（已完成）→ It. 7 扩容 / Rollback（已完成，用户在讨论后选择先做它）→ It. 3 剩余 + It. 8 Pingmesh → It. 9/10 虚拟网络 / EIP**，理由：
 
 - **Traffic（It. 4）已提前于 It. 3 剩余项完成**：trafficgen 已就绪、演示价值高于就绪门控排序 / `GenericDaemonProvider`（两者暂无真实消费者，留到接 Pingmesh 前再做，避免为无消费者的抽象提前设计）。
 - **故障实验（It. 6）紧跟 Traffic 完成**：Link Down / Node Stop / Delay / Loss / Rate Limit / 故障恢复均已交付（详见「故障注入子系统」），"注入故障 → Traffic 曲线掉坑 → 恢复"这条平台最核心的演示闭环已经打通，Traffic 的指标管道被直接复用。抓包（It. 5，AF_PACKET）已完成，"Traffic 和 Capture 联动"里 Capture 那半句已在 It. 5 验证中补上（link-down 恢复后抓到 BGP 会话重建）。快照结构按讨论阶段的结论简化为固定基线恢复（见「已知偏差」第 8 条），未引入独立的 FaultSession/快照资源。
-- **Pingmesh（It. 8）提前到扩容之前**：它是 Daemon Framework 的首个真实消费者，尽早验证 DaemonProvider 接口设计是否成立；扩容 / Rollback（Generation 快照已就绪）不阻塞任何人，何时做都行。
+- **Pingmesh（It. 8）原计划提前到扩容之前**（Daemon Framework 的首个真实消费者），实际执行时用户在迭代讨论后选择先做扩容 / Rollback（It. 7，已完成，详见「扩缩容与 Generation Rollback」）；下一站回到 **It. 3 剩余 + It. 8 Pingmesh**。deb/OCI 包格式扩展经讨论明确**不随 It. 7 搭车**（扩容装机复用现有 tar.gz 包通道即可，deb 意味着换 server 镜像基底，验证面大），留待有真实使用场景时单独成轮。
 
 ### Iteration 3 剩余项拆解
 
@@ -365,7 +390,7 @@ Auto Start 与 Restart Policy 已在"Program 的 systemd 化"一轮落地（`aut
 ### 迭代外技术债
 
 1. **Operation 进度仍为 HTTP 轮询**：Traffic 页面这轮同样保持轮询（列表 3 s、图表 5 s），未迁入现有 WebSocket 通道；故障实验若需要更低延迟的曲线联动，是把 Operation/Traffic 指标统一迁到 WebSocket 的合适时机。
-2. **Package 格式扩展**：deb（需 Debian 系 server 镜像）与 OCI Image 作为 `format` 扩展位；随 It. 7 扩缩容触碰镜像与装机链路时引入"集成进镜像"的预装通道（第一个搬进镜像的是 agent）。
+2. **Package 格式扩展**：deb（需 Debian 系 server 镜像）与 OCI Image 作为 `format` 扩展位。It. 7 时与用户对齐**不搭车**——扩容装机复用现有 tar.gz 包通道即可，格式扩展等有真实使用场景（如在 lab 里装社区 deb 软件）再单独成轮；"集成进镜像"的预装通道梳理（capture 是否烤进 server 镜像）一并延后。
 3. **多 DC 互联**：dcedge 每 DC 独享、共享 external 骨干层；DC 间流量（目的 10/8）已在边界 NAT 规则中预留不做转换，对应真实 DCI 语义。
 4. ~~**控制面 / 数据面分离（宿主侧 runtime agent）**~~ ✅ 已落地：四处耦合（CLI 直调、bind mount 产物、管理网直拨、包回拉网关假设）全部由 agent 解开——产物随 Deploy RPC 传输、exec/终端走双向流、管理网访问走拨号代理、包拉取走 repo 反代（详见上文「控制面 / 数据面架构分离」与 [architecture.md](architecture.md)）。多宿主 / 多 DC 编排（一个 controller 管多个 agent）仍是后续项。
 

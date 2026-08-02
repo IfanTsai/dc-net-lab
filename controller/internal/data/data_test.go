@@ -183,7 +183,7 @@ func TestGenerationRetention(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(gens) != 10 || gens[0] != 13 || gens[9] != 4 {
+	if len(gens) != 10 || gens[0].Generation != 13 || gens[9].Generation != 4 {
 		t.Errorf("retention: got %v", gens)
 	}
 

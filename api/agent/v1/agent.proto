@@ -89,6 +89,10 @@ message DeployRequest {
   // files maps a path relative to the generation directory to its
   // content (topology YAML plus per-node configs).
   map<string, bytes> files = 2;
+  // increment applies the increment.json artifact among the files to
+  // the running lab instead of a full (re)deploy: unchanged
+  // containers are not touched.
+  bool increment = 3;
 }
 
 message DeployReply {}

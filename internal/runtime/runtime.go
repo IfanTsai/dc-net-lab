@@ -29,6 +29,10 @@ type Driver interface {
 	Name() string
 	// Deploy brings up the topology whose files live under dir.
 	Deploy(ctx context.Context, dir string) error
+	// DeployIncrement applies the increment artifact under dir to the
+	// running lab: unchanged containers are not touched, so scaling a
+	// deployed lab never restarts its existing devices.
+	DeployIncrement(ctx context.Context, dir string) error
 	// Destroy tears down the topology whose files live under dir.
 	Destroy(ctx context.Context, dir string) error
 	// Exec runs a command inside a deployed node's container and
@@ -117,9 +121,10 @@ type Impairment struct {
 // the full plan/apply/generation workflow usable without Containerlab.
 type NoopDriver struct{}
 
-func (NoopDriver) Name() string                                  { return "noop" }
-func (NoopDriver) Deploy(ctx context.Context, dir string) error  { return nil }
-func (NoopDriver) Destroy(ctx context.Context, dir string) error { return nil }
+func (NoopDriver) Name() string                                          { return "noop" }
+func (NoopDriver) Deploy(ctx context.Context, dir string) error          { return nil }
+func (NoopDriver) DeployIncrement(ctx context.Context, dir string) error { return nil }
+func (NoopDriver) Destroy(ctx context.Context, dir string) error         { return nil }
 
 func (NoopDriver) Exec(ctx context.Context, labName, nodeName string, cmd []string) ([]byte, error) {
 	return nil, ErrNotSupported

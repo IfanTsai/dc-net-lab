@@ -107,6 +107,15 @@ func (s *Server) Deploy(ctx context.Context, req *pb.DeployRequest) (*pb.DeployR
 		return nil, err
 	}
 
+	if req.Increment {
+		s.log.Info("deploying generation increment", "key", req.Key)
+		if err := s.driver.DeployIncrement(ctx, dir); err != nil {
+			return nil, toStatus(err)
+		}
+
+		return &pb.DeployReply{}, nil
+	}
+
 	s.log.Info("deploying generation", "key", req.Key)
 	if err := s.driver.Deploy(ctx, dir); err != nil {
 		return nil, toStatus(err)

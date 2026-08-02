@@ -131,7 +131,11 @@ type DeployRequest struct {
 	Key   string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
 	// files maps a path relative to the generation directory to its
 	// content (topology YAML plus per-node configs).
-	Files         map[string][]byte `protobuf:"bytes,2,rep,name=files,proto3" json:"files,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Files map[string][]byte `protobuf:"bytes,2,rep,name=files,proto3" json:"files,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// increment applies the increment.json artifact among the files to
+	// the running lab instead of a full (re)deploy: unchanged
+	// containers are not touched.
+	Increment     bool `protobuf:"varint,3,opt,name=increment,proto3" json:"increment,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -178,6 +182,13 @@ func (x *DeployRequest) GetFiles() map[string][]byte {
 		return x.Files
 	}
 	return nil
+}
+
+func (x *DeployRequest) GetIncrement() bool {
+	if x != nil {
+		return x.Increment
+	}
+	return false
 }
 
 type DeployReply struct {
@@ -1429,10 +1440,11 @@ const file_agent_v1_agent_proto_rawDesc = "" +
 	"\vPingRequest\"P\n" +
 	"\tPingReply\x12+\n" +
 	"\x11runtime_available\x18\x01 \x01(\bR\x10runtimeAvailable\x12\x16\n" +
-	"\x06detail\x18\x02 \x01(\tR\x06detail\"\x95\x01\n" +
+	"\x06detail\x18\x02 \x01(\tR\x06detail\"\xb3\x01\n" +
 	"\rDeployRequest\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x128\n" +
-	"\x05files\x18\x02 \x03(\v2\".agent.v1.DeployRequest.FilesEntryR\x05files\x1a8\n" +
+	"\x05files\x18\x02 \x03(\v2\".agent.v1.DeployRequest.FilesEntryR\x05files\x12\x1c\n" +
+	"\tincrement\x18\x03 \x01(\bR\tincrement\x1a8\n" +
 	"\n" +
 	"FilesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +

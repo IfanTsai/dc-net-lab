@@ -8,10 +8,13 @@ import { useLabStore } from '../stores/lab'
 import { labApi } from '../api/lab'
 import { nodeCaptureInterfaces } from '../utils/capture'
 import { badgeColor, nodeBadge, roleColor } from '../utils/health'
-import type { FaultScenario, Link, LinkEndpoint, MetricsPoint, MTRHop, MTRPathScan, Node, NodeBGP, NodeBGPTable, NodeInventory, NodeMetrics, NodeMTR, NodeRoutes, NodeRuntime } from '../types/models'
-import TopologyCanvas from '../components/TopologyCanvas.vue'
+import type { FaultScenario, Link, LinkEndpoint, MetricsPoint, MTRHop, MTRPathScan, Node, NodeBGP, NodeBGPTable, NodeInventory, NodeMetrics, NodeMTR, NodeRoutes, NodeRuntime, Plan } from '../types/models'
+import TopologyCanvas, { type ScaleMenuTarget } from '../components/TopologyCanvas.vue'
 import TerminalPanel from '../components/TerminalPanel.vue'
 import MetricsChart, { type ChartSeries } from '../components/MetricsChart.vue'
+import PlanPreviewDialog from '../components/PlanPreviewDialog.vue'
+import OperationProgress from '../components/OperationProgress.vue'
+import { useScaleDraft } from '../composables/useScaleDraft'
 
 const store = useLabStore()
 const router = useRouter()
@@ -21,11 +24,15 @@ const selectedLink = ref<Link | null>(null)
 const terminal = ref<InstanceType<typeof TerminalPanel> | null>(null)
 
 onMounted(async () => {
+  document.addEventListener('click', closeScaleMenu)
   if (store.labs.length === 0) await store.refreshLabs()
   await store.refreshTopology()
   store.startObserving()
 })
-onBeforeUnmount(() => store.stopObserving())
+onBeforeUnmount(() => {
+  document.removeEventListener('click', closeScaleMenu)
+  store.stopObserving()
+})
 
 // Keep the open drawer in sync with incoming observations.
 watch(
@@ -543,6 +550,164 @@ async function repairLab() {
   }
 }
 
+// --- WYSIWYG scaling: right-click the canvas to grow or shrink the
+// fabric. Actions edit a client-side draft rendered as ghost
+// (planned) and red-marked (to-be-removed) elements; confirming goes
+// through the regular change-plan preview and incremental apply.
+const scale = useScaleDraft(() => store.currentLab, () => store.nodes)
+const scaleMenu = ref<{ visible: boolean; x: number; y: number; target: ScaleMenuTarget | null }>({
+  visible: false, x: 0, y: 0, target: null,
+})
+const scalePlan = ref<Plan | null>(null)
+const scalePlanVisible = ref(false)
+const scaleOpId = ref('')
+const scaleBusy = ref(false)
+
+function onScaleMenu(target: ScaleMenuTarget, pos: { x: number; y: number }) {
+  const phase = store.currentLab?.meta.phase
+  if (!store.currentLab || phase === 'Applying') return
+  scaleMenu.value = { visible: true, x: pos.x, y: pos.y, target }
+}
+
+function closeScaleMenu() {
+  scaleMenu.value.visible = false
+}
+
+interface ScaleMenuItem {
+  key: string
+  label: string
+  disabled?: boolean
+  tip?: string
+  danger?: boolean
+  run: () => void
+}
+
+const scaleMenuItems = computed<ScaleMenuItem[]>(() => {
+  const tgt = scaleMenu.value.target
+  if (!tgt) return []
+
+  if (tgt.kind === 'background') {
+    return [{ key: 'addPod', label: t('scale.addPod'), run: () => scale.addPod() }]
+  }
+
+  const pod = tgt.podId!
+  scale.ensureDraft()
+  const dp = scale.draftPod(pod)
+  const items: ScaleMenuItem[] = []
+
+  if (tgt.kind === 'rack') {
+    const can = scale.canRemoveRack(pod, tgt.rackId!)
+    items.push({
+      key: 'removeThisRack',
+      label: t('scale.removeThisRack', { rack: tgt.rackId }),
+      disabled: !can.ok,
+      tip: can.ok ? undefined : t(`scale.removeRackHint.${can.reason}`),
+      danger: true,
+      run: () => scale.bump(pod, 'racks', -1),
+    })
+  }
+
+  items.push(
+    { key: 'addRack', label: t('scale.addRack', { pod }), run: () => scale.bump(pod, 'racks', 1) },
+    { key: 'addServer', label: t('scale.addServer', { pod }), run: () => scale.bump(pod, 'serversPerRack', 1) },
+    {
+      key: 'removeServer',
+      label: t('scale.removeServer', { pod }),
+      disabled: (dp?.serversPerRack ?? 1) <= 1,
+      run: () => scale.bump(pod, 'serversPerRack', -1),
+    },
+    { key: 'addSpine', label: t('scale.addSpine', { pod }), run: () => scale.bump(pod, 'spines', 1) },
+    {
+      key: 'removeSpine',
+      label: t('scale.removeSpine', { pod }),
+      disabled: (dp?.spines ?? 1) <= 1,
+      run: () => scale.bump(pod, 'spines', -1),
+    },
+  )
+
+  if (tgt.kind === 'pod') {
+    items.push({
+      key: 'removePod',
+      label: t('scale.removePod', { pod }),
+      disabled: (scale.draft.value?.pods.length ?? 2) <= 1,
+      danger: true,
+      run: () => scale.removePod(pod),
+    })
+  }
+
+  return items
+})
+
+function runScaleMenuItem(item: ScaleMenuItem) {
+  if (item.disabled) return
+  item.run()
+  closeScaleMenu()
+}
+
+// The draft summary line for the pending bar.
+const scaleSummary = computed(() =>
+  scale.changes.value.map((c) => t(`scale.changes.${c.key}`, { n: c.count })).join(t('scale.changeSep')),
+)
+
+// Ghosts are only drawn while the draft is client-side: once the
+// preview submitted the spec and created a plan, the desired topology
+// itself contains the planned nodes and drawing ghosts on top would
+// duplicate them.
+const scaleGhost = computed(() => (scale.submitted.value ? undefined : scale.preview.value.ghost))
+const scaleRemovedIds = computed(() => (scale.submitted.value ? [] : scale.preview.value.removedNodeIds))
+
+async function previewScaleDraft() {
+  if (!scale.draft.value || !store.currentLabId) return
+  scaleBusy.value = true
+  try {
+    await labApi.updateTopology(store.currentLabId, scale.draft.value)
+    scale.submitted.value = true
+    scalePlan.value = await labApi.createPlan(store.currentLabId)
+    scalePlanVisible.value = true
+    await store.refreshTopology()
+  } catch (e) {
+    ElMessage.error((e as Error).message)
+  } finally {
+    scaleBusy.value = false
+  }
+}
+
+async function applyScalePlan() {
+  if (!scalePlan.value) return
+  try {
+    const { operationId } = await labApi.applyPlan(scalePlan.value.id)
+    scalePlanVisible.value = false
+    scaleOpId.value = operationId
+  } catch (e) {
+    ElMessage.error((e as Error).message)
+  }
+}
+
+function onScaleOpDone() {
+  scaleOpId.value = ''
+  scale.discard()
+  store.refreshLabs()
+  store.refreshTopology()
+}
+
+// Discarding after the preview already submitted the spec restores
+// the baseline server-side too (an extra no-op plan is the price of
+// getting the desired rows back to the deployed shape).
+async function discardScaleDraft() {
+  const submitted = scale.submitted.value
+  const baseline = scale.baseline.value
+  scale.discard()
+  if (submitted && baseline && store.currentLabId) {
+    try {
+      await labApi.updateTopology(store.currentLabId, baseline)
+      await labApi.createPlan(store.currentLabId)
+      await store.refreshTopology()
+    } catch (e) {
+      ElMessage.error((e as Error).message)
+    }
+  }
+}
+
 async function powerNode() {
   if (!selectedNode.value) return
 
@@ -972,6 +1137,21 @@ async function deleteFault(f: FaultScenario) {
       </div>
     </el-alert>
 
+    <el-alert v-if="scale.dirty.value" type="success" :closable="false" class="scale-banner">
+      <template #title>
+        <span>{{ t('scale.pending', { summary: scaleSummary }) }}</span>
+      </template>
+      <div class="scale-banner-body">
+        <span class="scale-hint">{{ t('scale.pendingHint') }}</span>
+        <span class="scale-actions">
+          <el-button size="small" @click="discardScaleDraft">{{ t('scale.discard') }}</el-button>
+          <el-button size="small" type="primary" :loading="scaleBusy" @click="previewScaleDraft">
+            {{ t('labs.previewChanges') }}
+          </el-button>
+        </span>
+      </div>
+    </el-alert>
+
     <div class="body">
       <el-empty v-if="store.nodes.length === 0" :description="t('topology.empty')" />
       <TopologyCanvas
@@ -980,12 +1160,38 @@ async function deleteFault(f: FaultScenario) {
         :links="store.links"
         :diagnose-paths="diagnosePaths"
         :diagnose-focus-node-id="mtrFocusNodeId"
+        :ghost="scaleGhost"
+        :removed-node-ids="scaleRemovedIds"
         @select-node="selectedNode = $event; selectedLink = null"
         @select-link="selectedLink = $event; selectedNode = null"
         @select-none="selectedNode = null; selectedLink = null"
         @open-terminal="onOpenTerminal"
+        @scale-menu="onScaleMenu"
       />
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="scaleMenu.visible"
+        class="scale-menu"
+        :style="{ left: scaleMenu.x + 'px', top: scaleMenu.y + 'px' }"
+        @click.stop
+      >
+        <div
+          v-for="item in scaleMenuItems"
+          :key="item.key"
+          class="scale-menu-item"
+          :class="{ disabled: item.disabled, danger: item.danger && !item.disabled }"
+          @click="runScaleMenuItem(item)"
+        >
+          <span>{{ item.label }}</span>
+          <span v-if="item.tip" class="scale-menu-tip">{{ item.tip }}</span>
+        </div>
+      </div>
+    </Teleport>
+
+    <PlanPreviewDialog v-model:visible="scalePlanVisible" :plan="scalePlan" @apply="applyScalePlan" />
+    <OperationProgress v-if="scaleOpId" :operation-id="scaleOpId" @done="onScaleOpDone" />
 
     <TerminalPanel ref="terminal" />
 
@@ -1811,6 +2017,10 @@ async function deleteFault(f: FaultScenario) {
 .header h2 { margin: 0; }
 .hint { font-size: 12px; font-weight: normal; color: var(--el-text-color-secondary); margin-left: 8px; }
 .drift-banner { margin-bottom: 12px; }
+.scale-banner { margin-bottom: 12px; }
+.scale-banner-body { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.scale-hint { font-size: 12px; color: var(--el-text-color-secondary); }
+.scale-actions { display: inline-flex; gap: 8px; flex-shrink: 0; }
 .drift-body { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
 .drift-nodes { font-size: 13px; color: var(--el-text-color-secondary); }
 .drift-why { margin-left: 6px; vertical-align: -2px; cursor: help; color: var(--el-text-color-secondary); }
@@ -1820,6 +2030,9 @@ async function deleteFault(f: FaultScenario) {
 .page :deep(.el-modal-drawer),
 .page :deep(.el-overlay) { pointer-events: none; }
 .page :deep(.el-drawer) { pointer-events: auto; }
+/* The scale plan-preview dialog renders in place (inside .page), so
+   it needs the same escape hatch as the drawer panel above. */
+.page :deep(.el-dialog) { pointer-events: auto; }
 .body { flex: 1; min-height: 0; }
 
 /* Drawer chrome: a compact identity header (name + role + health)
@@ -1903,6 +2116,31 @@ h4::after { content: ''; flex: 1; height: 1px; background: var(--el-border-color
 <style>
 /* el-popover teleports its popper to <body>, outside this component's
    scoped tree, so the drift-reason body style has to live in an
-   unscoped block. */
+   unscoped block. The scale context menu teleports to <body> as well. */
 .drift-why-body { font-size: 12px; line-height: 1.7; }
+
+.scale-menu {
+  position: fixed;
+  z-index: 3000;
+  min-width: 200px;
+  padding: 4px;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 6px;
+  background: var(--el-bg-color-overlay);
+  box-shadow: var(--el-box-shadow-light);
+  font-size: 13px;
+}
+.scale-menu-item {
+  padding: 7px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.scale-menu-item:hover { background: var(--el-fill-color-light); }
+.scale-menu-item.disabled { color: var(--el-text-color-disabled); cursor: not-allowed; }
+.scale-menu-item.disabled:hover { background: none; }
+.scale-menu-item.danger { color: var(--el-color-danger); }
+.scale-menu-tip { font-size: 11px; color: var(--el-text-color-secondary); white-space: normal; max-width: 240px; }
 </style>

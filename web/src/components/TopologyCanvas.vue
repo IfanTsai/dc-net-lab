@@ -25,6 +25,30 @@ export interface DiagnosePath {
   dashed?: boolean
 }
 
+// GhostElements previews a pending scale draft directly on the
+// canvas: planned devices render as dashed placeholders (inside
+// planned pod/rack frames where needed) with schematic wiring, and
+// devices about to be removed are tinted red. Purely visual — the
+// authoritative names and diff come from the change plan.
+export interface GhostElements {
+  // Frames are planned pod/rack boxes; parent references another
+  // frame id (a planned rack inside a planned pod).
+  frames: { id: string; label: string; frame: 'pod' | 'rack'; parent?: string }[]
+  // Nodes are planned devices; parent is a frame id — either a
+  // planned one or an existing compound id (pod:<pod> / rack:<pod>/<rack>).
+  nodes: { id: string; label: string; role: string; parent?: string }[]
+  // Links wire planned devices to each other or to existing node ids.
+  links: { id: string; source: string; target: string }[]
+}
+
+// ScaleMenuTarget identifies what was right-clicked for the scale
+// context menu.
+export interface ScaleMenuTarget {
+  kind: 'background' | 'pod' | 'rack'
+  podId?: string
+  rackId?: string
+}
+
 const props = defineProps<{
   nodes: Node[]
   links: Link[]
@@ -34,12 +58,17 @@ const props = defineProps<{
   // any path highlighting, since a hop can matter on its own even
   // when its neighbouring links didn't resolve to a path segment.
   diagnoseFocusNodeId?: string
+  ghost?: GhostElements
+  // removedNodeIds marks existing devices a pending scale draft would
+  // delete; their frames and links are tinted with them.
+  removedNodeIds?: string[]
 }>()
 const emit = defineEmits<{
   selectNode: [node: Node]
   selectLink: [link: Link]
   selectNone: []
   openTerminal: [node: Node]
+  scaleMenu: [target: ScaleMenuTarget, pos: { x: number; y: number }]
 }>()
 
 const container = ref<HTMLElement | null>(null)
@@ -226,9 +255,125 @@ function render() {
     // grey; colour is reserved for future link-quality signalling.
     if (linkDead(l, stopped, ifaceStates)) el.addClass('dead')
   }
+  renderGhosts()
+  applyRemovedMarks()
   applyDiagnosePaths()
   applyDiagnoseFocus(false)
   cy.fit(undefined, 40)
+}
+
+// renderGhosts draws the pending scale draft: planned frames and
+// devices as dashed green placeholders, clustered to the right of the
+// pod (or rack) they extend, with schematic wiring. Positions are
+// cosmetic — cytoscape auto-fits the compound frames around them.
+function renderGhosts() {
+  if (!cy) return
+  cy.remove('.ghost')
+
+  const g = props.ghost
+  if (!g || g.frames.length + g.nodes.length === 0) return
+
+  for (const f of g.frames) {
+    cy.add({
+      group: 'nodes',
+      data: { id: f.id, label: f.label, frame: f.frame, ...(f.parent ? { parent: f.parent } : {}) },
+      selectable: false,
+      grabbable: true,
+      classes: 'ghost ghost-frame',
+    })
+  }
+
+  // Anchoring: additions to an existing pod/rack cluster BELOW that
+  // frame (the compound auto-expands around them, and the space to
+  // the right belongs to the neighbouring pod), while a whole planned
+  // pod goes right of the graph with natural tier rows. Sibling ghost
+  // frames under one parent fan out horizontally.
+  interface Anchor { x: number; y?: number } // y unset → natural tier rows
+  const siblingIndex = new Map<string, number>()
+  {
+    const perParent = new Map<string, number>()
+    for (const f of g.frames) {
+      const key = f.parent ?? '__root__'
+      const i = perParent.get(key) ?? 0
+      perParent.set(key, i + 1)
+      siblingIndex.set(f.id, i)
+    }
+  }
+
+  const anchors = new Map<string, Anchor>()
+  const anchorFor = (parentId?: string): Anchor => {
+    const key = parentId ?? '__root__'
+    const hit = anchors.get(key)
+    if (hit) return hit
+
+    let a: Anchor = { x: 200 }
+    if (!parentId) {
+      let maxX = 0
+      cy!.nodes('[icon]').forEach((n) => { maxX = Math.max(maxX, n.position('x')) })
+      a = { x: maxX + 150 }
+    } else {
+      const el = cy!.getElementById(parentId)
+      if (el.nonempty() && !el.hasClass('ghost')) {
+        const bb = el.boundingBox()
+        a = { x: bb.x1 + 50, y: bb.y2 + 70 }
+      } else {
+        const frame = g.frames.find((f) => f.id === parentId)
+        const base = anchorFor(frame?.parent)
+        a = { x: base.x + (siblingIndex.get(parentId) ?? 0) * 200, y: base.y }
+      }
+    }
+
+    anchors.set(key, a)
+    return a
+  }
+
+  const counters = new Map<string, number>()
+  for (const n of g.nodes) {
+    const tier = tierOrder[n.role] ?? 5
+    const key = `${n.parent ?? ''}:${tier}`
+    const i = counters.get(key) ?? 0
+    counters.set(key, i + 1)
+    const a = anchorFor(n.parent)
+    const y = a.y === undefined ? 80 + tier * 110 : a.y + (n.role === 'server' ? 100 : 0)
+    cy.add({
+      group: 'nodes',
+      data: { id: n.id, label: n.label, role: n.role, ...(n.parent ? { parent: n.parent } : {}) },
+      position: { x: a.x + i * 55, y },
+      classes: 'ghost ghost-node',
+    })
+  }
+
+  for (const l of g.links) {
+    if (cy.getElementById(l.source).empty() || cy.getElementById(l.target).empty()) continue
+    cy.add({ group: 'edges', data: { id: l.id, source: l.source, target: l.target }, classes: 'ghost' })
+  }
+}
+
+// applyRemovedMarks tints everything a pending scale draft would
+// delete: the devices themselves, their links, and any pod/rack frame
+// whose devices are all marked.
+function applyRemovedMarks() {
+  if (!cy) return
+
+  cy.elements('.marked-removed').removeClass('marked-removed')
+  cy.elements('.marked-removed-frame').removeClass('marked-removed-frame')
+
+  const removed = new Set(props.removedNodeIds ?? [])
+  if (removed.size === 0) return
+
+  for (const id of removed) cy.getElementById(id).addClass('marked-removed')
+  for (const l of props.links) {
+    if (removed.has(l.spec.endpointA.nodeId) || removed.has(l.spec.endpointB.nodeId)) {
+      cy.getElementById(l.meta.id).addClass('marked-removed')
+    }
+  }
+
+  cy.nodes(':parent').not('.ghost').forEach((frame) => {
+    const devices = frame.descendants('[icon]')
+    if (devices.length > 0 && devices.toArray().every((d) => removed.has(d.id()))) {
+      frame.addClass('marked-removed-frame')
+    }
+  })
 }
 
 // downNodeIDs collects devices that are off (stopped) or broken
@@ -274,7 +419,7 @@ function sameTopology(): boolean {
   if (!cy) return false
 
   const rendered = cy.nodes('[icon]')
-  if (rendered.length !== props.nodes.length || cy.edges().length !== props.links.length) {
+  if (rendered.length !== props.nodes.length || cy.edges().not('.ghost').length !== props.links.length) {
     return false
   }
   return props.nodes.every((n) => cy!.getElementById(n.meta.id).length > 0)
@@ -295,6 +440,7 @@ function refreshState() {
   for (const l of props.links) {
     cy.getElementById(l.meta.id).toggleClass('dead', linkDead(l, down, ifaceStates))
   }
+  applyRemovedMarks()
   applyDiagnosePaths()
   applyDiagnoseFocus(false)
 }
@@ -480,6 +626,55 @@ onMounted(() => {
           'border-style': 'double',
         },
       },
+      {
+        // Planned device from a pending scale draft: dashed green
+        // placeholder — green matches the plan preview's create tag,
+        // dashed says "not real yet".
+        selector: 'node.ghost-node',
+        style: {
+          label: 'data(label)',
+          shape: 'round-rectangle',
+          width: 38,
+          height: 38,
+          'background-color': '#67c23a',
+          'background-opacity': 0.08,
+          'border-width': 2,
+          'border-style': 'dashed',
+          'border-color': '#67c23a',
+          'font-size': 11,
+          color: '#529b2e',
+          'text-valign': 'bottom',
+          'text-margin-y': 6,
+        },
+      },
+      {
+        // Planned pod/rack frame.
+        selector: 'node.ghost-frame',
+        style: {
+          'border-color': '#67c23a',
+          'border-style': 'dashed',
+          color: '#529b2e',
+        },
+      },
+      {
+        // Planned wiring: schematic only.
+        selector: 'edge.ghost',
+        style: { width: 1, 'line-style': 'dashed', 'line-color': '#67c23a', opacity: 0.6 },
+      },
+      {
+        // Existing element a pending scale draft would delete —
+        // red matches the plan preview's delete tag.
+        selector: 'node.marked-removed',
+        style: { 'border-width': 2, 'border-style': 'dashed', 'border-color': '#f56c6c', opacity: 0.45 },
+      },
+      {
+        selector: 'edge.marked-removed',
+        style: { 'line-style': 'dashed', 'line-color': '#f56c6c', opacity: 0.45 },
+      },
+      {
+        selector: 'node.marked-removed-frame',
+        style: { 'border-color': '#f56c6c', color: '#f56c6c' },
+      },
     ],
   })
   // Selecting a device highlights its own links; cytoscape's default
@@ -512,7 +707,37 @@ onMounted(() => {
     const n = props.nodes.find((x) => x.meta.id === ev.target.id())
     if (n) emit('openTerminal', n)
   })
+  // Right-click opens the scale menu: on a pod/rack frame directly,
+  // on a device via the frame it belongs to (aiming at a small icon
+  // is easier than at the frame border), on the background for
+  // lab-level actions. The page decides what the menu offers.
+  cy.on('cxttap', (ev) => {
+    if (ev.target !== cy) return
+    const oe = ev.originalEvent as MouseEvent
+    emit('scaleMenu', { kind: 'background' }, { x: oe.clientX, y: oe.clientY })
+  })
+  cy.on('cxttap', 'node', (ev) => {
+    const oe = ev.originalEvent as MouseEvent
+    const pos = { x: oe.clientX, y: oe.clientY }
+    const id = ev.target.id() as string
+    if (id.startsWith('pod:')) {
+      emit('scaleMenu', { kind: 'pod', podId: id.slice(4) }, pos)
+    } else if (id.startsWith('rack:')) {
+      const [podId, rackId] = id.slice(5).split('/')
+      emit('scaleMenu', { kind: 'rack', podId, rackId }, pos)
+    } else {
+      const n = props.nodes.find((x) => x.meta.id === id)
+      if (!n?.spec.podId) return
+      if (n.spec.rackId) emit('scaleMenu', { kind: 'rack', podId: n.spec.podId, rackId: n.spec.rackId }, pos)
+      else emit('scaleMenu', { kind: 'pod', podId: n.spec.podId }, pos)
+    }
+  })
   render()
+
+  // Debug/e2e hook: the cytoscape instance is otherwise unreachable
+  // from outside (it renders into a <canvas>), which makes automated
+  // UI verification unable to locate elements to interact with.
+  ;(window as unknown as Record<string, unknown>).__dcnetlabCy = cy
 
   // Keep the graph fitted when the page (or drawer) resizes the canvas.
   resizeObserver = new ResizeObserver(() => {
@@ -530,6 +755,15 @@ watch(
   { deep: false },
 )
 watch(() => props.diagnosePaths, applyDiagnosePaths)
+watch(
+  () => props.ghost,
+  () => {
+    renderGhosts()
+    applyRemovedMarks()
+    cy?.fit(undefined, 40)
+  },
+)
+watch(() => props.removedNodeIds, applyRemovedMarks)
 // Only a change of focus pans; the re-application inside render() and
 // refreshState() keeps the halo without yanking the viewport around
 // on every observation sweep.
@@ -542,7 +776,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="wrapper">
-    <div ref="container" class="canvas" />
+    <div ref="container" class="canvas" @contextmenu.prevent />
     <div class="legend">
       <div class="legend-row">
         <span v-for="r in legendRoles" :key="r.role" class="legend-item">

@@ -56,6 +56,25 @@ service DCNetLab {
       body: "*"
     };
   }
+  // UpdateLabTopology changes the desired fabric shape (scale out /
+  // scale in). It only edits the spec: the change materialises through
+  // the regular Plan (diff preview) / Apply (incremental deploy) flow.
+  rpc UpdateLabTopology(UpdateLabTopologyRequest) returns (Lab) {
+    option (google.api.http) = {
+      put: "/api/v1/labs/{lab_id}/topology"
+      body: "*"
+    };
+  }
+  // RollbackLab creates a plan whose desired state is a retained
+  // generation snapshot. The returned plan previews the diff like any
+  // other and is applied through ApplyPlan; generation numbers keep
+  // increasing (roll-forward to old content).
+  rpc RollbackLab(RollbackLabRequest) returns (Plan) {
+    option (google.api.http) = {
+      post: "/api/v1/labs/{lab_id}/rollback"
+      body: "*"
+    };
+  }
 
   // --- Topology ---
   rpc ListNodes(ListNodesRequest) returns (ListNodesReply) {
@@ -1405,6 +1424,28 @@ message RepairLabRequest {
   string id = 1;
 }
 
+message UpdateLabTopologyRequest {
+  string lab_id = 1;
+  // Topology is the new desired shape. internet_access is ignored:
+  // the internet attachment is fixed at lab creation.
+  TopologySpec topology = 2;
+}
+
+// GenerationInfo summarises one retained generation snapshot.
+message GenerationInfo {
+  int64 generation = 1;
+  google.protobuf.Timestamp created_at = 2;
+  int32 node_count = 3;
+  int32 link_count = 4;
+  // deployed marks the generation the lab currently runs.
+  bool deployed = 5;
+}
+
+message RollbackLabRequest {
+  string lab_id = 1;
+  int64 generation = 2;
+}
+
 message StartNodeRequest {
   string lab_id = 1;
   string node_id = 2;
@@ -1689,7 +1730,7 @@ message ListGenerationsRequest {
 }
 
 message ListGenerationsReply {
-  repeated int64 generations = 1;
+  repeated GenerationInfo generations = 1;
 }
 
 message ListProfilesRequest {}

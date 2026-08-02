@@ -1,6 +1,7 @@
 package data
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -70,22 +71,35 @@ func (s *Data) GetGeneration(labID string, generation int64) (*biz.DesiredStateS
 	return getDoc[biz.DesiredStateSnapshot](s, `SELECT desired_state FROM generations WHERE lab_id = ? AND generation = ?`, labID, generation)
 }
 
-func (s *Data) ListGenerations(labID string) ([]int64, error) {
-	rows, err := s.db.Query(`SELECT generation FROM generations WHERE lab_id = ? ORDER BY generation DESC`, labID)
+func (s *Data) ListGenerations(labID string) ([]biz.GenerationInfo, error) {
+	rows, err := s.db.Query(`SELECT generation, created_at, desired_state
+		FROM generations WHERE lab_id = ? ORDER BY generation DESC`, labID)
 	if err != nil {
 		return nil, err
 	}
 
 	defer rows.Close()
 
-	var out []int64
+	var out []biz.GenerationInfo
 	for rows.Next() {
-		var g int64
-		if err := rows.Scan(&g); err != nil {
+		var info biz.GenerationInfo
+
+		var createdAt, doc string
+		if err := rows.Scan(&info.Generation, &createdAt, &doc); err != nil {
 			return nil, err
 		}
 
-		out = append(out, g)
+		if t, err := time.Parse(time.RFC3339Nano, createdAt); err == nil {
+			info.CreatedAt = t
+		}
+
+		var snap biz.DesiredStateSnapshot
+		if err := json.Unmarshal([]byte(doc), &snap); err != nil {
+			return nil, fmt.Errorf("parse generation %d: %w", info.Generation, err)
+		}
+
+		info.NodeCount, info.LinkCount = len(snap.Nodes), len(snap.Links)
+		out = append(out, info)
 	}
 
 	return out, rows.Err()

@@ -128,6 +128,18 @@ func (d *Driver) Deploy(ctx context.Context, dir string) error {
 	return fromStatus(err)
 }
 
+func (d *Driver) DeployIncrement(ctx context.Context, dir string) error {
+	req, err := d.artifact(dir)
+	if err != nil {
+		return err
+	}
+
+	req.Increment = true
+	_, err = d.client.Deploy(ctx, req)
+
+	return fromStatus(err)
+}
+
 func (d *Driver) Destroy(ctx context.Context, dir string) error {
 	req, err := d.artifact(dir)
 	if err != nil {

@@ -7,11 +7,8 @@
 package main
 
 import (
-	"log/slog"
-
 	"github.com/go-kratos/kratos/v2"
 	"github.com/go-kratos/kratos/v2/log"
-
 	"github.com/ifantsai/dcnetlab/controller/internal/biz"
 	"github.com/ifantsai/dcnetlab/controller/internal/conf"
 	"github.com/ifantsai/dcnetlab/controller/internal/data"
@@ -20,6 +17,7 @@ import (
 	"github.com/ifantsai/dcnetlab/controller/internal/server"
 	"github.com/ifantsai/dcnetlab/controller/internal/service"
 	"github.com/ifantsai/dcnetlab/controller/internal/traffic"
+	"log/slog"
 )
 
 // Injectors from wire.go:
@@ -54,17 +52,17 @@ func wireApp(confServer *conf.Server, confData *conf.Data, logger log.Logger, sl
 	}
 	history := metrics.NewHistory(confData, slogLogger)
 	programUsecase := biz.NewProgramUsecase(programRepo, programAgent, driver, packageUsecase, history, confServer, slogLogger)
-	planUsecase := biz.NewPlanUsecase(planRepo, manager, driver, programUsecase, confData, slogLogger)
-	operationRepo := data.NewOperationRepo(dataData)
-	operationUsecase := biz.NewOperationUsecase(operationRepo, slogLogger)
-	powerRepo := data.NewPowerRepo(dataData)
-	powerUsecase := biz.NewPowerUsecase(powerRepo, manager, driver, slogLogger)
-	runtimeUsecase := biz.NewRuntimeUsecase(labRepo, topologyRepo, driver, slogLogger)
 	trafficRepo := data.NewTrafficRepo(dataData)
 	trafficHistory := traffic.NewHistory()
 	trafficUsecase := biz.NewTrafficUsecase(trafficRepo, programUsecase, trafficHistory, slogLogger)
 	faultRepo := data.NewFaultRepo(dataData)
+	powerRepo := data.NewPowerRepo(dataData)
+	powerUsecase := biz.NewPowerUsecase(powerRepo, manager, driver, slogLogger)
 	faultUsecase := biz.NewFaultUsecase(faultRepo, powerUsecase, driver, slogLogger)
+	planUsecase := biz.NewPlanUsecase(planRepo, manager, driver, programUsecase, trafficUsecase, faultUsecase, confData, slogLogger)
+	operationRepo := data.NewOperationRepo(dataData)
+	operationUsecase := biz.NewOperationUsecase(operationRepo, slogLogger)
+	runtimeUsecase := biz.NewRuntimeUsecase(labRepo, topologyRepo, driver, slogLogger)
 	captureRepo := data.NewCaptureRepo(dataData)
 	captureManager := biz.NewCaptureManager(driver, confData, slogLogger)
 	captureUsecase, err := biz.NewCaptureUsecase(captureRepo, captureManager, slogLogger)

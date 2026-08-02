@@ -318,6 +318,14 @@ export interface Plan {
   createdAt: string
 }
 
+export interface GenerationInfo {
+  generation: string
+  createdAt: string
+  nodeCount: number
+  linkCount: number
+  deployed: boolean
+}
+
 export interface OperationStep {
   name: string
   state: string
