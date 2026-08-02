@@ -11,7 +11,30 @@ import { badgeColor, nodeBadge, roleColor } from '../utils/health'
 
 const { t } = useI18n()
 
-const props = defineProps<{ nodes: Node[]; links: Link[] }>()
+// DiagnosePath is one path a diagnostic probe (mtr) measured, drawn
+// on top of the plain wiring so the operator sees the real path a
+// probe took through the fabric. Several can be shown at once — an
+// ECMP scan's distinct branches, or a "previous" run muted behind the
+// current one for a before/after comparison — so colour and line
+// style are supplied by the caller rather than baked into one CSS
+// class the way the single-path version worked.
+export interface DiagnosePath {
+  id: string
+  linkIds: string[]
+  color: string
+  dashed?: boolean
+}
+
+const props = defineProps<{
+  nodes: Node[]
+  links: Link[]
+  diagnosePaths?: DiagnosePath[]
+  // diagnoseFocusNodeId highlights and pans to one specific node,
+  // e.g. the device behind a clicked hop-table row — independent of
+  // any path highlighting, since a hop can matter on its own even
+  // when its neighbouring links didn't resolve to a path segment.
+  diagnoseFocusNodeId?: string
+}>()
 const emit = defineEmits<{
   selectNode: [node: Node]
   selectLink: [link: Link]
@@ -203,6 +226,8 @@ function render() {
     // grey; colour is reserved for future link-quality signalling.
     if (linkDead(l, stopped, ifaceStates)) el.addClass('dead')
   }
+  applyDiagnosePaths()
+  applyDiagnoseFocus(false)
   cy.fit(undefined, 40)
 }
 
@@ -270,6 +295,50 @@ function refreshState() {
   for (const l of props.links) {
     cy.getElementById(l.meta.id).toggleClass('dead', linkDead(l, down, ifaceStates))
   }
+  applyDiagnosePaths()
+  applyDiagnoseFocus(false)
+}
+
+// applyDiagnosePaths re-paints every measured path on each refresh
+// (periodic observation updates rebuild edge classes from scratch),
+// so the highlight survives until the caller clears diagnosePaths.
+// Paths are applied in order and later ones win where they share a
+// link (e.g. two ECMP branches's common first hop), via plain
+// last-write-wins on the edge's data fields — colour/width/style ride
+// on data() rather than a fixed set of CSS classes, since the number
+// of simultaneous paths is caller-controlled, not a fixed enum.
+function applyDiagnosePaths() {
+  if (!cy) return
+
+  for (const l of props.links) {
+    cy.getElementById(l.meta.id).removeClass('diagnose-path')
+  }
+
+  for (const path of props.diagnosePaths ?? []) {
+    for (const linkId of path.linkIds) {
+      const el = cy.getElementById(linkId)
+      if (el.empty()) continue
+
+      el.data('diagnoseColor', path.color)
+      el.data('diagnoseLineStyle', path.dashed ? 'dashed' : 'solid')
+      el.addClass('diagnose-path')
+    }
+  }
+}
+
+// applyDiagnoseFocus highlights (and, on demand, pans/centres to) one
+// node — e.g. the device behind a clicked hop-table row.
+function applyDiagnoseFocus(pan: boolean) {
+  if (!cy) return
+
+  cy.nodes('.diagnose-focus').removeClass('diagnose-focus')
+  if (!props.diagnoseFocusNodeId) return
+
+  const el = cy.getElementById(props.diagnoseFocusNodeId)
+  if (el.empty()) return
+
+  el.addClass('diagnose-focus')
+  if (pan) cy.animate({ center: { eles: el }, zoom: Math.max(cy.zoom(), 1) }, { duration: 300 })
 }
 
 onMounted(() => {
@@ -377,6 +446,40 @@ onMounted(() => {
         selector: 'edge.link-highlight',
         style: { width: 2, 'line-color': '#409eff' },
       },
+      {
+        // A path a diagnostic probe (mtr) measured. Colour and line
+        // style come from data() so several paths can coexist (ECMP
+        // branches, a muted previous run); the default palette starts
+        // at deep violet. The hue is boxed in from two sides: a
+        // dual-homed node keeps its blue edge.link-highlight on the
+        // uplink that was NOT measured right next to this one, which
+        // ruled out teal (too close to that blue); and red/magenta
+        // (an earlier choice) read as a link-quality alarm — in this
+        // UI red is the failed state — when the highlight only means
+        // "this is where the probe went". Violet and its
+        // palette-mates carry no health semantics anywhere else
+        // (badge colours reserve green/orange/grey/red; the agent
+        // badge's lighter purple is a tiny node dot, not a line).
+        selector: 'edge.diagnose-path',
+        style: {
+          width: 3,
+          'line-color': 'data(diagnoseColor)',
+          'line-style': 'data(diagnoseLineStyle)' as 'solid',
+          'z-index': 10,
+        },
+      },
+      {
+        // The device behind a clicked hop-table row: a halo in the
+        // same violet family as the measured path, distinct from the
+        // blue selection border (which stays on whichever node's
+        // drawer is open).
+        selector: 'node.diagnose-focus',
+        style: {
+          'border-width': 4,
+          'border-color': '#722ed1',
+          'border-style': 'double',
+        },
+      },
     ],
   })
   // Selecting a device highlights its own links; cytoscape's default
@@ -426,6 +529,11 @@ watch(
   () => (sameTopology() ? refreshState() : render()),
   { deep: false },
 )
+watch(() => props.diagnosePaths, applyDiagnosePaths)
+// Only a change of focus pans; the re-application inside render() and
+// refreshState() keeps the halo without yanking the viewport around
+// on every observation sweep.
+watch(() => props.diagnoseFocusNodeId, () => applyDiagnoseFocus(true))
 onBeforeUnmount(() => {
   resizeObserver?.disconnect()
   cy?.destroy()

@@ -41,6 +41,7 @@ const OperationDCNetLabGetNodeBGP = "/dcnetlab.v1.DCNetLab/GetNodeBGP"
 const OperationDCNetLabGetNodeBGPTable = "/dcnetlab.v1.DCNetLab/GetNodeBGPTable"
 const OperationDCNetLabGetNodeFIB = "/dcnetlab.v1.DCNetLab/GetNodeFIB"
 const OperationDCNetLabGetNodeInventory = "/dcnetlab.v1.DCNetLab/GetNodeInventory"
+const OperationDCNetLabGetNodeMTR = "/dcnetlab.v1.DCNetLab/GetNodeMTR"
 const OperationDCNetLabGetNodeMetrics = "/dcnetlab.v1.DCNetLab/GetNodeMetrics"
 const OperationDCNetLabGetNodeMetricsHistory = "/dcnetlab.v1.DCNetLab/GetNodeMetricsHistory"
 const OperationDCNetLabGetNodeRoutes = "/dcnetlab.v1.DCNetLab/GetNodeRoutes"
@@ -66,6 +67,7 @@ const OperationDCNetLabListPrograms = "/dcnetlab.v1.DCNetLab/ListPrograms"
 const OperationDCNetLabListTrafficScenarios = "/dcnetlab.v1.DCNetLab/ListTrafficScenarios"
 const OperationDCNetLabRecoverFaultScenario = "/dcnetlab.v1.DCNetLab/RecoverFaultScenario"
 const OperationDCNetLabRepairLab = "/dcnetlab.v1.DCNetLab/RepairLab"
+const OperationDCNetLabScanMTRPaths = "/dcnetlab.v1.DCNetLab/ScanMTRPaths"
 const OperationDCNetLabStartLab = "/dcnetlab.v1.DCNetLab/StartLab"
 const OperationDCNetLabStartNode = "/dcnetlab.v1.DCNetLab/StartNode"
 const OperationDCNetLabStartProgram = "/dcnetlab.v1.DCNetLab/StartProgram"
@@ -148,6 +150,13 @@ type DCNetLabHTTPServer interface {
 	// (controller-managed or created node-locally via the in-container
 	// CLI).
 	GetNodeInventory(context.Context, *GetNodeInventoryRequest) (*NodeInventory, error)
+	// GetNodeMTR GetNodeMTR runs a one-shot mtr diagnostic probe from a deployed
+	// node toward a target (another lab node or an arbitrary
+	// address/hostname), reporting per-hop loss/latency statistics.
+	// Hops whose address is known to the lab's model resolve back to a
+	// node, letting the UI highlight the measured path on the topology
+	// graph.
+	GetNodeMTR(context.Context, *GetNodeMTRRequest) (*NodeMTR, error)
 	// GetNodeMetrics GetNodeMetrics samples resource usage of one server live from
 	// its agent, node-exporter style: CPU, memory, load, filesystem,
 	// disk I/O and per-interface network.
@@ -202,6 +211,14 @@ type DCNetLabHTTPServer interface {
 	// against the lab's current generation, so already-running
 	// containers and their programs are left untouched.
 	RepairLab(context.Context, *RepairLabRequest) (*OperationRef, error)
+	// ScanMTRPaths ScanMTRPaths repeats an mtr probe several times to sample
+	// different ECMP branches: each run is a fresh process, so tcp/udp
+	// naturally gets a new ephemeral source port per run — the same
+	// 5-tuple hashing a real flow would use — varying which ECMP branch
+	// the fabric picks. Distinct paths are grouped with how many
+	// samples measured each one. icmp is rejected: it carries no port,
+	// so every run would hash to the same branch.
+	ScanMTRPaths(context.Context, *ScanMTRPathsRequest) (*MTRPathScan, error)
 	// StartLab StartLab / StopLab power the deployed containers of a lab on and
 	// off (docker start/stop) without touching the generation.
 	StartLab(context.Context, *StartLabRequest) (*OperationRef, error)
@@ -242,6 +259,8 @@ func RegisterDCNetLabHTTPServer(s *http.Server, srv DCNetLabHTTPServer) {
 	r.GET("/api/v1/labs/{lab_id}/nodes/{node_id}/routes", _DCNetLab_GetNodeRoutes0_HTTP_Handler(srv))
 	r.GET("/api/v1/labs/{lab_id}/nodes/{node_id}/bgp-table", _DCNetLab_GetNodeBGPTable0_HTTP_Handler(srv))
 	r.GET("/api/v1/labs/{lab_id}/nodes/{node_id}/fib", _DCNetLab_GetNodeFIB0_HTTP_Handler(srv))
+	r.GET("/api/v1/labs/{lab_id}/nodes/{node_id}/mtr", _DCNetLab_GetNodeMTR0_HTTP_Handler(srv))
+	r.GET("/api/v1/labs/{lab_id}/nodes/{node_id}/mtr/scan", _DCNetLab_ScanMTRPaths0_HTTP_Handler(srv))
 	r.GET("/api/v1/labs/{lab_id}/nodes/{node_id}/metrics", _DCNetLab_GetNodeMetrics0_HTTP_Handler(srv))
 	r.GET("/api/v1/labs/{lab_id}/nodes/{node_id}/metrics/history", _DCNetLab_GetNodeMetricsHistory0_HTTP_Handler(srv))
 	r.POST("/api/v1/packages", _DCNetLab_UploadPackage0_HTTP_Handler(srv))
@@ -667,6 +686,50 @@ func _DCNetLab_GetNodeFIB0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Co
 			return err
 		}
 		reply := out.(*NodeFIB)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_GetNodeMTR0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in GetNodeMTRRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabGetNodeMTR)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.GetNodeMTR(ctx, req.(*GetNodeMTRRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*NodeMTR)
+		return ctx.Result(200, reply)
+	}
+}
+
+func _DCNetLab_ScanMTRPaths0_HTTP_Handler(srv DCNetLabHTTPServer) func(ctx http.Context) error {
+	return func(ctx http.Context) error {
+		var in ScanMTRPathsRequest
+		if err := ctx.BindQuery(&in); err != nil {
+			return err
+		}
+		if err := ctx.BindVars(&in); err != nil {
+			return err
+		}
+		http.SetOperation(ctx, OperationDCNetLabScanMTRPaths)
+		h := ctx.Middleware(func(ctx context.Context, req interface{}) (interface{}, error) {
+			return srv.ScanMTRPaths(ctx, req.(*ScanMTRPathsRequest))
+		})
+		out, err := h(ctx, &in)
+		if err != nil {
+			return err
+		}
+		reply := out.(*MTRPathScan)
 		return ctx.Result(200, reply)
 	}
 }
@@ -1682,6 +1745,13 @@ type DCNetLabHTTPClient interface {
 	// (controller-managed or created node-locally via the in-container
 	// CLI).
 	GetNodeInventory(ctx context.Context, req *GetNodeInventoryRequest, opts ...http.CallOption) (rsp *NodeInventory, err error)
+	// GetNodeMTR GetNodeMTR runs a one-shot mtr diagnostic probe from a deployed
+	// node toward a target (another lab node or an arbitrary
+	// address/hostname), reporting per-hop loss/latency statistics.
+	// Hops whose address is known to the lab's model resolve back to a
+	// node, letting the UI highlight the measured path on the topology
+	// graph.
+	GetNodeMTR(ctx context.Context, req *GetNodeMTRRequest, opts ...http.CallOption) (rsp *NodeMTR, err error)
 	// GetNodeMetrics GetNodeMetrics samples resource usage of one server live from
 	// its agent, node-exporter style: CPU, memory, load, filesystem,
 	// disk I/O and per-interface network.
@@ -1736,6 +1806,14 @@ type DCNetLabHTTPClient interface {
 	// against the lab's current generation, so already-running
 	// containers and their programs are left untouched.
 	RepairLab(ctx context.Context, req *RepairLabRequest, opts ...http.CallOption) (rsp *OperationRef, err error)
+	// ScanMTRPaths ScanMTRPaths repeats an mtr probe several times to sample
+	// different ECMP branches: each run is a fresh process, so tcp/udp
+	// naturally gets a new ephemeral source port per run — the same
+	// 5-tuple hashing a real flow would use — varying which ECMP branch
+	// the fabric picks. Distinct paths are grouped with how many
+	// samples measured each one. icmp is rejected: it carries no port,
+	// so every run would hash to the same branch.
+	ScanMTRPaths(ctx context.Context, req *ScanMTRPathsRequest, opts ...http.CallOption) (rsp *MTRPathScan, err error)
 	// StartLab StartLab / StopLab power the deployed containers of a lab on and
 	// off (docker start/stop) without touching the generation.
 	StartLab(ctx context.Context, req *StartLabRequest, opts ...http.CallOption) (rsp *OperationRef, err error)
@@ -2098,6 +2176,25 @@ func (c *DCNetLabHTTPClientImpl) GetNodeInventory(ctx context.Context, in *GetNo
 	return &out, nil
 }
 
+// GetNodeMTR GetNodeMTR runs a one-shot mtr diagnostic probe from a deployed
+// node toward a target (another lab node or an arbitrary
+// address/hostname), reporting per-hop loss/latency statistics.
+// Hops whose address is known to the lab's model resolve back to a
+// node, letting the UI highlight the measured path on the topology
+// graph.
+func (c *DCNetLabHTTPClientImpl) GetNodeMTR(ctx context.Context, in *GetNodeMTRRequest, opts ...http.CallOption) (*NodeMTR, error) {
+	var out NodeMTR
+	pattern := "/api/v1/labs/{lab_id}/nodes/{node_id}/mtr"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationDCNetLabGetNodeMTR))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // GetNodeMetrics GetNodeMetrics samples resource usage of one server live from
 // its agent, node-exporter style: CPU, memory, load, filesystem,
 // disk I/O and per-interface network.
@@ -2446,6 +2543,26 @@ func (c *DCNetLabHTTPClientImpl) RepairLab(ctx context.Context, in *RepairLabReq
 	opts = append(opts, http.Operation(OperationDCNetLabRepairLab))
 	opts = append(opts, http.PathTemplate(pattern))
 	err := c.cc.Invoke(ctx, "POST", path, in, &out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ScanMTRPaths ScanMTRPaths repeats an mtr probe several times to sample
+// different ECMP branches: each run is a fresh process, so tcp/udp
+// naturally gets a new ephemeral source port per run — the same
+// 5-tuple hashing a real flow would use — varying which ECMP branch
+// the fabric picks. Distinct paths are grouped with how many
+// samples measured each one. icmp is rejected: it carries no port,
+// so every run would hash to the same branch.
+func (c *DCNetLabHTTPClientImpl) ScanMTRPaths(ctx context.Context, in *ScanMTRPathsRequest, opts ...http.CallOption) (*MTRPathScan, error) {
+	var out MTRPathScan
+	pattern := "/api/v1/labs/{lab_id}/nodes/{node_id}/mtr/scan"
+	path := binding.EncodeURL(pattern, in, true)
+	opts = append(opts, http.Operation(OperationDCNetLabScanMTRPaths))
+	opts = append(opts, http.PathTemplate(pattern))
+	err := c.cc.Invoke(ctx, "GET", path, nil, &out, opts...)
 	if err != nil {
 		return nil, err
 	}

@@ -8,7 +8,9 @@ import (
 	"log/slog"
 	"net/netip"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ifantsai/dcnetlab/internal/model"
 	"github.com/ifantsai/dcnetlab/internal/runtime"
@@ -196,6 +198,473 @@ func (uc *RuntimeUsecase) GetNodeFIB(ctx context.Context, labID, nodeID string) 
 	rt.Routes = parseFIB(out)
 
 	return rt, nil
+}
+
+// MTR probe protocols.
+const (
+	MTRProtocolICMP = "icmp"
+	MTRProtocolTCP  = "tcp"
+	MTRProtocolUDP  = "udp"
+)
+
+const (
+	defaultMTRCycles = 10
+	maxMTRCycles     = 30
+)
+
+// MTRResult is the outcome of one mtr diagnostic probe from a node.
+type MTRResult struct {
+	ContainerState string
+	Target         string
+	Protocol       string
+	Port           int
+	Hops           []MTRHop
+	// PathLinkIDs is the ordered set of links connecting consecutive
+	// hops that resolved to a node of the lab's topology, for drawing
+	// the measured path on the topology graph.
+	PathLinkIDs []string
+}
+
+// MTRHop is one hop of a measured path, aggregated over all probe
+// cycles.
+type MTRHop struct {
+	TTL         int
+	Host        string
+	Timeout     bool
+	LossPercent float64
+	Sent        int
+	LastMs      float64
+	AvgMs       float64
+	BestMs      float64
+	WorstMs     float64
+	StdDevMs    float64
+	NodeID      string
+	NodeName    string
+	NodeRole    string
+}
+
+// RunMTR runs a one-shot mtr probe from a node toward either another
+// node of the same lab (targetNodeID, resolved to its reachable
+// address) or a free-form target (address/hostname, for probing
+// outside the lab). protocol is icmp/tcp/udp; port is required for
+// tcp/udp and ignored for icmp; cycles defaults to 10 and is capped
+// at 30 to keep the request bounded.
+func (uc *RuntimeUsecase) RunMTR(ctx context.Context, labID, nodeID, targetNodeID, target, protocol string, port, cycles int) (*MTRResult, error) {
+	protocol, err := validateMTRProtocolPort(protocol, port)
+	if err != nil {
+		return nil, err
+	}
+
+	cycles = normalizeMTRCycles(cycles)
+
+	lab, node, state, err := uc.deployedNode(ctx, labID, nodeID)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &MTRResult{ContainerState: state, Protocol: protocol, Port: port}
+	if state != "running" {
+		return result, nil
+	}
+
+	nodes, err := uc.nodes.ListNodes(labID)
+	if err != nil {
+		return nil, fmt.Errorf("list nodes: %w", err)
+	}
+
+	links, err := uc.nodes.ListLinks(labID)
+	if err != nil {
+		return nil, fmt.Errorf("list links: %w", err)
+	}
+
+	resolvedTarget, idx, err := resolveMTRTarget(nodes, links, targetNodeID, target)
+	if err != nil {
+		return nil, err
+	}
+
+	result.Target = resolvedTarget
+
+	hops, pathLinkIDs, err := uc.runOneMTRProbe(ctx, lab.Meta.Name, node.Meta.Name, node.Meta.ID, resolvedTarget, protocol, port, cycles, idx)
+	if err != nil {
+		return nil, err
+	}
+
+	result.Hops = hops
+	result.PathLinkIDs = pathLinkIDs
+
+	return result, nil
+}
+
+const (
+	defaultMTRScanSamples = 8
+	maxMTRScanSamples     = 20
+	defaultMTRScanCycles  = 3
+	maxMTRScanCycles      = 10
+)
+
+// MTRScanResult is the outcome of scanning for distinct ECMP paths.
+type MTRScanResult struct {
+	ContainerState string
+	Target         string
+	Protocol       string
+	Port           int
+	SamplesRun     int
+	Paths          []MTRScanPath
+}
+
+// MTRScanPath is one distinct path observed while scanning, with how
+// many of the samples measured it.
+type MTRScanPath struct {
+	Hops        []MTRHop
+	PathLinkIDs []string
+	Count       int
+}
+
+// RunMTRScan repeats an mtr probe several times to sample different
+// ECMP branches: each run is a fresh process, so tcp/udp naturally
+// gets a new kernel-assigned ephemeral source port per run — the same
+// 5-tuple hashing a real flow would use — varying which ECMP branch
+// the fabric picks for it. ICMP carries no port, so every run would
+// hash identically; scanning is only meaningful for tcp/udp.
+func (uc *RuntimeUsecase) RunMTRScan(ctx context.Context, labID, nodeID, targetNodeID, target, protocol string, port, samples, cyclesPerSample int) (*MTRScanResult, error) {
+	protocol, err := validateMTRProtocolPort(protocol, port)
+	if err != nil {
+		return nil, err
+	}
+
+	if protocol == MTRProtocolICMP {
+		return nil, fmt.Errorf("ECMP scanning needs tcp or udp: icmp probes carry no port, so every run would hash to the same path")
+	}
+
+	switch {
+	case samples <= 0:
+		samples = defaultMTRScanSamples
+	case samples > maxMTRScanSamples:
+		samples = maxMTRScanSamples
+	}
+
+	switch {
+	case cyclesPerSample <= 0:
+		cyclesPerSample = defaultMTRScanCycles
+	case cyclesPerSample > maxMTRScanCycles:
+		cyclesPerSample = maxMTRScanCycles
+	}
+
+	lab, node, state, err := uc.deployedNode(ctx, labID, nodeID)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &MTRScanResult{ContainerState: state, Protocol: protocol, Port: port}
+	if state != "running" {
+		return result, nil
+	}
+
+	nodes, err := uc.nodes.ListNodes(labID)
+	if err != nil {
+		return nil, fmt.Errorf("list nodes: %w", err)
+	}
+
+	links, err := uc.nodes.ListLinks(labID)
+	if err != nil {
+		return nil, fmt.Errorf("list links: %w", err)
+	}
+
+	resolvedTarget, idx, err := resolveMTRTarget(nodes, links, targetNodeID, target)
+	if err != nil {
+		return nil, err
+	}
+
+	result.Target = resolvedTarget
+
+	pathIndex := make(map[string]int) // path signature -> index into result.Paths
+	for i := 0; i < samples; i++ {
+		hops, pathLinkIDs, err := uc.runOneMTRProbe(ctx, lab.Meta.Name, node.Meta.Name, node.Meta.ID, resolvedTarget, protocol, port, cyclesPerSample, idx)
+		if err != nil {
+			return nil, err
+		}
+
+		result.SamplesRun++
+
+		sig := strings.Join(pathLinkIDs, "|")
+		if pos, ok := pathIndex[sig]; ok {
+			result.Paths[pos].Count++
+
+			continue
+		}
+
+		pathIndex[sig] = len(result.Paths)
+		result.Paths = append(result.Paths, MTRScanPath{Hops: hops, PathLinkIDs: pathLinkIDs, Count: 1})
+	}
+
+	return result, nil
+}
+
+// validateMTRProtocolPort defaults an empty protocol to icmp,
+// rejects anything else unknown and requires a valid port for
+// tcp/udp (icmp ignores port).
+func validateMTRProtocolPort(protocol string, port int) (string, error) {
+	if protocol == "" {
+		protocol = MTRProtocolICMP
+	}
+
+	switch protocol {
+	case MTRProtocolICMP, MTRProtocolTCP, MTRProtocolUDP:
+	default:
+		return "", fmt.Errorf("invalid protocol %q (want icmp, tcp or udp)", protocol)
+	}
+
+	if protocol != MTRProtocolICMP && (port < 1 || port > 65535) {
+		return "", fmt.Errorf("port must be between 1 and 65535 for %s probes", protocol)
+	}
+
+	return protocol, nil
+}
+
+// normalizeMTRCycles defaults and caps the per-run probe rounds.
+func normalizeMTRCycles(cycles int) int {
+	switch {
+	case cycles <= 0:
+		return defaultMTRCycles
+	case cycles > maxMTRCycles:
+		return maxMTRCycles
+	}
+
+	return cycles
+}
+
+// resolveMTRTarget resolves the probe target — an explicit node
+// (targetNodeID, wins when set) or a free-form address/hostname — and
+// builds the hop-resolution index from the lab's current topology.
+func resolveMTRTarget(nodes []*model.Node, links []*model.Link, targetNodeID, target string) (string, *mtrNodeIndex, error) {
+	idx := buildMTRIndex(nodes, links)
+
+	resolvedTarget := target
+	if targetNodeID != "" {
+		targetNode := findNode(nodes, targetNodeID)
+		if targetNode == nil {
+			return "", nil, fmt.Errorf("target node %q: %w", targetNodeID, ErrNotFound)
+		}
+
+		addr, ok := mtrNodeAddress(targetNode)
+		if !ok {
+			return "", nil, fmt.Errorf("target node %q has no reachable address", targetNode.Meta.Name)
+		}
+
+		resolvedTarget = addr.String()
+	}
+
+	if resolvedTarget == "" {
+		return "", nil, fmt.Errorf("target is required")
+	}
+
+	return resolvedTarget, idx, nil
+}
+
+// runOneMTRProbe execs a single mtr invocation and resolves its hops
+// against idx, seeded from sourceNodeID for path-link resolution.
+func (uc *RuntimeUsecase) runOneMTRProbe(ctx context.Context, labName, nodeName, sourceNodeID, target, protocol string, port, cycles int, idx *mtrNodeIndex) ([]MTRHop, []string, error) {
+	// mtr probes one round roughly every second; bound the exec well
+	// past that so a stalled probe cannot hang the request forever.
+	execCtx, cancel := context.WithTimeout(ctx, time.Duration(cycles+15)*time.Second)
+	defer cancel()
+
+	out, err := uc.driver.Exec(execCtx, labName, nodeName, mtrArgs(target, protocol, port, cycles))
+	if err != nil {
+		return nil, nil, fmt.Errorf("exec into %q: %w", nodeName, err)
+	}
+
+	hops := parseMTRHops(out, idx)
+	pathLinkIDs := mtrPathLinkIDs(sourceNodeID, hops, idx)
+
+	return hops, pathLinkIDs, nil
+}
+
+// mtrArgs builds the mtr invocation for one probe: a single JSON
+// report, IPv4 only (the platform's address model is IPv4-only) and
+// no reverse DNS (host must stay a raw address for hop resolution
+// against the topology model).
+func mtrArgs(target, protocol string, port, cycles int) []string {
+	args := []string{"mtr", "--report", "--json", "-4", "-n", "-c", strconv.Itoa(cycles)}
+
+	switch protocol {
+	case MTRProtocolTCP:
+		args = append(args, "-T")
+	case MTRProtocolUDP:
+		args = append(args, "-u")
+	}
+
+	if protocol != MTRProtocolICMP {
+		args = append(args, "-P", strconv.Itoa(port))
+	}
+
+	return append(args, target)
+}
+
+// mtrReport is the shape of `mtr --report --json` output.
+type mtrReport struct {
+	Report struct {
+		Hubs []struct {
+			Host    string  `json:"host"`
+			LossPct float64 `json:"Loss%"`
+			Snt     int     `json:"Snt"`
+			Last    float64 `json:"Last"`
+			Avg     float64 `json:"Avg"`
+			Best    float64 `json:"Best"`
+			Wrst    float64 `json:"Wrst"`
+			StDev   float64 `json:"StDev"`
+		} `json:"hubs"`
+	} `json:"report"`
+}
+
+// parseMTRHops reads mtr's JSON report and resolves each hop's
+// address back to a node of the lab's topology, when known.
+func parseMTRHops(out []byte, idx *mtrNodeIndex) []MTRHop {
+	var report mtrReport
+	if err := json.Unmarshal(jsonBody(out), &report); err != nil {
+		return nil
+	}
+
+	hops := make([]MTRHop, 0, len(report.Report.Hubs))
+	for i, h := range report.Report.Hubs {
+		hop := MTRHop{
+			TTL:         i + 1,
+			Host:        h.Host,
+			Timeout:     h.Host == "" || h.Host == "???",
+			LossPercent: h.LossPct,
+			Sent:        h.Snt,
+			LastMs:      h.Last,
+			AvgMs:       h.Avg,
+			BestMs:      h.Best,
+			WorstMs:     h.Wrst,
+			StdDevMs:    h.StDev,
+		}
+
+		if !hop.Timeout {
+			if n, ok := idx.byAddr[hop.Host]; ok {
+				hop.NodeID = n.Meta.ID
+				hop.NodeName = n.Meta.Name
+				hop.NodeRole = string(n.Spec.Role)
+			}
+		}
+
+		hops = append(hops, hop)
+	}
+
+	return hops
+}
+
+// mtrPathLinkIDs walks the resolved hops in order, seeded with the
+// probing node itself (mtr never lists the source as a hop, so
+// without seeding the first link — probe to hop 1 — would be missed),
+// and collects the link connecting each consecutive pair that both
+// resolved to a node. Unresolved hops (timeouts, or addresses outside
+// the lab such as real internet hops past external) are skipped over.
+func mtrPathLinkIDs(sourceNodeID string, hops []MTRHop, idx *mtrNodeIndex) []string {
+	var linkIDs []string
+
+	prev := sourceNodeID
+	for _, hop := range hops {
+		if hop.NodeID == "" {
+			continue
+		}
+
+		if prev != "" && prev != hop.NodeID {
+			if id, ok := idx.byPair[pairKey(prev, hop.NodeID)]; ok {
+				linkIDs = append(linkIDs, id)
+			}
+		}
+
+		prev = hop.NodeID
+	}
+
+	return linkIDs
+}
+
+// mtrNodeIndex resolves live-observed IP addresses back to the lab's
+// topology model: every address a node can appear as (loopback,
+// fabric link endpoints, leaf VLAN SVI, server bond0) maps to that
+// node, and adjacent node pairs map to the link between them. The
+// VRRP virtual gateway is intentionally excluded — a leaf pair shares
+// it, so it cannot identify a single physical node.
+type mtrNodeIndex struct {
+	byAddr map[string]*model.Node
+	byPair map[string]string
+}
+
+func buildMTRIndex(nodes []*model.Node, links []*model.Link) *mtrNodeIndex {
+	idx := &mtrNodeIndex{byAddr: make(map[string]*model.Node), byPair: make(map[string]string)}
+
+	for _, n := range nodes {
+		if addr, ok := mtrNodeAddress(n); ok {
+			idx.byAddr[addr.String()] = n
+		}
+
+		// A leaf replies to its L2-adjacent servers (the access-link
+		// segment mtr sees on a server-to-anywhere probe) from its VLAN
+		// SVI's own address, not its loopback — index it too, alongside
+		// mtrNodeAddress's identity address rather than instead of it.
+		if n.Spec.VlanIP.IsValid() {
+			idx.byAddr[n.Spec.VlanIP.Addr().String()] = n
+		}
+	}
+
+	for _, l := range links {
+		a, b := l.Spec.EndpointA, l.Spec.EndpointB
+		if a.Address.IsValid() {
+			if n := findNode(nodes, a.NodeID); n != nil {
+				idx.byAddr[a.Address.Addr().String()] = n
+			}
+		}
+
+		if b.Address.IsValid() {
+			if n := findNode(nodes, b.NodeID); n != nil {
+				idx.byAddr[b.Address.Addr().String()] = n
+			}
+		}
+
+		if a.NodeID != "" && b.NodeID != "" {
+			idx.byPair[pairKey(a.NodeID, b.NodeID)] = l.Meta.ID
+		}
+	}
+
+	return idx
+}
+
+// mtrNodeAddress returns a node's identity address for hop
+// resolution: the loopback for routers, the bond0 address for
+// servers.
+func mtrNodeAddress(n *model.Node) (netip.Addr, bool) {
+	if n.Spec.IsRouter() && n.Spec.Loopback.IsValid() {
+		return n.Spec.Loopback.Addr(), true
+	}
+
+	if n.Spec.Role == model.RoleServer && n.Spec.Address.IsValid() {
+		return n.Spec.Address.Addr(), true
+	}
+
+	return netip.Addr{}, false
+}
+
+// findNode looks up a node of the lab by id.
+func findNode(nodes []*model.Node, id string) *model.Node {
+	for _, n := range nodes {
+		if n.Meta.ID == id {
+			return n
+		}
+	}
+
+	return nil
+}
+
+// pairKey orders two node ids so a link between them hashes the same
+// regardless of which endpoint is A and which is B.
+func pairKey(a, b string) string {
+	if a > b {
+		a, b = b, a
+	}
+
+	return a + "|" + b
 }
 
 // deployedNode resolves one node of a deployed lab together with its

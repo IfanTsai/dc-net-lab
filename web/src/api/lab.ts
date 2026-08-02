@@ -1,7 +1,19 @@
 import { api } from './client'
-import type { CaptureFilter, CapturePacketDetail, CaptureSession, FaultImpairment, FaultScenario, FaultTarget, HealthCheck, Lab, Link, MetricsPoint, Node, NodeBGP, NodeBGPTable, NodeInventory, NodeMetrics, NodeRoutes, NodeRuntime, Operation, Package, Plan, ProfileInfo, Program, ProgramOpResult, ServerInstallResult, TopologySpec, TrafficAssertion, TrafficPoint, TrafficScenario } from '../types/models'
+import type { CaptureFilter, CapturePacketDetail, CaptureSession, FaultImpairment, FaultScenario, FaultTarget, HealthCheck, Lab, Link, MetricsPoint, MTRPathScan, Node, NodeBGP, NodeBGPTable, NodeInventory, NodeMetrics, NodeMTR, NodeRoutes, NodeRuntime, Operation, Package, Plan, ProfileInfo, Program, ProgramOpResult, ServerInstallResult, TopologySpec, TrafficAssertion, TrafficPoint, TrafficScenario } from '../types/models'
 
 const base = '/api/v1'
+
+function mtrParams(opts: { targetNodeId?: string; target?: string; protocol?: string; port?: number; samples?: number; cycles?: number }): string {
+  const params = new URLSearchParams()
+  if (opts.targetNodeId) params.set('targetNodeId', opts.targetNodeId)
+  if (opts.target) params.set('target', opts.target)
+  if (opts.protocol) params.set('protocol', opts.protocol)
+  if (opts.port) params.set('port', String(opts.port))
+  if (opts.samples) params.set('samples', String(opts.samples))
+  if (opts.cycles) params.set('cycles', String(opts.cycles))
+
+  return params.toString()
+}
 
 // List endpoints return protobuf reply messages that wrap the items
 // (e.g. { labs: [...] }); unwrap them here so stores keep plain arrays.
@@ -37,6 +49,10 @@ export const labApi = {
     api.get<NodeBGPTable>(`${base}/labs/${labId}/nodes/${nodeId}/bgp-table`),
   nodeFIB: (labId: string, nodeId: string) =>
     api.get<NodeRoutes>(`${base}/labs/${labId}/nodes/${nodeId}/fib`),
+  nodeMTR: (labId: string, nodeId: string, opts: { targetNodeId?: string; target?: string; protocol?: string; port?: number; cycles?: number }) =>
+    api.get<NodeMTR>(`${base}/labs/${labId}/nodes/${nodeId}/mtr?${mtrParams(opts)}`),
+  nodeMTRScan: (labId: string, nodeId: string, opts: { targetNodeId?: string; target?: string; protocol?: string; port?: number; samples?: number; cycles?: number }) =>
+    api.get<MTRPathScan>(`${base}/labs/${labId}/nodes/${nodeId}/mtr/scan?${mtrParams(opts)}`),
 
   packages: () => api.get<{ packages: Package[] }>(`${base}/packages`).then((r) => r.packages),
   uploadPackage: (payloadBase64: string) =>

@@ -290,6 +290,60 @@ func nodeRuntimeToPB(rt *biz.NodeRuntime) *v1.NodeRuntime {
 	return pb
 }
 
+func nodeMTRToPB(r *biz.MTRResult) *v1.NodeMTR {
+	return &v1.NodeMTR{
+		ContainerState: r.ContainerState,
+		Target:         r.Target,
+		Protocol:       r.Protocol,
+		Port:           int32(r.Port),
+		Hops:           mtrHopsToPB(r.Hops),
+		PathLinkIds:    r.PathLinkIDs,
+	}
+}
+
+func mtrHopsToPB(hops []biz.MTRHop) []*v1.MTRHop {
+	pb := make([]*v1.MTRHop, 0, len(hops))
+	for _, h := range hops {
+		pb = append(pb, &v1.MTRHop{
+			Ttl:         int32(h.TTL),
+			Host:        h.Host,
+			Timeout:     h.Timeout,
+			LossPercent: h.LossPercent,
+			Sent:        int32(h.Sent),
+			LastMs:      h.LastMs,
+			AvgMs:       h.AvgMs,
+			BestMs:      h.BestMs,
+			WorstMs:     h.WorstMs,
+			StddevMs:    h.StdDevMs,
+			NodeId:      h.NodeID,
+			NodeName:    h.NodeName,
+			NodeRole:    h.NodeRole,
+		})
+	}
+
+	return pb
+}
+
+func mtrPathScanToPB(r *biz.MTRScanResult) *v1.MTRPathScan {
+	pb := &v1.MTRPathScan{
+		ContainerState: r.ContainerState,
+		Target:         r.Target,
+		Protocol:       r.Protocol,
+		Port:           int32(r.Port),
+		SamplesRun:     int32(r.SamplesRun),
+	}
+
+	for _, p := range r.Paths {
+		pb.Paths = append(pb.Paths, &v1.MTRScanPath{
+			Hops:        mtrHopsToPB(p.Hops),
+			PathLinkIds: p.PathLinkIDs,
+			Count:       int32(p.Count),
+		})
+	}
+
+	return pb
+}
+
 // --- Link ---
 
 func endpointToPB(e model.LinkEndpoint) *v1.LinkEndpoint {

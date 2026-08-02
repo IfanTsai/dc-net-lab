@@ -190,6 +190,30 @@ func (s *DCNetLabService) GetNodeFIB(ctx context.Context, req *v1.GetNodeFIBRequ
 	return &v1.NodeFIB{ContainerState: fib.ContainerState, Routes: fib.Routes}, nil
 }
 
+// GetNodeMTR runs for up to cycles+15 s (see RunMTR), well past
+// Kratos's default 1 s request timeout; context.WithoutCancel drops
+// that inherited deadline so the probe can actually finish, the same
+// fix the terminal WebSocket handler uses for its own long sessions.
+func (s *DCNetLabService) GetNodeMTR(ctx context.Context, req *v1.GetNodeMTRRequest) (*v1.NodeMTR, error) {
+	result, err := s.runtime.RunMTR(context.WithoutCancel(ctx), req.LabId, req.NodeId, req.TargetNodeId, req.Target, req.Protocol, int(req.Port), int(req.Cycles))
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return nodeMTRToPB(result), nil
+}
+
+// ScanMTRPaths runs several samples sequentially (see RunMTRScan) and
+// so needs the same Kratos-default-timeout workaround as GetNodeMTR.
+func (s *DCNetLabService) ScanMTRPaths(ctx context.Context, req *v1.ScanMTRPathsRequest) (*v1.MTRPathScan, error) {
+	result, err := s.runtime.RunMTRScan(context.WithoutCancel(ctx), req.LabId, req.NodeId, req.TargetNodeId, req.Target, req.Protocol, int(req.Port), int(req.Samples), int(req.Cycles))
+	if err != nil {
+		return nil, asAPIError(err)
+	}
+
+	return mtrPathScanToPB(result), nil
+}
+
 // --- Topology ---
 
 func (s *DCNetLabService) ListNodes(ctx context.Context, req *v1.ListNodesRequest) (*v1.ListNodesReply, error) {

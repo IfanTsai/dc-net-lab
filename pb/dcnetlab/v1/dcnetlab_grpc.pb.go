@@ -42,6 +42,8 @@ const (
 	DCNetLab_GetNodeRoutes_FullMethodName             = "/dcnetlab.v1.DCNetLab/GetNodeRoutes"
 	DCNetLab_GetNodeBGPTable_FullMethodName           = "/dcnetlab.v1.DCNetLab/GetNodeBGPTable"
 	DCNetLab_GetNodeFIB_FullMethodName                = "/dcnetlab.v1.DCNetLab/GetNodeFIB"
+	DCNetLab_GetNodeMTR_FullMethodName                = "/dcnetlab.v1.DCNetLab/GetNodeMTR"
+	DCNetLab_ScanMTRPaths_FullMethodName              = "/dcnetlab.v1.DCNetLab/ScanMTRPaths"
 	DCNetLab_GetNodeMetrics_FullMethodName            = "/dcnetlab.v1.DCNetLab/GetNodeMetrics"
 	DCNetLab_GetNodeMetricsHistory_FullMethodName     = "/dcnetlab.v1.DCNetLab/GetNodeMetricsHistory"
 	DCNetLab_UploadPackage_FullMethodName             = "/dcnetlab.v1.DCNetLab/UploadPackage"
@@ -136,6 +138,21 @@ type DCNetLabClient interface {
 	// deployed node (`ip route`): what actually forwards packets, as
 	// installed by zebra from the RIB.
 	GetNodeFIB(ctx context.Context, in *GetNodeFIBRequest, opts ...grpc.CallOption) (*NodeFIB, error)
+	// GetNodeMTR runs a one-shot mtr diagnostic probe from a deployed
+	// node toward a target (another lab node or an arbitrary
+	// address/hostname), reporting per-hop loss/latency statistics.
+	// Hops whose address is known to the lab's model resolve back to a
+	// node, letting the UI highlight the measured path on the topology
+	// graph.
+	GetNodeMTR(ctx context.Context, in *GetNodeMTRRequest, opts ...grpc.CallOption) (*NodeMTR, error)
+	// ScanMTRPaths repeats an mtr probe several times to sample
+	// different ECMP branches: each run is a fresh process, so tcp/udp
+	// naturally gets a new ephemeral source port per run — the same
+	// 5-tuple hashing a real flow would use — varying which ECMP branch
+	// the fabric picks. Distinct paths are grouped with how many
+	// samples measured each one. icmp is rejected: it carries no port,
+	// so every run would hash to the same branch.
+	ScanMTRPaths(ctx context.Context, in *ScanMTRPathsRequest, opts ...grpc.CallOption) (*MTRPathScan, error)
 	// GetNodeMetrics samples resource usage of one server live from
 	// its agent, node-exporter style: CPU, memory, load, filesystem,
 	// disk I/O and per-interface network.
@@ -408,6 +425,26 @@ func (c *dCNetLabClient) GetNodeFIB(ctx context.Context, in *GetNodeFIBRequest, 
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(NodeFIB)
 	err := c.cc.Invoke(ctx, DCNetLab_GetNodeFIB_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) GetNodeMTR(ctx context.Context, in *GetNodeMTRRequest, opts ...grpc.CallOption) (*NodeMTR, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(NodeMTR)
+	err := c.cc.Invoke(ctx, DCNetLab_GetNodeMTR_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dCNetLabClient) ScanMTRPaths(ctx context.Context, in *ScanMTRPathsRequest, opts ...grpc.CallOption) (*MTRPathScan, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MTRPathScan)
+	err := c.cc.Invoke(ctx, DCNetLab_ScanMTRPaths_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -875,6 +912,21 @@ type DCNetLabServer interface {
 	// deployed node (`ip route`): what actually forwards packets, as
 	// installed by zebra from the RIB.
 	GetNodeFIB(context.Context, *GetNodeFIBRequest) (*NodeFIB, error)
+	// GetNodeMTR runs a one-shot mtr diagnostic probe from a deployed
+	// node toward a target (another lab node or an arbitrary
+	// address/hostname), reporting per-hop loss/latency statistics.
+	// Hops whose address is known to the lab's model resolve back to a
+	// node, letting the UI highlight the measured path on the topology
+	// graph.
+	GetNodeMTR(context.Context, *GetNodeMTRRequest) (*NodeMTR, error)
+	// ScanMTRPaths repeats an mtr probe several times to sample
+	// different ECMP branches: each run is a fresh process, so tcp/udp
+	// naturally gets a new ephemeral source port per run — the same
+	// 5-tuple hashing a real flow would use — varying which ECMP branch
+	// the fabric picks. Distinct paths are grouped with how many
+	// samples measured each one. icmp is rejected: it carries no port,
+	// so every run would hash to the same branch.
+	ScanMTRPaths(context.Context, *ScanMTRPathsRequest) (*MTRPathScan, error)
 	// GetNodeMetrics samples resource usage of one server live from
 	// its agent, node-exporter style: CPU, memory, load, filesystem,
 	// disk I/O and per-interface network.
@@ -1033,6 +1085,12 @@ func (UnimplementedDCNetLabServer) GetNodeBGPTable(context.Context, *GetNodeBGPT
 }
 func (UnimplementedDCNetLabServer) GetNodeFIB(context.Context, *GetNodeFIBRequest) (*NodeFIB, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetNodeFIB not implemented")
+}
+func (UnimplementedDCNetLabServer) GetNodeMTR(context.Context, *GetNodeMTRRequest) (*NodeMTR, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetNodeMTR not implemented")
+}
+func (UnimplementedDCNetLabServer) ScanMTRPaths(context.Context, *ScanMTRPathsRequest) (*MTRPathScan, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ScanMTRPaths not implemented")
 }
 func (UnimplementedDCNetLabServer) GetNodeMetrics(context.Context, *GetNodeMetricsRequest) (*NodeMetrics, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetNodeMetrics not implemented")
@@ -1480,6 +1538,42 @@ func _DCNetLab_GetNodeFIB_Handler(srv interface{}, ctx context.Context, dec func
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DCNetLabServer).GetNodeFIB(ctx, req.(*GetNodeFIBRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_GetNodeMTR_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetNodeMTRRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).GetNodeMTR(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_GetNodeMTR_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).GetNodeMTR(ctx, req.(*GetNodeMTRRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DCNetLab_ScanMTRPaths_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ScanMTRPathsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DCNetLabServer).ScanMTRPaths(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DCNetLab_ScanMTRPaths_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DCNetLabServer).ScanMTRPaths(ctx, req.(*ScanMTRPathsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2296,6 +2390,14 @@ var DCNetLab_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetNodeFIB",
 			Handler:    _DCNetLab_GetNodeFIB_Handler,
+		},
+		{
+			MethodName: "GetNodeMTR",
+			Handler:    _DCNetLab_GetNodeMTR_Handler,
+		},
+		{
+			MethodName: "ScanMTRPaths",
+			Handler:    _DCNetLab_ScanMTRPaths_Handler,
 		},
 		{
 			MethodName: "GetNodeMetrics",

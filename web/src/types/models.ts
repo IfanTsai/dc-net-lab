@@ -156,6 +156,55 @@ export interface NodeBGPTable {
   paths?: BGPPath[]
 }
 
+// NodeMTR is the result of a one-shot mtr diagnostic probe
+// (GET .../nodes/{id}/mtr): per-hop loss/latency, with hops resolved
+// back to a topology node when their address is known to the model.
+export interface MTRHop {
+  ttl: number
+  host?: string
+  timeout?: boolean
+  lossPercent?: number
+  sent?: number
+  lastMs?: number
+  avgMs?: number
+  bestMs?: number
+  worstMs?: number
+  stddevMs?: number
+  nodeId?: string
+  nodeName?: string
+  nodeRole?: string
+}
+
+export interface NodeMTR {
+  containerState: string
+  target: string
+  protocol: string
+  port?: number
+  hops?: MTRHop[]
+  // pathLinkIds is the ordered set of links connecting consecutive
+  // resolved hops, for highlighting the measured path on the graph.
+  pathLinkIds?: string[]
+}
+
+// MTRPathScan groups several tcp/udp probe runs by the distinct ECMP
+// path each measured (GET .../nodes/{id}/mtr/scan): every run gets a
+// fresh ephemeral source port, so the fabric's 5-tuple hashing can
+// pick a different branch per run.
+export interface MTRScanPath {
+  hops?: MTRHop[]
+  pathLinkIds?: string[]
+  count: number
+}
+
+export interface MTRPathScan {
+  containerState: string
+  target: string
+  protocol: string
+  port?: number
+  samplesRun: number
+  paths?: MTRScanPath[]
+}
+
 // NodeBGP is the node's BGP configuration as derived by the FRR
 // compiler (GET .../nodes/{id}/bgp); empty for nodes without BGP.
 export interface BGPNeighbor {

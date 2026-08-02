@@ -112,6 +112,25 @@ service DCNetLab {
   rpc GetNodeFIB(GetNodeFIBRequest) returns (NodeFIB) {
     option (google.api.http) = {get: "/api/v1/labs/{lab_id}/nodes/{node_id}/fib"};
   }
+  // GetNodeMTR runs a one-shot mtr diagnostic probe from a deployed
+  // node toward a target (another lab node or an arbitrary
+  // address/hostname), reporting per-hop loss/latency statistics.
+  // Hops whose address is known to the lab's model resolve back to a
+  // node, letting the UI highlight the measured path on the topology
+  // graph.
+  rpc GetNodeMTR(GetNodeMTRRequest) returns (NodeMTR) {
+    option (google.api.http) = {get: "/api/v1/labs/{lab_id}/nodes/{node_id}/mtr"};
+  }
+  // ScanMTRPaths repeats an mtr probe several times to sample
+  // different ECMP branches: each run is a fresh process, so tcp/udp
+  // naturally gets a new ephemeral source port per run — the same
+  // 5-tuple hashing a real flow would use — varying which ECMP branch
+  // the fabric picks. Distinct paths are grouped with how many
+  // samples measured each one. icmp is rejected: it carries no port,
+  // so every run would hash to the same branch.
+  rpc ScanMTRPaths(ScanMTRPathsRequest) returns (MTRPathScan) {
+    option (google.api.http) = {get: "/api/v1/labs/{lab_id}/nodes/{node_id}/mtr/scan"};
+  }
   // GetNodeMetrics samples resource usage of one server live from
   // its agent, node-exporter style: CPU, memory, load, filesystem,
   // disk I/O and per-interface network.
@@ -1524,6 +1543,97 @@ message GetNodeFIBRequest {
 message NodeFIB {
   string container_state = 1;
   repeated Route routes = 2;
+}
+
+message GetNodeMTRRequest {
+  string lab_id = 1;
+  string node_id = 2;
+  // target_node_id probes another node of the same lab, resolved to
+  // its reachable address (loopback for routers, bond0 for servers).
+  // Wins over target when both are set.
+  string target_node_id = 3;
+  // target is a free-form address or hostname, for probing outside
+  // the lab (e.g. the real internet when internet access is enabled).
+  string target = 4;
+  // protocol selects the probe type: "icmp" (default), "tcp" or
+  // "udp".
+  string protocol = 5;
+  // port is the destination port for tcp/udp probes; ignored for
+  // icmp.
+  int32 port = 6;
+  // cycles is the number of probe rounds per hop (default 10, max
+  // 30).
+  int32 cycles = 7;
+}
+
+// MTRHop is one hop of a measured path, aggregated over all probe
+// cycles.
+message MTRHop {
+  int32 ttl = 1;
+  // host is the raw responding address, empty when every probe at
+  // this hop timed out.
+  string host = 2;
+  bool timeout = 3;
+  double loss_percent = 4;
+  int32 sent = 5;
+  double last_ms = 6;
+  double avg_ms = 7;
+  double best_ms = 8;
+  double worst_ms = 9;
+  double stddev_ms = 10;
+  // node_id/node_name/node_role are set when host resolves to a node
+  // of this lab's topology model.
+  string node_id = 11;
+  string node_name = 12;
+  string node_role = 13;
+}
+
+// NodeMTR is the result of one mtr diagnostic probe.
+message NodeMTR {
+  string container_state = 1;
+  string target = 2;
+  string protocol = 3;
+  int32 port = 4;
+  repeated MTRHop hops = 5;
+  // path_link_ids is the ordered set of link ids connecting
+  // consecutive resolved hops, for drawing the measured path on the
+  // topology graph.
+  repeated string path_link_ids = 6;
+}
+
+message ScanMTRPathsRequest {
+  string lab_id = 1;
+  string node_id = 2;
+  string target_node_id = 3;
+  string target = 4;
+  // protocol must be "tcp" or "udp"; icmp is rejected (see
+  // ScanMTRPaths).
+  string protocol = 5;
+  int32 port = 6;
+  // samples is how many independent mtr runs to make (default 8, max
+  // 20).
+  int32 samples = 7;
+  // cycles is the probe rounds per sample (default 3, max 10) — kept
+  // low since the total scan time is samples * cycles.
+  int32 cycles = 8;
+}
+
+// MTRScanPath is one distinct path observed while scanning; count is
+// how many of the samples measured it.
+message MTRScanPath {
+  repeated MTRHop hops = 1;
+  repeated string path_link_ids = 2;
+  int32 count = 3;
+}
+
+// MTRPathScan is the result of scanning for distinct ECMP paths.
+message MTRPathScan {
+  string container_state = 1;
+  string target = 2;
+  string protocol = 3;
+  int32 port = 4;
+  int32 samples_run = 5;
+  repeated MTRScanPath paths = 6;
 }
 
 message ListNodesRequest {

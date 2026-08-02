@@ -1,8 +1,14 @@
 package biz
 
 import (
+	"context"
+	"net/netip"
 	"slices"
+	"strconv"
 	"testing"
+
+	"github.com/ifantsai/dcnetlab/internal/model"
+	"github.com/ifantsai/dcnetlab/internal/runtime"
 )
 
 func TestParseRuntimeInterfaces(t *testing.T) {
@@ -206,5 +212,527 @@ func TestParseFIB(t *testing.T) {
 
 	if parseFIB([]byte("garbage")) != nil {
 		t.Error("garbage input should yield no routes")
+	}
+}
+
+func TestMTRArgs(t *testing.T) {
+	cases := []struct {
+		name     string
+		protocol string
+		port     int
+		want     []string
+	}{
+		{"icmp", MTRProtocolICMP, 0, []string{"mtr", "--report", "--json", "-4", "-n", "-c", "10", "10.0.0.1"}},
+		{"tcp", MTRProtocolTCP, 443, []string{"mtr", "--report", "--json", "-4", "-n", "-c", "10", "-T", "-P", "443", "10.0.0.1"}},
+		{"udp", MTRProtocolUDP, 53, []string{"mtr", "--report", "--json", "-4", "-n", "-c", "10", "-u", "-P", "53", "10.0.0.1"}},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := mtrArgs("10.0.0.1", c.protocol, c.port, 10)
+			if !slices.Equal(got, c.want) {
+				t.Errorf("got %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+func TestParseMTRHops(t *testing.T) {
+	// Trimmed `mtr --report --json -n` output: one hop resolving to a
+	// known node, one timing out, one reaching the target.
+	out := []byte(`{
+		"report": {
+			"mtr": {"src": "10.1.0.10", "dst": "10.1.0.30", "tests": 10},
+			"hubs": [
+				{"count": 0, "host": "10.0.0.1", "Loss%": 0.0, "Snt": 10, "Last": 0.4, "Avg": 0.5, "Best": 0.3, "Wrst": 0.9, "StDev": 0.1},
+				{"count": 1, "host": "???", "Loss%": 100.0, "Snt": 10, "Last": 0.0, "Avg": 0.0, "Best": 0.0, "Wrst": 0.0, "StDev": 0.0},
+				{"count": 2, "host": "10.1.0.30", "Loss%": 0.0, "Snt": 10, "Last": 1.1, "Avg": 1.2, "Best": 1.0, "Wrst": 1.5, "StDev": 0.2}
+			]
+		}
+	}`)
+
+	idx := &mtrNodeIndex{
+		byAddr: map[string]*model.Node{
+			"10.0.0.1":  {Meta: model.ResourceMeta{ID: "n-spine", Name: "spine-1"}, Spec: model.NodeSpec{Role: model.RoleSpine}},
+			"10.1.0.30": {Meta: model.ResourceMeta{ID: "n-leaf-b", Name: "leaf-b"}, Spec: model.NodeSpec{Role: model.RoleLeaf}},
+		},
+		byPair: map[string]string{},
+	}
+
+	hops := parseMTRHops(out, idx)
+	if len(hops) != 3 {
+		t.Fatalf("got %d hops, want 3: %+v", len(hops), hops)
+	}
+
+	if h := hops[0]; h.TTL != 1 || h.Timeout || h.NodeID != "n-spine" || h.NodeName != "spine-1" || h.NodeRole != string(model.RoleSpine) || h.AvgMs != 0.5 {
+		t.Errorf("hop 1: %+v", h)
+	}
+
+	if h := hops[1]; !h.Timeout || h.NodeID != "" || h.LossPercent != 100 {
+		t.Errorf("hop 2 (timeout): %+v", h)
+	}
+
+	if h := hops[2]; h.Timeout || h.NodeID != "n-leaf-b" || h.WorstMs != 1.5 {
+		t.Errorf("hop 3: %+v", h)
+	}
+
+	if parseMTRHops([]byte("garbage"), idx) != nil {
+		t.Error("garbage input should yield no hops")
+	}
+}
+
+func TestBuildMTRIndexAndPath(t *testing.T) {
+	spine := &model.Node{
+		Meta: model.ResourceMeta{ID: "n-spine", Name: "spine-1"},
+		Spec: model.NodeSpec{Role: model.RoleSpine, RuntimeType: model.RuntimeFRR, Loopback: netip.MustParsePrefix("10.1.0.20/32")},
+	}
+
+	leafA := &model.Node{
+		Meta: model.ResourceMeta{ID: "n-leaf-a", Name: "leaf-a"},
+		Spec: model.NodeSpec{
+			Role: model.RoleLeaf, RuntimeType: model.RuntimeFRR,
+			Loopback: netip.MustParsePrefix("10.1.0.10/32"),
+			// A server's first hop out replies from the leaf's VLAN SVI,
+			// not its loopback — must resolve too (real-environment gap
+			// found probing from pod-1-rack-1-server-1: the leaf hop
+			// came back as 10.100.0.2, unresolved until this was added).
+			VlanIP: netip.MustParsePrefix("10.100.0.2/24"),
+		},
+	}
+
+	leafB := &model.Node{
+		Meta: model.ResourceMeta{ID: "n-leaf-b", Name: "leaf-b"},
+		Spec: model.NodeSpec{Role: model.RoleLeaf, RuntimeType: model.RuntimeFRR, Loopback: netip.MustParsePrefix("10.1.0.30/32")},
+	}
+
+	nodes := []*model.Node{spine, leafA, leafB}
+
+	link1 := &model.Link{
+		Meta: model.ResourceMeta{ID: "l-1"},
+		Spec: model.LinkSpec{
+			Kind:      model.LinkFabric,
+			EndpointA: model.LinkEndpoint{NodeID: leafA.Meta.ID, Address: netip.MustParsePrefix("10.0.0.0/31")},
+			EndpointB: model.LinkEndpoint{NodeID: spine.Meta.ID, Address: netip.MustParsePrefix("10.0.0.1/31")},
+		},
+	}
+
+	link2 := &model.Link{
+		Meta: model.ResourceMeta{ID: "l-2"},
+		Spec: model.LinkSpec{
+			Kind:      model.LinkFabric,
+			EndpointA: model.LinkEndpoint{NodeID: spine.Meta.ID, Address: netip.MustParsePrefix("10.0.0.2/31")},
+			EndpointB: model.LinkEndpoint{NodeID: leafB.Meta.ID, Address: netip.MustParsePrefix("10.0.0.3/31")},
+		},
+	}
+
+	links := []*model.Link{link1, link2}
+
+	idx := buildMTRIndex(nodes, links)
+
+	for addr, wantID := range map[string]string{
+		"10.1.0.20":  spine.Meta.ID,
+		"10.1.0.10":  leafA.Meta.ID,
+		"10.100.0.2": leafA.Meta.ID,
+		"10.0.0.0":   leafA.Meta.ID,
+		"10.0.0.1":   spine.Meta.ID,
+		"10.0.0.3":   leafB.Meta.ID,
+	} {
+		n, ok := idx.byAddr[addr]
+		if !ok || n.Meta.ID != wantID {
+			t.Errorf("byAddr[%s] = %v, want %s", addr, n, wantID)
+		}
+	}
+
+	if id, ok := idx.byPair[pairKey(spine.Meta.ID, leafB.Meta.ID)]; !ok || id != link2.Meta.ID {
+		t.Errorf("byPair(spine,leafB) = %s, want %s", id, link2.Meta.ID)
+	}
+
+	// mtr never lists the probing device itself as a hop, so the path
+	// must be seeded from it: leaf-a -[l-1]-> spine -> (unresolved
+	// timeout) -[l-2]-> leaf-b must highlight both links and skip
+	// cleanly over the gap.
+	hops := []MTRHop{
+		{NodeID: spine.Meta.ID},
+		{Timeout: true},
+		{NodeID: leafB.Meta.ID},
+	}
+
+	gotPath := mtrPathLinkIDs(leafA.Meta.ID, hops, idx)
+	wantPath := []string{link1.Meta.ID, link2.Meta.ID}
+	if !slices.Equal(gotPath, wantPath) {
+		t.Errorf("path = %v, want %v", gotPath, wantPath)
+	}
+}
+
+func TestMTRNodeAddress(t *testing.T) {
+	router := &model.Node{Spec: model.NodeSpec{RuntimeType: model.RuntimeFRR, Loopback: netip.MustParsePrefix("10.1.0.1/32")}}
+	if addr, ok := mtrNodeAddress(router); !ok || addr.String() != "10.1.0.1" {
+		t.Errorf("router address: %v, %v", addr, ok)
+	}
+
+	server := &model.Node{Spec: model.NodeSpec{Role: model.RoleServer, Address: netip.MustParsePrefix("10.100.0.11/24")}}
+	if addr, ok := mtrNodeAddress(server); !ok || addr.String() != "10.100.0.11" {
+		t.Errorf("server address: %v, %v", addr, ok)
+	}
+
+	if _, ok := mtrNodeAddress(&model.Node{}); ok {
+		t.Error("bare node should have no resolvable address")
+	}
+}
+
+// fakeMTRRepo satisfies both LabRepo and TopologyRepo with an
+// in-memory fixture; methods the RunMTR path never touches are
+// no-ops.
+type fakeMTRRepo struct {
+	lab   *model.Lab
+	nodes []*model.Node
+	links []*model.Link
+}
+
+func (r *fakeMTRRepo) CreateLab(*model.Lab) error                         { return nil }
+func (r *fakeMTRRepo) UpdateLab(*model.Lab) error                         { return nil }
+func (r *fakeMTRRepo) ListLabs() ([]*model.Lab, error)                    { return nil, nil }
+func (r *fakeMTRRepo) DeleteLab(string) error                             { return nil }
+func (r *fakeMTRRepo) ListNodes(string) ([]*model.Node, error)            { return r.nodes, nil }
+func (r *fakeMTRRepo) ListLinks(string) ([]*model.Link, error)            { return r.links, nil }
+func (r *fakeMTRRepo) ListAllocations(string) ([]model.Allocation, error) { return nil, nil }
+
+func (r *fakeMTRRepo) GetLab(id string) (*model.Lab, error) {
+	if r.lab == nil || r.lab.Meta.ID != id {
+		return nil, ErrNotFound
+	}
+
+	return r.lab, nil
+}
+
+// fakeMTRDriver runs the probing node as always up and returns a
+// canned mtr JSON report, recording the exact argv it was asked to
+// exec so tests can assert on protocol/port/cycles translation.
+type fakeMTRDriver struct {
+	runtime.Driver
+
+	report    []byte
+	reports   [][]byte // when set, cycled through across successive Exec calls instead of report
+	execErr   error
+	lastCmd   []string
+	execCount int
+	state     string // defaults to "running" when empty
+}
+
+func (d *fakeMTRDriver) NodeStates(ctx context.Context, labName string, names []string) (map[string]string, error) {
+	state := d.state
+	if state == "" {
+		state = "running"
+	}
+
+	states := make(map[string]string, len(names))
+	for _, n := range names {
+		states[n] = state
+	}
+
+	return states, nil
+}
+
+func (d *fakeMTRDriver) Exec(ctx context.Context, labName, nodeName string, cmd []string) ([]byte, error) {
+	d.lastCmd = cmd
+	d.execCount++
+
+	if d.execErr != nil {
+		return nil, d.execErr
+	}
+
+	if len(d.reports) > 0 {
+		return d.reports[(d.execCount-1)%len(d.reports)], nil
+	}
+
+	return d.report, nil
+}
+
+func setupMTR(t *testing.T) (*RuntimeUsecase, *fakeMTRDriver, *model.Node, *model.Node) {
+	t.Helper()
+
+	lab := &model.Lab{Meta: model.ResourceMeta{ID: "lab-1", Name: "lab-1", Generation: 1}}
+	probe := &model.Node{
+		Meta: model.ResourceMeta{ID: "n-probe", Name: "leaf-a"},
+		Spec: model.NodeSpec{Role: model.RoleLeaf, RuntimeType: model.RuntimeFRR, Loopback: netip.MustParsePrefix("10.1.0.10/32")},
+	}
+
+	target := &model.Node{
+		Meta: model.ResourceMeta{ID: "n-target", Name: "leaf-b"},
+		Spec: model.NodeSpec{Role: model.RoleLeaf, RuntimeType: model.RuntimeFRR, Loopback: netip.MustParsePrefix("10.1.0.30/32")},
+	}
+
+	repo := &fakeMTRRepo{lab: lab, nodes: []*model.Node{probe, target}}
+	driver := &fakeMTRDriver{report: []byte(`{"report":{"hubs":[]}}`)}
+	uc := NewRuntimeUsecase(repo, repo, driver, testLog())
+
+	return uc, driver, probe, target
+}
+
+func TestRunMTRValidation(t *testing.T) {
+	uc, _, probe, _ := setupMTR(t)
+	ctx := context.Background()
+
+	if _, err := uc.RunMTR(ctx, "lab-1", probe.Meta.ID, "", "8.8.8.8", "carrier-pigeon", 0, 10); err == nil {
+		t.Error("invalid protocol must be rejected")
+	}
+
+	if _, err := uc.RunMTR(ctx, "lab-1", probe.Meta.ID, "", "8.8.8.8", MTRProtocolTCP, 0, 10); err == nil {
+		t.Error("tcp probe without a port must be rejected")
+	}
+
+	if _, err := uc.RunMTR(ctx, "lab-1", probe.Meta.ID, "", "", "", 0, 10); err == nil {
+		t.Error("empty target must be rejected")
+	}
+}
+
+func TestRunMTRResolvesTargetNode(t *testing.T) {
+	uc, driver, probe, target := setupMTR(t)
+
+	result, err := uc.RunMTR(context.Background(), "lab-1", probe.Meta.ID, target.Meta.ID, "", MTRProtocolICMP, 0, 999)
+	if err != nil {
+		t.Fatalf("RunMTR: %v", err)
+	}
+
+	if result.Target != "10.1.0.30" {
+		t.Errorf("target = %q, want the resolved node's loopback", result.Target)
+	}
+
+	// cycles must be clamped to the cap, and the resolved target must
+	// be the final argv element.
+	if !slices.Contains(driver.lastCmd, "-c") {
+		t.Fatalf("exec argv missing -c: %v", driver.lastCmd)
+	}
+
+	if got := driver.lastCmd[len(driver.lastCmd)-1]; got != "10.1.0.30" {
+		t.Errorf("exec argv target = %q, want 10.1.0.30", got)
+	}
+
+	found := false
+	for i, a := range driver.lastCmd {
+		if a == "-c" && i+1 < len(driver.lastCmd) {
+			found = a != "" && driver.lastCmd[i+1] == "30"
+		}
+	}
+
+	if !found {
+		t.Errorf("cycles not clamped to 30: %v", driver.lastCmd)
+	}
+}
+
+func TestRunMTREndToEndPathResolution(t *testing.T) {
+	uc, driver, probe, target := setupMTR(t)
+
+	spine := &model.Node{
+		Meta: model.ResourceMeta{ID: "n-spine", Name: "spine-1"},
+		Spec: model.NodeSpec{Role: model.RoleSpine, RuntimeType: model.RuntimeFRR, Loopback: netip.MustParsePrefix("10.1.0.20/32")},
+	}
+
+	repo := uc.nodes.(*fakeMTRRepo)
+	repo.nodes = append(repo.nodes, spine)
+	repo.links = []*model.Link{
+		{
+			Meta: model.ResourceMeta{ID: "l-1"},
+			Spec: model.LinkSpec{
+				Kind:      model.LinkFabric,
+				EndpointA: model.LinkEndpoint{NodeID: probe.Meta.ID, Address: netip.MustParsePrefix("10.0.0.0/31")},
+				EndpointB: model.LinkEndpoint{NodeID: spine.Meta.ID, Address: netip.MustParsePrefix("10.0.0.1/31")},
+			},
+		},
+		{
+			Meta: model.ResourceMeta{ID: "l-2"},
+			Spec: model.LinkSpec{
+				Kind:      model.LinkFabric,
+				EndpointA: model.LinkEndpoint{NodeID: spine.Meta.ID, Address: netip.MustParsePrefix("10.0.0.2/31")},
+				EndpointB: model.LinkEndpoint{NodeID: target.Meta.ID, Address: netip.MustParsePrefix("10.0.0.3/31")},
+			},
+		},
+	}
+
+	driver.report = []byte(`{
+		"report": {
+			"hubs": [
+				{"host": "10.0.0.1", "Loss%": 0.0, "Snt": 10, "Last": 0.4, "Avg": 0.5, "Best": 0.3, "Wrst": 0.9, "StDev": 0.1},
+				{"host": "10.1.0.30", "Loss%": 0.0, "Snt": 10, "Last": 1.1, "Avg": 1.2, "Best": 1.0, "Wrst": 1.5, "StDev": 0.2}
+			]
+		}
+	}`)
+
+	result, err := uc.RunMTR(context.Background(), "lab-1", probe.Meta.ID, target.Meta.ID, "", MTRProtocolICMP, 0, 10)
+	if err != nil {
+		t.Fatalf("RunMTR: %v", err)
+	}
+
+	if len(result.Hops) != 2 || result.Hops[0].NodeID != spine.Meta.ID || result.Hops[1].NodeID != target.Meta.ID {
+		t.Fatalf("hops not resolved: %+v", result.Hops)
+	}
+
+	wantPath := []string{"l-1", "l-2"}
+	if !slices.Equal(result.PathLinkIDs, wantPath) {
+		t.Errorf("path = %v, want %v", result.PathLinkIDs, wantPath)
+	}
+}
+
+func TestRunMTRNotRunning(t *testing.T) {
+	uc, driver, probe, _ := setupMTR(t)
+	driver.state = "paused"
+
+	result, err := uc.RunMTR(context.Background(), "lab-1", probe.Meta.ID, "", "8.8.8.8", MTRProtocolICMP, 0, 10)
+	if err != nil {
+		t.Fatalf("RunMTR: %v", err)
+	}
+
+	if result.ContainerState != "paused" || result.Hops != nil {
+		t.Errorf("paused node must short-circuit before exec: %+v", result)
+	}
+
+	if driver.lastCmd != nil {
+		t.Error("paused node must not be exec'd into")
+	}
+}
+
+func TestRunMTRScanValidation(t *testing.T) {
+	uc, _, probe, target := setupMTR(t)
+	ctx := context.Background()
+
+	if _, err := uc.RunMTRScan(ctx, "lab-1", probe.Meta.ID, target.Meta.ID, "", MTRProtocolICMP, 0, 4, 3); err == nil {
+		t.Error("icmp scan must be rejected: it carries no port to vary the ECMP hash")
+	}
+
+	if _, err := uc.RunMTRScan(ctx, "lab-1", probe.Meta.ID, target.Meta.ID, "", MTRProtocolTCP, 0, 4, 3); err == nil {
+		t.Error("tcp scan without a port must be rejected")
+	}
+
+	if _, err := uc.RunMTRScan(ctx, "lab-1", probe.Meta.ID, "", "", MTRProtocolUDP, 53, 4, 3); err == nil {
+		t.Error("empty target must be rejected")
+	}
+}
+
+func TestRunMTRScanNotRunning(t *testing.T) {
+	uc, driver, probe, target := setupMTR(t)
+	driver.state = "paused"
+
+	result, err := uc.RunMTRScan(context.Background(), "lab-1", probe.Meta.ID, target.Meta.ID, "", MTRProtocolTCP, 80, 4, 3)
+	if err != nil {
+		t.Fatalf("RunMTRScan: %v", err)
+	}
+
+	if result.ContainerState != "paused" || result.Paths != nil || result.SamplesRun != 0 {
+		t.Errorf("paused node must short-circuit before exec: %+v", result)
+	}
+
+	if driver.execCount != 0 {
+		t.Error("paused node must not be exec'd into")
+	}
+}
+
+func TestRunMTRScanClampsSamplesAndCycles(t *testing.T) {
+	uc, driver, probe, target := setupMTR(t)
+
+	result, err := uc.RunMTRScan(context.Background(), "lab-1", probe.Meta.ID, target.Meta.ID, "", MTRProtocolUDP, 9000, 999, 999)
+	if err != nil {
+		t.Fatalf("RunMTRScan: %v", err)
+	}
+
+	if result.SamplesRun != maxMTRScanSamples {
+		t.Errorf("samples run = %d, want clamped %d", result.SamplesRun, maxMTRScanSamples)
+	}
+
+	found := false
+	for i, a := range driver.lastCmd {
+		if a == "-c" && i+1 < len(driver.lastCmd) {
+			found = driver.lastCmd[i+1] == strconv.Itoa(maxMTRScanCycles)
+		}
+	}
+
+	if !found {
+		t.Errorf("cycles not clamped to %d: %v", maxMTRScanCycles, driver.lastCmd)
+	}
+}
+
+// TestRunMTRScanGroupsDistinctPaths builds two ECMP branches (probe ->
+// spine-1 -> target and probe -> spine-2 -> target) and drives the
+// fake exec through a mixed sequence of both, asserting the scan
+// groups samples by the path they actually measured rather than just
+// counting runs.
+func TestRunMTRScanGroupsDistinctPaths(t *testing.T) {
+	uc, driver, probe, target := setupMTR(t)
+
+	spine1 := &model.Node{
+		Meta: model.ResourceMeta{ID: "n-spine-1", Name: "spine-1"},
+		Spec: model.NodeSpec{Role: model.RoleSpine, RuntimeType: model.RuntimeFRR, Loopback: netip.MustParsePrefix("10.1.0.20/32")},
+	}
+
+	spine2 := &model.Node{
+		Meta: model.ResourceMeta{ID: "n-spine-2", Name: "spine-2"},
+		Spec: model.NodeSpec{Role: model.RoleSpine, RuntimeType: model.RuntimeFRR, Loopback: netip.MustParsePrefix("10.1.0.21/32")},
+	}
+
+	repo := uc.nodes.(*fakeMTRRepo)
+	repo.nodes = append(repo.nodes, spine1, spine2)
+	repo.links = []*model.Link{
+		{
+			Meta: model.ResourceMeta{ID: "l-probe-spine1"},
+			Spec: model.LinkSpec{
+				Kind:      model.LinkFabric,
+				EndpointA: model.LinkEndpoint{NodeID: probe.Meta.ID, Address: netip.MustParsePrefix("10.0.1.0/31")},
+				EndpointB: model.LinkEndpoint{NodeID: spine1.Meta.ID, Address: netip.MustParsePrefix("10.0.1.1/31")},
+			},
+		},
+		{
+			Meta: model.ResourceMeta{ID: "l-spine1-target"},
+			Spec: model.LinkSpec{
+				Kind:      model.LinkFabric,
+				EndpointA: model.LinkEndpoint{NodeID: spine1.Meta.ID, Address: netip.MustParsePrefix("10.0.1.2/31")},
+				EndpointB: model.LinkEndpoint{NodeID: target.Meta.ID, Address: netip.MustParsePrefix("10.0.1.3/31")},
+			},
+		},
+		{
+			Meta: model.ResourceMeta{ID: "l-probe-spine2"},
+			Spec: model.LinkSpec{
+				Kind:      model.LinkFabric,
+				EndpointA: model.LinkEndpoint{NodeID: probe.Meta.ID, Address: netip.MustParsePrefix("10.0.2.0/31")},
+				EndpointB: model.LinkEndpoint{NodeID: spine2.Meta.ID, Address: netip.MustParsePrefix("10.0.2.1/31")},
+			},
+		},
+		{
+			Meta: model.ResourceMeta{ID: "l-spine2-target"},
+			Spec: model.LinkSpec{
+				Kind:      model.LinkFabric,
+				EndpointA: model.LinkEndpoint{NodeID: spine2.Meta.ID, Address: netip.MustParsePrefix("10.0.2.2/31")},
+				EndpointB: model.LinkEndpoint{NodeID: target.Meta.ID, Address: netip.MustParsePrefix("10.0.2.3/31")},
+			},
+		},
+	}
+
+	reportViaSpine1 := []byte(`{"report":{"hubs":[
+		{"host":"10.0.1.1","Loss%":0,"Snt":3,"Last":0.1,"Avg":0.1,"Best":0.1,"Wrst":0.1,"StDev":0},
+		{"host":"10.1.0.30","Loss%":0,"Snt":3,"Last":0.1,"Avg":0.1,"Best":0.1,"Wrst":0.1,"StDev":0}
+	]}}`)
+	reportViaSpine2 := []byte(`{"report":{"hubs":[
+		{"host":"10.0.2.1","Loss%":0,"Snt":3,"Last":0.1,"Avg":0.1,"Best":0.1,"Wrst":0.1,"StDev":0},
+		{"host":"10.1.0.30","Loss%":0,"Snt":3,"Last":0.1,"Avg":0.1,"Best":0.1,"Wrst":0.1,"StDev":0}
+	]}}`)
+	driver.reports = [][]byte{reportViaSpine1, reportViaSpine1, reportViaSpine2, reportViaSpine1}
+
+	result, err := uc.RunMTRScan(context.Background(), "lab-1", probe.Meta.ID, target.Meta.ID, "", MTRProtocolTCP, 8080, 4, 3)
+	if err != nil {
+		t.Fatalf("RunMTRScan: %v", err)
+	}
+
+	if result.SamplesRun != 4 {
+		t.Fatalf("samples run = %d, want 4", result.SamplesRun)
+	}
+
+	if len(result.Paths) != 2 {
+		t.Fatalf("got %d distinct paths, want 2: %+v", len(result.Paths), result.Paths)
+	}
+
+	if result.Paths[0].Count != 3 || !slices.Equal(result.Paths[0].PathLinkIDs, []string{"l-probe-spine1", "l-spine1-target"}) {
+		t.Errorf("path 1 (spine-1, 3 samples): %+v", result.Paths[0])
+	}
+
+	if result.Paths[1].Count != 1 || !slices.Equal(result.Paths[1].PathLinkIDs, []string{"l-probe-spine2", "l-spine2-target"}) {
+		t.Errorf("path 2 (spine-2, 1 sample): %+v", result.Paths[1])
 	}
 }

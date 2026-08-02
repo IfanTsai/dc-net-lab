@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Aim, Box, Document, Monitor, QuestionFilled, Search, TrendCharts, Warning } from '@element-plus/icons-vue'
+import { Aim, Box, Document, Monitor, Position, QuestionFilled, Search, TrendCharts, Warning } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useLabStore } from '../stores/lab'
 import { labApi } from '../api/lab'
 import { nodeCaptureInterfaces } from '../utils/capture'
 import { badgeColor, nodeBadge, roleColor } from '../utils/health'
-import type { FaultScenario, Link, LinkEndpoint, MetricsPoint, Node, NodeBGP, NodeBGPTable, NodeInventory, NodeMetrics, NodeRoutes, NodeRuntime } from '../types/models'
+import type { FaultScenario, Link, LinkEndpoint, MetricsPoint, MTRHop, MTRPathScan, Node, NodeBGP, NodeBGPTable, NodeInventory, NodeMetrics, NodeMTR, NodeRoutes, NodeRuntime } from '../types/models'
 import TopologyCanvas from '../components/TopologyCanvas.vue'
 import TerminalPanel from '../components/TerminalPanel.vue'
 import MetricsChart, { type ChartSeries } from '../components/MetricsChart.vue'
@@ -194,6 +194,8 @@ const nodeInventory = ref<NodeInventory | null>(null)
 const inventoryLoading = ref(false)
 const nodeMetrics = ref<NodeMetrics | null>(null)
 const metricsLoading = ref(false)
+const nodeMTR = ref<NodeMTR | null>(null)
+const mtrLoading = ref(false)
 
 // The routing tab folds the three route-table views (Loc-RIB → RIB
 // → FIB) behind one segmented switch so the tab bar stays readable.
@@ -221,6 +223,14 @@ watch(selectedNode, (node, prev) => {
     historyPoints.value = []
     historyIface.value = ''
     nodeBGP.value = null
+    // The measured paths belonged to the previous node's probes;
+    // stale highlights on the new node's drawer would misread as
+    // "this is its path" instead of "nothing has been probed yet".
+    nodeMTR.value = null
+    mtrPrevious.value = null
+    mtrScan.value = null
+    mtrFocusNodeId.value = ''
+    mtrTargetNodeId.value = ''
     if (node) void loadBGP(node)
   }
 })
@@ -725,6 +735,170 @@ async function quickEndpointCapture(ep: LinkEndpoint) {
   await startCapture(faultSlug(`${ep.nodeName}-${ep.interface}`), ep.nodeId, ep.interface)
 }
 
+// --- Diagnose (mtr): a one-shot probe, not an on-demand view like
+// BGP/routes/runtime — it only runs when the operator clicks "run",
+// mirroring the capture tab's quick-form pattern rather than
+// fetchView's load-on-tab-open one ---
+const mtrMode = ref<'single' | 'scan'>('single')
+const mtrTargetMode = ref<'node' | 'custom'>('node')
+const mtrTargetNodeId = ref('')
+const mtrTargetCustom = ref('')
+const mtrProtocol = ref('icmp')
+const mtrPort = ref<number>()
+const mtrCycles = ref(10)
+const mtrScanSamples = ref(8)
+// The run before the current one, kept for a before/after comparison
+// (e.g. inject a fault, probe again, see the path move): drawn dashed
+// and muted behind the current path.
+const mtrPrevious = ref<NodeMTR | null>(null)
+const mtrScan = ref<MTRPathScan | null>(null)
+const mtrFocusNodeId = ref('')
+
+// An ECMP scan needs a port for the fabric's 5-tuple hashing to vary;
+// entering scan mode steps an icmp selection up to tcp.
+watch(mtrMode, (mode) => {
+  if (mode === 'scan' && mtrProtocol.value === 'icmp') mtrProtocol.value = 'tcp'
+})
+
+const mtrTargetOptions = computed(() =>
+  store.nodes.filter((n) => n.meta.id !== selectedNode.value?.meta.id).map((n) => ({ label: n.meta.name, value: n.meta.id })),
+)
+
+// Distinct colours for simultaneously drawn ECMP branches; deep
+// violet first to match the single-path colour. All picked to stay
+// clear of the selection blue, the grey link state, and — since a
+// probe path is information, not a health signal — of the red/orange
+// hues this UI reserves for failed/degraded states.
+const mtrScanPalette = ['#722ed1', '#08979c', '#d48806', '#7cb305', '#1d39c4']
+
+// diagnosePaths feeds the canvas: scan mode shows every distinct
+// branch in its own colour; single mode shows the current path solid
+// magenta with the previous run dashed and muted behind it.
+const diagnosePaths = computed(() => {
+  if (mtrScan.value?.paths?.length) {
+    return mtrScan.value.paths.map((p, i) => ({
+      id: `scan-${i}`,
+      linkIds: p.pathLinkIds ?? [],
+      color: mtrScanPalette[i % mtrScanPalette.length],
+    }))
+  }
+
+  const paths = []
+  if (mtrPrevious.value?.pathLinkIds?.length) {
+    paths.push({ id: 'previous', linkIds: mtrPrevious.value.pathLinkIds, color: '#b37feb', dashed: true })
+  }
+
+  if (nodeMTR.value?.pathLinkIds?.length) {
+    paths.push({ id: 'current', linkIds: nodeMTR.value.pathLinkIds, color: '#722ed1' })
+  }
+
+  if (linkMTR.value?.pathLinkIds?.length) {
+    paths.push({ id: 'link', linkIds: linkMTR.value.pathLinkIds, color: '#722ed1' })
+  }
+
+  return paths
+})
+
+function validateMTRForm(): boolean {
+  if (mtrTargetMode.value === 'node' && !mtrTargetNodeId.value) return false
+  if (mtrTargetMode.value === 'custom' && !mtrTargetCustom.value) return false
+  if (mtrProtocol.value !== 'icmp' && !mtrPort.value) {
+    ElMessage.warning(t('mtr.portRequired'))
+    return false
+  }
+
+  return true
+}
+
+// runDiagnose runs a single probe; cycles = 1 is the quick-ping
+// preset (one round trip, fastest possible answer to "is it up").
+async function runDiagnose(cycles?: number) {
+  const node = selectedNode.value
+  if (!node || !store.currentLabId || !validateMTRForm()) return
+
+  mtrLoading.value = true
+  try {
+    const result = await labApi.nodeMTR(store.currentLabId, node.meta.id, {
+      targetNodeId: mtrTargetMode.value === 'node' ? mtrTargetNodeId.value : undefined,
+      target: mtrTargetMode.value === 'custom' ? mtrTargetCustom.value : undefined,
+      protocol: mtrProtocol.value,
+      port: mtrProtocol.value !== 'icmp' ? mtrPort.value : undefined,
+      cycles: cycles ?? mtrCycles.value,
+    })
+    mtrPrevious.value = nodeMTR.value
+    nodeMTR.value = result
+    mtrScan.value = null
+    mtrFocusNodeId.value = ''
+  } catch (e) {
+    ElMessage.error((e as Error).message)
+  } finally {
+    mtrLoading.value = false
+  }
+}
+
+async function runDiagnoseScan() {
+  const node = selectedNode.value
+  if (!node || !store.currentLabId || !validateMTRForm()) return
+
+  mtrLoading.value = true
+  try {
+    mtrScan.value = await labApi.nodeMTRScan(store.currentLabId, node.meta.id, {
+      targetNodeId: mtrTargetMode.value === 'node' ? mtrTargetNodeId.value : undefined,
+      target: mtrTargetMode.value === 'custom' ? mtrTargetCustom.value : undefined,
+      protocol: mtrProtocol.value,
+      port: mtrPort.value,
+      samples: mtrScanSamples.value,
+    })
+    nodeMTR.value = null
+    mtrPrevious.value = null
+    mtrFocusNodeId.value = ''
+  } catch (e) {
+    ElMessage.error((e as Error).message)
+  } finally {
+    mtrLoading.value = false
+  }
+}
+
+// Clicking a hop row highlights (and pans to) that device on the
+// canvas; clicking it again clears the halo.
+function toggleMTRFocus(row: MTRHop) {
+  if (!row.nodeId) return
+
+  mtrFocusNodeId.value = mtrFocusNodeId.value === row.nodeId ? '' : row.nodeId
+}
+
+// --- Link drawer diagnose: probe one endpoint from the other, the
+// quickest answer to "is this link's segment healthy" without picking
+// nodes in the form ---
+const linkMTR = ref<NodeMTR | null>(null)
+const linkMTRLoading = ref(false)
+const linkMTRFrom = ref('')
+
+async function probeLinkEndpoint(from: LinkEndpoint, to: LinkEndpoint) {
+  if (!store.currentLabId) return
+
+  linkMTRLoading.value = true
+  linkMTRFrom.value = from.nodeName
+  try {
+    linkMTR.value = await labApi.nodeMTR(store.currentLabId, from.nodeId, {
+      targetNodeId: to.nodeId,
+      protocol: 'icmp',
+      cycles: 5,
+    })
+  } catch (e) {
+    ElMessage.error((e as Error).message)
+  } finally {
+    linkMTRLoading.value = false
+  }
+}
+
+watch(selectedLink, (link, prev) => {
+  if (!link || link.meta.id !== prev?.meta.id) {
+    linkMTR.value = null
+    linkMTRFrom.value = ''
+  }
+})
+
 async function toggleFault(f: FaultScenario) {
   if (!store.currentLabId) return
 
@@ -804,6 +978,8 @@ async function deleteFault(f: FaultScenario) {
         v-else
         :nodes="store.nodes"
         :links="store.links"
+        :diagnose-paths="diagnosePaths"
+        :diagnose-focus-node-id="mtrFocusNodeId"
         @select-node="selectedNode = $event; selectedLink = null"
         @select-link="selectedLink = $event; selectedNode = null"
         @select-none="selectedNode = null; selectedLink = null"
@@ -1282,6 +1458,132 @@ async function deleteFault(f: FaultScenario) {
             </template>
           </el-tab-pane>
 
+          <el-tab-pane name="diagnose">
+            <template #label>
+              <span class="tab-label"><el-icon><Position /></el-icon>{{ t('mtr.title') }}</span>
+            </template>
+            <el-form label-width="90px">
+              <el-form-item :label="t('mtr.mode')">
+                <el-radio-group v-model="mtrMode">
+                  <el-radio-button value="single">{{ t('mtr.modeSingle') }}</el-radio-button>
+                  <el-radio-button value="scan">{{ t('mtr.modeScan') }}</el-radio-button>
+                </el-radio-group>
+              </el-form-item>
+              <el-form-item :label="t('mtr.targetMode')">
+                <el-radio-group v-model="mtrTargetMode">
+                  <el-radio-button value="node">{{ t('mtr.targetModeNode') }}</el-radio-button>
+                  <el-radio-button value="custom">{{ t('mtr.targetModeCustom') }}</el-radio-button>
+                </el-radio-group>
+              </el-form-item>
+              <el-form-item v-if="mtrTargetMode === 'node'" :label="t('common.name')">
+                <el-select v-model="mtrTargetNodeId" filterable style="width: 100%" :placeholder="t('mtr.pickTargetNode')">
+                  <el-option v-for="o in mtrTargetOptions" :key="o.value" :label="o.label" :value="o.value" />
+                </el-select>
+              </el-form-item>
+              <el-form-item v-else :label="t('common.name')">
+                <el-input v-model="mtrTargetCustom" :placeholder="t('mtr.targetCustomPlaceholder')" />
+              </el-form-item>
+              <el-form-item :label="t('mtr.protocol')">
+                <el-radio-group v-model="mtrProtocol">
+                  <el-radio-button value="icmp" :disabled="mtrMode === 'scan'">ICMP</el-radio-button>
+                  <el-radio-button value="tcp">TCP</el-radio-button>
+                  <el-radio-button value="udp">UDP</el-radio-button>
+                </el-radio-group>
+              </el-form-item>
+              <el-form-item v-if="mtrProtocol !== 'icmp'" :label="t('mtr.port')">
+                <el-input-number v-model="mtrPort" :min="1" :max="65535" controls-position="right" :placeholder="t('mtr.portPlaceholder')" />
+              </el-form-item>
+              <el-form-item v-if="mtrMode === 'single'" :label="t('mtr.cycles')">
+                <el-input-number v-model="mtrCycles" :min="1" :max="30" controls-position="right" />
+              </el-form-item>
+              <el-form-item v-else :label="t('mtr.scanSamples')">
+                <el-input-number v-model="mtrScanSamples" :min="2" :max="20" controls-position="right" />
+              </el-form-item>
+            </el-form>
+            <div class="capture-quick-footer">
+              <span class="sub">{{ mtrMode === 'scan' ? t('mtr.scanHint') : t('mtr.hint') }}</span>
+              <span>
+                <el-button
+                  v-if="mtrMode === 'single'"
+                  size="small"
+                  :loading="mtrLoading"
+                  :disabled="mtrTargetMode === 'node' ? !mtrTargetNodeId : !mtrTargetCustom"
+                  @click="runDiagnose(1)"
+                >
+                  {{ t('mtr.quickPing') }}
+                </el-button>
+                <el-button
+                  type="primary"
+                  size="small"
+                  :loading="mtrLoading"
+                  :disabled="mtrTargetMode === 'node' ? !mtrTargetNodeId : !mtrTargetCustom"
+                  @click="mtrMode === 'scan' ? runDiagnoseScan() : runDiagnose()"
+                >
+                  {{ mtrMode === 'scan' ? t('mtr.runScan') : t('mtr.run') }}
+                </el-button>
+              </span>
+            </div>
+
+            <template v-if="mtrScan">
+              <el-alert v-if="mtrScan.containerState !== 'running'" type="warning" :closable="false" show-icon :title="t('mtr.notRunning')" />
+              <template v-else>
+                <div class="sub mtr-scan-summary">{{ t('mtr.scanSummary', { paths: mtrScan.paths?.length ?? 0, samples: mtrScan.samplesRun }) }}</div>
+                <div v-for="(p, i) in mtrScan.paths ?? []" :key="i" class="mtr-scan-path">
+                  <div class="mtr-scan-path-header">
+                    <span class="mtr-path-swatch" :style="{ background: mtrScanPalette[i % mtrScanPalette.length] }" />
+                    <b>{{ t('mtr.scanPath', { n: i + 1 }) }}</b>
+                    <el-tag size="small" disable-transitions>{{ t('mtr.scanCount', { count: p.count }, p.count) }}</el-tag>
+                    <span class="sub">{{ (p.hops ?? []).filter((h) => h.nodeName).map((h) => h.nodeName).join(' → ') }}</span>
+                  </div>
+                </div>
+              </template>
+            </template>
+
+            <template v-else-if="nodeMTR">
+              <el-alert v-if="nodeMTR.containerState !== 'running'" type="warning" :closable="false" show-icon :title="t('mtr.notRunning')" />
+              <template v-else>
+                <div v-if="mtrPrevious" class="sub mtr-compare-hint">
+                  <span class="mtr-path-swatch" style="background: #722ed1" />{{ t('mtr.currentPath') }}
+                  <span class="mtr-path-swatch mtr-swatch-dashed" style="background: #b37feb" />{{ t('mtr.previousPath') }}
+                </div>
+                <el-table :data="nodeMTR.hops ?? []" size="small" class="mtr-hop-table" @row-click="toggleMTRFocus">
+                  <el-table-column :label="t('mtr.hop')" prop="ttl" width="50" />
+                  <el-table-column :label="t('mtr.device')" width="130">
+                    <template #default="{ row }">
+                      <span v-if="row.nodeName" :class="{ 'mtr-focused': row.nodeId === mtrFocusNodeId }">{{ row.nodeName }} <el-tag size="small" :color="roleColor[row.nodeRole]" effect="dark" disable-transitions>{{ row.nodeRole }}</el-tag></span>
+                      <span v-else class="sub">—</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column :label="t('mtr.host')" width="120">
+                    <template #default="{ row }">
+                      <span v-if="row.timeout" class="sub">{{ t('mtr.timeout') }}</span>
+                      <span v-else>{{ row.host }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column :label="t('mtr.loss')" width="70">
+                    <template #default="{ row }">{{ row.lossPercent?.toFixed(0) }}%</template>
+                  </el-table-column>
+                  <el-table-column :label="t('mtr.last')" width="70">
+                    <template #default="{ row }">{{ row.lastMs?.toFixed(1) }}</template>
+                  </el-table-column>
+                  <el-table-column :label="t('mtr.avg')" width="70">
+                    <template #default="{ row }">{{ row.avgMs?.toFixed(1) }}</template>
+                  </el-table-column>
+                  <el-table-column :label="t('mtr.best')" width="70">
+                    <template #default="{ row }">{{ row.bestMs?.toFixed(1) }}</template>
+                  </el-table-column>
+                  <el-table-column :label="t('mtr.worst')" width="70">
+                    <template #default="{ row }">{{ row.worstMs?.toFixed(1) }}</template>
+                  </el-table-column>
+                  <el-table-column :label="t('mtr.stddev')" width="70">
+                    <template #default="{ row }">{{ row.stddevMs?.toFixed(1) }}</template>
+                  </el-table-column>
+                </el-table>
+                <div class="sub mtr-row-hint">{{ t('mtr.rowClickHint') }}</div>
+              </template>
+            </template>
+          </el-tab-pane>
+
           <el-tab-pane name="fault">
             <template #label>
               <span class="tab-label"><el-icon><Warning /></el-icon>{{ t('faults.title') }}</span>
@@ -1392,6 +1694,46 @@ async function deleteFault(f: FaultScenario) {
         >
           {{ t('topology.l2NoAddress') }}
         </div>
+
+        <h4>{{ t('mtr.title') }}</h4>
+        <div class="fault-actions">
+          <el-button
+            size="small"
+            :loading="linkMTRLoading"
+            @click="probeLinkEndpoint(selectedLink.spec.endpointA, selectedLink.spec.endpointB)"
+          >
+            {{ t('mtr.probeEndpoint', { from: selectedLink.spec.endpointA.nodeName, to: selectedLink.spec.endpointB.nodeName }) }}
+          </el-button>
+          <el-button
+            size="small"
+            :loading="linkMTRLoading"
+            @click="probeLinkEndpoint(selectedLink.spec.endpointB, selectedLink.spec.endpointA)"
+          >
+            {{ t('mtr.probeEndpoint', { from: selectedLink.spec.endpointB.nodeName, to: selectedLink.spec.endpointA.nodeName }) }}
+          </el-button>
+        </div>
+        <template v-if="linkMTR">
+          <el-alert v-if="linkMTR.containerState !== 'running'" type="warning" :closable="false" show-icon :title="t('mtr.notRunning')" />
+          <el-table v-else :data="linkMTR.hops ?? []" size="small">
+            <el-table-column :label="t('mtr.hop')" prop="ttl" width="50" />
+            <el-table-column :label="t('mtr.device')">
+              <template #default="{ row }">
+                <span v-if="row.nodeName">{{ row.nodeName }}</span>
+                <span v-else-if="row.timeout" class="sub">{{ t('mtr.timeout') }}</span>
+                <span v-else>{{ row.host }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('mtr.loss')" width="70">
+              <template #default="{ row }">{{ row.lossPercent?.toFixed(0) }}%</template>
+            </el-table-column>
+            <el-table-column :label="t('mtr.avg')" width="80">
+              <template #default="{ row }">{{ row.avgMs?.toFixed(1) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('mtr.worst')" width="80">
+              <template #default="{ row }">{{ row.worstMs?.toFixed(1) }}</template>
+            </el-table-column>
+          </el-table>
+        </template>
 
         <h4>{{ t('faults.title') }}</h4>
         <div class="fault-actions">
@@ -1540,6 +1882,22 @@ h4::after { content: ''; flex: 1; height: 1px; background: var(--el-border-color
 .capture-quick-footer { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .fault-impairment { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
 .fault-impairment .el-input-number { width: 130px; }
+.mtr-path-swatch {
+  display: inline-block;
+  width: 18px;
+  height: 4px;
+  border-radius: 2px;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+.mtr-swatch-dashed { background-image: linear-gradient(90deg, transparent 33%, var(--el-bg-color) 33%, var(--el-bg-color) 66%, transparent 66%); }
+.mtr-compare-hint { display: flex; align-items: center; gap: 6px; margin: 8px 0 4px; }
+.mtr-scan-summary { margin: 8px 0 4px; }
+.mtr-scan-path { padding: 6px 0; border-bottom: 1px solid var(--el-border-color-lighter); }
+.mtr-scan-path-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mtr-hop-table :deep(.el-table__row) { cursor: pointer; }
+.mtr-focused { font-weight: 700; color: #722ed1; }
+.mtr-row-hint { margin-top: 4px; }
 </style>
 
 <style>
