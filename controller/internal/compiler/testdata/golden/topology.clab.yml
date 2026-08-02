@@ -9,6 +9,7 @@ topology:
                 - configs/leaf-a/frr.conf:/etc/frr/frr.conf
                 - configs/leaf-a/vtysh.conf:/etc/frr/vtysh.conf
             exec:
+                - sysctl -qw net.ipv4.fib_multipath_hash_policy=1
                 - ip route del default dev eth0
                 - ip link add br0 type bridge
                 - ip link set br0 type bridge vlan_filtering 1
@@ -32,6 +33,7 @@ topology:
                 - configs/leaf-b/frr.conf:/etc/frr/frr.conf
                 - configs/leaf-b/vtysh.conf:/etc/frr/vtysh.conf
             exec:
+                - sysctl -qw net.ipv4.fib_multipath_hash_policy=1
                 - ip route del default dev eth0
                 - ip link add br0 type bridge
                 - ip link set br0 type bridge vlan_filtering 1
@@ -71,6 +73,7 @@ topology:
                 - configs/spine-1/frr.conf:/etc/frr/frr.conf
                 - configs/spine-1/vtysh.conf:/etc/frr/vtysh.conf
             exec:
+                - sysctl -qw net.ipv4.fib_multipath_hash_policy=1
                 - ip route del default dev eth0
     links:
         - endpoints:

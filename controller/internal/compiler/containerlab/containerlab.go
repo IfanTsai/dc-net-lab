@@ -59,6 +59,22 @@ const startNodeAgent = `sh -c '` + nodeagentapi.StartAgentScript + `'`
 // their default route is set explicitly via ip route replace.
 const removeMgmtDefaultRoute = "ip route del default dev eth0"
 
+// enableL4ECMPHash switches the kernel's multipath nexthop selection
+// from its L3 default (source/destination address only) to 5-tuple
+// hashing. Real DC switches hash on the full 5-tuple, so two flows
+// between the same pair of hosts can ride different ECMP branches;
+// with the Linux default the port never enters the hash and every
+// flow between two hosts collapses onto one branch, which both
+// misrepresents fabric utilisation and makes the diagnose tab's ECMP
+// path scan (vary the source port, observe the branches) measure
+// nothing. Routers only: a real DC server ships with stock kernel
+// defaults (its forwarding-plane realism lives in the switches), and
+// our servers' active default route is the single-nexthop static via
+// the VRRP gateway anyway — the BGP ECMP default they hold is a
+// backup, where the L3-hash default is exactly how a stock Linux
+// host would behave.
+const enableL4ECMPHash = "sysctl -qw net.ipv4.fib_multipath_hash_policy=1"
+
 // Topology mirrors the subset of the Containerlab schema we emit.
 type Topology struct {
 	Name     string       `yaml:"name"`
@@ -140,6 +156,10 @@ func Compile(labName string, nodes []*model.Node, links []*model.Link, opts Opti
 			// with no other exec-time setup, but still need the
 			// management default route removed.
 			def.Exec = []string{removeMgmtDefaultRoute}
+		}
+
+		if n.Spec.Role != model.RoleServer {
+			def.Exec = append([]string{enableL4ECMPHash}, def.Exec...)
 		}
 
 		defs[n.Meta.Name] = def
