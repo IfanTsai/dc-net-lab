@@ -422,6 +422,7 @@ export default {
     pending: '待确认的扩缩容：{summary}',
     pendingHint: '虚线绿色为将新增的设备，红色为将删除的设备；预览变更后经计划确认才会执行。',
     discard: '放弃',
+    undo: '撤销',
     changeSep: '、',
     changes: {
       addPod: '新增 {n} 个 Pod',
@@ -436,6 +437,7 @@ export default {
   },
   topology: {
     title: '拓扑',
+    resetLayout: '恢复布局',
     selectLab: '选择实验',
     empty: '暂无拓扑，请先创建实验并应用变更计划。',
     driftBanner: '检测到 {count} 个节点有网络接口意外消失（不是你注入的故障）；若拓扑存在冗余路径，受影响节点当前仍可能保持连通。',

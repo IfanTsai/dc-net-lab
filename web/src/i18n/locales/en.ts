@@ -423,6 +423,7 @@ export default {
     pending: 'Pending scale changes: {summary}',
     pendingHint: 'Dashed green marks devices to be added, red marks devices to be removed; nothing happens until the change plan is previewed and applied.',
     discard: 'Discard',
+    undo: 'Undo',
     changeSep: ', ',
     changes: {
       addPod: 'add {n} pod(s)',
@@ -437,6 +438,7 @@ export default {
   },
   topology: {
     title: 'Topology',
+    resetLayout: 'Reset layout',
     selectLab: 'Select lab',
     empty: 'No topology. Create a lab and apply a plan first.',
     driftBanner: '{count} node(s) have interfaces that unexpectedly disappeared — not a fault you injected. If the topology has redundant paths, affected nodes may still be fully reachable.',

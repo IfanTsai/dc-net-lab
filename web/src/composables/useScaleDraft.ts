@@ -23,6 +23,9 @@ export function useScaleDraft(
   // an already-submitted preview.
   const baseline = ref<TopologySpec | null>(null)
   const submitted = ref(false)
+  // Draft snapshots taken before each edit; undo pops back through
+  // them and closes the draft when it reaches the baseline again.
+  const history = ref<TopologySpec[]>([])
 
   function cloneSpec(spec: TopologySpec): TopologySpec {
     return JSON.parse(JSON.stringify(spec))
@@ -42,8 +45,22 @@ export function useScaleDraft(
     draft.value = null
     baseline.value = null
     submitted.value = false
+    history.value = []
   }
 
+  // snapshot records the draft before one edit mutates it.
+  function snapshot() {
+    if (draft.value) history.value.push(cloneSpec(draft.value))
+  }
+
+  function undo() {
+    const prev = history.value.pop()
+    if (!prev) return
+    draft.value = prev
+    if (JSON.stringify(draft.value) === JSON.stringify(baseline.value)) discard()
+  }
+
+  const canUndo = computed(() => history.value.length > 0)
   const active = computed(() => draft.value !== null)
 
   // --- Pod lookup helpers -------------------------------------------------
@@ -101,12 +118,15 @@ export function useScaleDraft(
     const used = new Set(d.pods.map((p) => p.name))
     let n = 1
     while (used.has(`pod-${n}`)) n++
+    snapshot()
     d.pods.push({ name: `pod-${n}`, spines: 2, racks: 1, serversPerRack: 2 })
   }
 
   function removePod(pod: string) {
     const d = ensureDraft()
     if (!d || d.pods.length <= 1) return
+    if (!d.pods.some((p) => p.name === pod)) return
+    snapshot()
     d.pods = d.pods.filter((p) => p.name !== pod)
   }
 
@@ -114,7 +134,8 @@ export function useScaleDraft(
     const d = ensureDraft()
     if (!d) return
     const p = d.pods.find((x) => x.name === pod)
-    if (!p) return
+    if (!p || Math.max(1, p[field] + delta) === p[field]) return
+    snapshot()
     p[field] = Math.max(1, p[field] + delta)
   }
 
@@ -298,6 +319,8 @@ export function useScaleDraft(
     preview,
     ensureDraft,
     discard,
+    undo,
+    canUndo,
     addPod,
     removePod,
     bump,

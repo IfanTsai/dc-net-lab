@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/ifantsai/dcnetlab/internal/model"
@@ -23,6 +24,34 @@ type Store interface {
 type Step struct {
 	Name string
 	Fn   func(ctx context.Context) error
+	// Weight is the step's share of the progress bar, relative to the
+	// other steps' weights (zero means 1). Progress advances by
+	// completed weight, so a step that deploys containers can be worth
+	// ten bookkeeping steps and the bar tracks wall-clock reality
+	// instead of jumping at step boundaries.
+	Weight int
+}
+
+func (s Step) weight() int {
+	if s.Weight <= 0 {
+		return 1
+	}
+
+	return s.Weight
+}
+
+// reporterKey carries a step's sub-progress callback in its context.
+type reporterKey struct{}
+
+// Report publishes a running step's own progress as a fraction in
+// [0, 1]. Steps that loop over many items call it so the operation's
+// progress moves inside the step instead of stalling until the step
+// finishes. Outside a managed step it is a no-op, and reported
+// progress only ever moves the bar forward.
+func Report(ctx context.Context, frac float64) {
+	if fn, ok := ctx.Value(reporterKey{}).(func(float64)); ok {
+		fn(frac)
+	}
 }
 
 // Manager creates and executes operations.
@@ -64,8 +93,10 @@ func (m *Manager) Create(labID string, typ model.OperationType, res model.Resour
 // step. onDone (optional) runs after the final state is stored.
 func (m *Manager) Run(op *model.Operation, steps []Step, onDone func(failed error)) {
 	op.Steps = make([]model.OperationStep, len(steps))
+	total := 0
 	for i, s := range steps {
-		op.Steps[i] = model.OperationStep{Name: s.Name, State: model.OperationQueued}
+		op.Steps[i] = model.OperationStep{Name: s.Name, State: model.OperationQueued, Weight: s.weight()}
+		total += s.weight()
 	}
 
 	op.State = model.OperationRunning
@@ -76,13 +107,14 @@ func (m *Manager) Run(op *model.Operation, steps []Step, onDone func(failed erro
 		defer cancel()
 
 		var failed error
+		done := 0
 		for i, s := range steps {
 			now := time.Now().UTC()
 			op.Steps[i].State = model.OperationRunning
 			op.Steps[i].StartedAt = &now
 			m.persist(op)
 
-			err := s.Fn(ctx)
+			err := s.Fn(m.withReporter(ctx, op, done, s.weight(), total))
 			end := time.Now().UTC()
 			op.Steps[i].FinishedAt = &end
 			if err != nil {
@@ -96,7 +128,8 @@ func (m *Manager) Run(op *model.Operation, steps []Step, onDone func(failed erro
 			}
 
 			op.Steps[i].State = model.OperationSucceeded
-			op.Progress = (i + 1) * 100 / len(steps)
+			done += s.weight()
+			op.Progress = done * 100 / total
 			m.persist(op)
 		}
 
@@ -117,6 +150,36 @@ func (m *Manager) Run(op *model.Operation, steps []Step, onDone func(failed erro
 
 		m.persist(op)
 	}()
+}
+
+// withReporter arms the context with a Report callback that maps the
+// running step's own fraction onto the operation-wide progress. It
+// persists only when the integer percentage moves forward, so
+// chatty reporters (one call per pinged server) stay cheap, and a
+// concurrent step may report from several goroutines.
+func (m *Manager) withReporter(ctx context.Context, op *model.Operation, done, weight, total int) context.Context {
+	var mu sync.Mutex
+
+	return context.WithValue(ctx, reporterKey{}, func(frac float64) {
+		if frac < 0 {
+			frac = 0
+		}
+
+		if frac > 1 {
+			frac = 1
+		}
+
+		mu.Lock()
+		defer mu.Unlock()
+
+		p := (done*100 + int(frac*float64(weight*100))) / total
+		if p <= op.Progress {
+			return
+		}
+
+		op.Progress = p
+		m.persist(op)
+	})
 }
 
 func (m *Manager) persist(op *model.Operation) {

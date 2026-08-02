@@ -657,6 +657,7 @@ func operationToPB(op *model.Operation) *v1.Operation {
 			Name:       st.Name,
 			State:      string(st.State),
 			Message:    st.Message,
+			Weight:     int32(st.Weight),
 			StartedAt:  timePtrPB(st.StartedAt),
 			FinishedAt: timePtrPB(st.FinishedAt),
 		})

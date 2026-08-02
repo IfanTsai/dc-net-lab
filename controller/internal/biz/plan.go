@@ -405,7 +405,10 @@ func (uc *PlanUsecase) ApplyPlan(planID string) (*model.Operation, error) {
 			return uc.repo.SaveGeneration(lab.Meta.ID, plan.NewGeneration,
 				&DesiredStateSnapshot{Lab: lab, Nodes: nodes, Links: links})
 		}},
-		{Name: "DeployTopology", Fn: func(ctx context.Context) error {
+		// Weights pace the progress bar by measured wall-clock share: a
+		// full deploy dwarfs the bookkeeping steps, an incremental one
+		// less so, and the two validators dominate the tail.
+		{Name: "DeployTopology", Weight: deployWeight(baseSnap == nil), Fn: func(ctx context.Context) error {
 			if baseSnap == nil {
 				return uc.driver.Deploy(ctx, genDir)
 			}
@@ -438,10 +441,10 @@ func (uc *PlanUsecase) ApplyPlan(planID string) (*model.Operation, error) {
 		{Name: "ConnectInternet", Fn: func(ctx context.Context) error {
 			return uc.connectInternet(ctx, lab, nodes)
 		}},
-		{Name: "ValidateControlPlane", Fn: func(ctx context.Context) error {
+		{Name: "ValidateControlPlane", Weight: 4, Fn: func(ctx context.Context) error {
 			return uc.validateControlPlane(ctx, lab, nodes, links)
 		}},
-		{Name: "ValidateDataPlane", Fn: func(ctx context.Context) error {
+		{Name: "ValidateDataPlane", Weight: 5, Fn: func(ctx context.Context) error {
 			return uc.validateDataPlane(ctx, lab, nodes)
 		}},
 		// Fresh server containers boot without the capture tool (it is
@@ -495,6 +498,17 @@ func (uc *PlanUsecase) ApplyPlan(planID string) (*model.Operation, error) {
 	return op, nil
 }
 
+// deployWeight sizes the DeployTopology step for the progress bar: a
+// full containerlab deploy recreates every container, an incremental
+// one only touches the delta.
+func deployWeight(full bool) int {
+	if full {
+		return 12
+	}
+
+	return 5
+}
+
 // RepairLab re-attaches simulated interfaces the runtime lost outside
 // the platform's control (typically a host Docker daemon restart
 // dropping the veth pairs containerlab wired in — see docs/progress.md
@@ -532,16 +546,16 @@ func (uc *PlanUsecase) RepairLab(labID string) (*model.Operation, error) {
 
 	genDir := generationDir(uc.dataDir, lab.Meta.ID, lab.Meta.Generation)
 	steps := []operation.Step{
-		{Name: "DeployTopology", Fn: func(ctx context.Context) error {
+		{Name: "DeployTopology", Weight: deployWeight(true), Fn: func(ctx context.Context) error {
 			return uc.driver.Deploy(ctx, genDir)
 		}},
 		{Name: "ConnectInternet", Fn: func(ctx context.Context) error {
 			return uc.connectInternet(ctx, lab, nodes)
 		}},
-		{Name: "ValidateControlPlane", Fn: func(ctx context.Context) error {
+		{Name: "ValidateControlPlane", Weight: 4, Fn: func(ctx context.Context) error {
 			return uc.validateControlPlane(ctx, lab, nodes, links)
 		}},
-		{Name: "ValidateDataPlane", Fn: func(ctx context.Context) error {
+		{Name: "ValidateDataPlane", Weight: 5, Fn: func(ctx context.Context) error {
 			return uc.validateDataPlane(ctx, lab, nodes)
 		}},
 	}

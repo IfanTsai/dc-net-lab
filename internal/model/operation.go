@@ -24,11 +24,13 @@ const (
 	OperationCancelled OperationState = "Cancelled"
 )
 
-// OperationStep is one step in an operation's execution.
+// OperationStep is one step in an operation's execution. Weight is
+// the step's relative share of the operation's progress bar.
 type OperationStep struct {
 	Name       string         `json:"name"`
 	State      OperationState `json:"state"`
 	Message    string         `json:"message,omitempty"`
+	Weight     int            `json:"weight,omitempty"`
 	StartedAt  *time.Time     `json:"startedAt,omitempty"`
 	FinishedAt *time.Time     `json:"finishedAt,omitempty"`
 }

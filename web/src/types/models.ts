@@ -330,6 +330,9 @@ export interface OperationStep {
   name: string
   state: string
   message?: string
+  // Relative share of the operation's progress; paces the bar
+  // between step boundaries.
+  weight?: number
   startedAt?: string
   finishedAt?: string
 }

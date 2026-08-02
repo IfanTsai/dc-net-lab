@@ -10,10 +10,17 @@ import (
 	"sort"
 	"strings"
 
+	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v3"
 
 	"github.com/ifantsai/dcnetlab/internal/runtime"
 )
+
+// incrementConcurrency bounds the parallel docker/containerlab
+// invocations within one increment phase. The operations inside a
+// phase are independent (different containers, different veth
+// pairs); the bound keeps the docker daemon comfortable.
+const incrementConcurrency = 8
 
 // incrementTopology mirrors the subset of the compiler's topology YAML
 // the incremental deploy needs: node definitions to create containers
@@ -72,47 +79,60 @@ func (d *ContainerlabDriver) DeployIncrement(ctx context.Context, dir string) er
 	}
 
 	for _, n := range inc.AddNodes {
-		def, ok := topo.Topology.Nodes[n]
-		if !ok {
+		if _, ok := topo.Topology.Nodes[n]; !ok {
 			return fmt.Errorf("node %s not in topology file", n)
 		}
-
-		if err := d.createNode(ctx, dir, inc.LabName, n, def); err != nil {
-			return err
-		}
 	}
 
-	for _, l := range inc.AddLinks {
-		if err := d.createVeth(ctx, inc.LabName, l); err != nil {
-			return err
-		}
+	// Each phase fans out: the items within one phase touch disjoint
+	// containers or veth pairs, so only the phase boundaries order the
+	// work.
+	if err := inPhase(ctx, inc.AddNodes, func(ctx context.Context, n string) error {
+		return d.createNode(ctx, dir, inc.LabName, n, topo.Topology.Nodes[n])
+	}); err != nil {
+		return err
 	}
 
-	for _, n := range inc.AddNodes {
-		if err := d.execCommands(ctx, inc.LabName, n, topo.Topology.Nodes[n].Exec); err != nil {
-			return err
-		}
+	if err := inPhase(ctx, inc.AddLinks, func(ctx context.Context, l runtime.IncrementLink) error {
+		return d.createVeth(ctx, inc.LabName, l)
+	}); err != nil {
+		return err
 	}
 
-	for _, n := range sortedKeys(inc.NodeExec) {
-		if err := d.execCommands(ctx, inc.LabName, n, inc.NodeExec[n]); err != nil {
-			return err
-		}
+	if err := inPhase(ctx, inc.AddNodes, func(ctx context.Context, n string) error {
+		return d.execCommands(ctx, inc.LabName, n, topo.Topology.Nodes[n].Exec)
+	}); err != nil {
+		return err
 	}
 
-	for _, n := range inc.ReloadNodes {
-		if err := d.reloadFRRConfig(ctx, dir, inc.LabName, n); err != nil {
-			return err
-		}
+	if err := inPhase(ctx, sortedKeys(inc.NodeExec), func(ctx context.Context, n string) error {
+		return d.execCommands(ctx, inc.LabName, n, inc.NodeExec[n])
+	}); err != nil {
+		return err
 	}
 
-	for _, n := range inc.RemoveNodes {
-		if err := d.removeNode(ctx, inc.LabName, n); err != nil {
-			return err
-		}
+	if err := inPhase(ctx, inc.ReloadNodes, func(ctx context.Context, n string) error {
+		return d.reloadFRRConfig(ctx, dir, inc.LabName, n)
+	}); err != nil {
+		return err
 	}
 
-	return nil
+	return inPhase(ctx, inc.RemoveNodes, func(ctx context.Context, n string) error {
+		return d.removeNode(ctx, inc.LabName, n)
+	})
+}
+
+// inPhase runs one increment phase's items concurrently with bounded
+// parallelism, returning the first error.
+func inPhase[T any](ctx context.Context, items []T, fn func(ctx context.Context, item T) error) error {
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(incrementConcurrency)
+
+	for _, item := range items {
+		g.Go(func() error { return fn(ctx, item) })
+	}
+
+	return g.Wait()
 }
 
 // createNode runs a new lab container the way containerlab would:

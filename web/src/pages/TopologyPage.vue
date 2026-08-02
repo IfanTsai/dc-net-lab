@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Aim, Box, Document, Monitor, Position, QuestionFilled, Search, TrendCharts, Warning } from '@element-plus/icons-vue'
+import { Aim, Box, Document, Monitor, Position, QuestionFilled, Refresh, Search, TrendCharts, Warning } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useLabStore } from '../stores/lab'
@@ -22,15 +22,30 @@ const { t } = useI18n()
 const selectedNode = ref<Node | null>(null)
 const selectedLink = ref<Link | null>(null)
 const terminal = ref<InstanceType<typeof TerminalPanel> | null>(null)
+const canvas = ref<InstanceType<typeof TopologyCanvas> | null>(null)
+
+// Ctrl/Cmd+Z steps the scale draft back while one is being edited
+// (not once its preview was submitted — the desired state already
+// moved on by then).
+function onScaleUndoKey(e: KeyboardEvent) {
+  if (!(e.ctrlKey || e.metaKey) || e.key !== 'z' || e.shiftKey) return
+  if (!scale.canUndo.value || scale.submitted.value) return
+  const target = e.target as HTMLElement | null
+  if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+  e.preventDefault()
+  scale.undo()
+}
 
 onMounted(async () => {
   document.addEventListener('click', closeScaleMenu)
+  document.addEventListener('keydown', onScaleUndoKey)
   if (store.labs.length === 0) await store.refreshLabs()
   await store.refreshTopology()
   store.startObserving()
 })
 onBeforeUnmount(() => {
   document.removeEventListener('click', closeScaleMenu)
+  document.removeEventListener('keydown', onScaleUndoKey)
   store.stopObserving()
 })
 
@@ -1100,6 +1115,9 @@ async function deleteFault(f: FaultScenario) {
     <div class="header">
       <h2>{{ t('topology.title') }} <span class="hint">{{ t('topology.doubleClickHint') }}</span></h2>
       <div class="header-actions">
+        <el-button v-if="store.nodes.length" :icon="Refresh" @click="canvas?.resetLayout()">
+          {{ t('topology.resetLayout') }}
+        </el-button>
         <el-button
           v-if="deployed"
           :type="labRunning ? 'danger' : 'success'"
@@ -1144,6 +1162,9 @@ async function deleteFault(f: FaultScenario) {
       <div class="scale-banner-body">
         <span class="scale-hint">{{ t('scale.pendingHint') }}</span>
         <span class="scale-actions">
+          <el-button size="small" :disabled="!scale.canUndo.value || scale.submitted.value" @click="scale.undo()">
+            {{ t('scale.undo') }}
+          </el-button>
           <el-button size="small" @click="discardScaleDraft">{{ t('scale.discard') }}</el-button>
           <el-button size="small" type="primary" :loading="scaleBusy" @click="previewScaleDraft">
             {{ t('labs.previewChanges') }}
@@ -1156,6 +1177,7 @@ async function deleteFault(f: FaultScenario) {
       <el-empty v-if="store.nodes.length === 0" :description="t('topology.empty')" />
       <TopologyCanvas
         v-else
+        ref="canvas"
         :nodes="store.nodes"
         :links="store.links"
         :diagnose-paths="diagnosePaths"

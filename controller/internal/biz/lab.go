@@ -224,7 +224,7 @@ func (uc *LabUsecase) DeleteLab(labID string) (*model.Operation, error) {
 
 	genDir := generationDir(uc.dataDir, lab.Meta.ID, lab.Meta.Generation)
 	steps := []operation.Step{
-		{Name: "DestroyTopology", Fn: func(ctx context.Context) error {
+		{Name: "DestroyTopology", Weight: 8, Fn: func(ctx context.Context) error {
 			if lab.Meta.Generation == 0 {
 				return nil // never applied, nothing running
 			}

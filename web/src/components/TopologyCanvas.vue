@@ -209,36 +209,102 @@ function render() {
     })
   }
 
-  // Position nodes tier by tier.
-  const tiers = new Map<number, Node[]>()
-  for (const n of props.nodes) {
-    const t = tierOrder[n.spec.role] ?? 5
-    if (!tiers.has(t)) tiers.set(t, [])
-    tiers.get(t)!.push(n)
-  }
-  const width = container.value?.clientWidth ?? 1200
-
+  // Position nodes tier by tier. A tier's x-space is not shared
+  // globally: pods get disjoint horizontal bands (and racks disjoint
+  // sub-bands inside their pod), so a pod's spines always sit above
+  // its own racks and the auto-fitted compound frames cannot overlap
+  // even when pods have different rack counts. Global tiers
+  // (external / dc-edge / superspine) spread over the full range.
   const stopped = downNodeIDs()
   const ifaceStates = interfaceStates()
 
-  for (const [tier, nodes] of tiers) {
-    nodes.sort((a, b) => a.meta.name.localeCompare(b.meta.name))
-    nodes.forEach((n, i) => {
-      const el = cy!.add({
-        group: 'nodes',
-        data: {
-          id: n.meta.id,
-          label: displayName(n),
-          role: n.spec.role,
-          icon: iconFor(n.spec.role, nodeBadge(n)),
-          ...(parentID(n) ? { parent: parentID(n) } : {}),
-        },
-        position: {
-          x: ((i + 1) * width) / (nodes.length + 1),
-          y: 80 + tier * 110,
-        },
+  const byName = (a: Node, b: Node) =>
+    a.meta.name.localeCompare(b.meta.name, undefined, { numeric: true })
+  const tierY = (role: string) => 80 + (tierOrder[role] ?? 5) * 110
+  const addNode = (n: Node, x: number, y: number) => {
+    const el = cy!.add({
+      group: 'nodes',
+      data: {
+        id: n.meta.id,
+        label: displayName(n),
+        role: n.spec.role,
+        icon: iconFor(n.spec.role, nodeBadge(n)),
+        ...(parentID(n) ? { parent: parentID(n) } : {}),
+      },
+      position: { x, y },
+    })
+    if (stopped.has(n.meta.id)) el.addClass('down')
+  }
+
+  const SLOT = 110 // width one device occupies in a row
+  const RACK_GAP = 40
+  const POD_GAP = 80
+
+  const globals: Node[] = []
+  const pods = new Map<string, { top: Node[]; racks: Map<string, { leaves: Node[]; servers: Node[] }> }>()
+  for (const n of props.nodes) {
+    const pod = n.spec.podId
+    if (!pod) {
+      globals.push(n)
+      continue
+    }
+
+    if (!pods.has(pod)) pods.set(pod, { top: [], racks: new Map() })
+    const p = pods.get(pod)!
+    const rack = n.spec.rackId
+    if (!rack) {
+      p.top.push(n)
+      continue
+    }
+
+    if (!p.racks.has(rack)) p.racks.set(rack, { leaves: [], servers: [] })
+    const r = p.racks.get(rack)!
+    ;(n.spec.role === 'leaf' ? r.leaves : r.servers).push(n)
+  }
+
+  const rackNum = (id: string) => Number(id.match(/(\d+)$/)?.[1] ?? 0)
+
+  // Measure each pod's band, then lay pods out left to right.
+  let x = 0
+  interface RackBand { leaves: Node[]; servers: Node[]; width: number }
+  for (const podId of [...pods.keys()].sort()) {
+    const p = pods.get(podId)!
+    const racks: RackBand[] = [...p.racks.keys()]
+      .sort((a, b) => rackNum(a) - rackNum(b))
+      .map((rid) => {
+        const r = p.racks.get(rid)!
+        return {
+          leaves: r.leaves.sort(byName),
+          servers: r.servers.sort(byName),
+          width: Math.max(r.leaves.length, r.servers.length, 2) * SLOT,
+        }
       })
-      if (stopped.has(n.meta.id)) el.addClass('down')
+    const racksWidth = racks.reduce((s, r) => s + r.width, 0) + RACK_GAP * Math.max(0, racks.length - 1)
+    const podWidth = Math.max(p.top.length * SLOT, racksWidth, SLOT)
+
+    p.top.sort(byName).forEach((n, i) => {
+      addNode(n, x + ((i + 1) * podWidth) / (p.top.length + 1), tierY(n.spec.role))
+    })
+    let rx = x + (podWidth - racksWidth) / 2
+    for (const r of racks) {
+      r.leaves.forEach((n, j) => addNode(n, rx + ((j + 1) * r.width) / (r.leaves.length + 1), tierY('leaf')))
+      r.servers.forEach((n, j) => addNode(n, rx + ((j + 1) * r.width) / (r.servers.length + 1), tierY(n.spec.role)))
+      rx += r.width + RACK_GAP
+    }
+
+    x += podWidth + POD_GAP
+  }
+
+  const totalWidth = Math.max(x - POD_GAP, SLOT)
+  const globalTiers = new Map<string, Node[]>()
+  for (const n of globals) {
+    if (!globalTiers.has(n.spec.role)) globalTiers.set(n.spec.role, [])
+    globalTiers.get(n.spec.role)!.push(n)
+  }
+
+  for (const [role, nodes] of globalTiers) {
+    nodes.sort(byName).forEach((n, i) => {
+      addNode(n, ((i + 1) * totalWidth) / (nodes.length + 1), tierY(role))
     })
   }
   for (const l of props.links) {
@@ -772,6 +838,12 @@ onBeforeUnmount(() => {
   resizeObserver?.disconnect()
   cy?.destroy()
 })
+
+// resetLayout recomputes the tiered layout from scratch — the escape
+// hatch after dragging nodes or frames into a mess. A full render
+// also re-applies ghosts, marks and diagnose overlays, then fits the
+// viewport.
+defineExpose({ resetLayout: render })
 </script>
 
 <template>
