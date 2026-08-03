@@ -70,6 +70,37 @@ wait_healthy() { # wait_healthy <base> <name> <log>
   return 1
 }
 
+# Anything but TIME-WAIT on a local port blocks bind. 50062/50063 sit
+# inside the kernel's ephemeral range (32768-60999), so any process's
+# *outgoing* connection can land on them and hold the port for its
+# lifetime (seen with a VS Code Server channel grabbing 50062 after a
+# WSL2 restart); fail up front with the culprit instead of dying
+# halfway through startup with a bare "address already in use".
+port_in_use() {
+  ss -Htan "sport = :$1" 2>/dev/null | awk '$1 != "TIME-WAIT"' | grep -q .
+}
+
+require_free_ports() {
+  command -v ss >/dev/null 2>&1 || return 0
+  local p bad=0
+  for p in "$@"; do
+    if port_in_use "$p"; then
+      echo "port $p is already in use:" >&2
+      ss -Htanp "sport = :$p" 2>/dev/null | sed 's/^/  /' >&2
+      bad=1
+    fi
+  done
+  [ "$bad" = 0 ] && return 0
+  cat >&2 <<'EOF'
+free the ports above, then run "up" again. If an ephemeral-range port
+(50062/50063) was grabbed by another process's outgoing connection,
+reserve the platform ports once so the kernel stops handing them out:
+  sudo sysctl -w net.ipv4.ip_local_reserved_ports=50062,50063
+  echo 'net.ipv4.ip_local_reserved_ports=50062,50063' | sudo tee /etc/sysctl.d/99-dcnetlab-ports.conf
+EOF
+  exit 1
+}
+
 # containerlab drives Linux kernel APIs (netlink, network namespaces),
 # so real deployments cannot run on Darwin. On macOS with a non-noop
 # runtime, re-exec the whole command inside the OrbStack machine:
@@ -179,6 +210,13 @@ cmd_up() {
     exit 1
   fi
   mkdir -p "$RUN_DIR"
+
+  # 9090 (controller gRPC) and 50062 (package repository) are
+  # controller defaults not set by this script; keep in sync with
+  # controller/cmd/controller/main.go.
+  local ports=("${LISTEN##*:}" "${API_LISTEN##*:}" 9090 50062)
+  [ "$RUNTIME" != noop ] && ports+=("${AGENT_LISTEN##*:}")
+  require_free_ports "${ports[@]}"
 
   echo "building binaries..."
   (cd "$ROOT" && go build -o bin/dcnetlab-controller ./controller/cmd/controller)

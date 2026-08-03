@@ -68,6 +68,23 @@ else
   run sudo systemctl daemon-reload
 fi
 
+# The agent (50063) and package-repo (50062) listeners sit inside the
+# kernel's ephemeral port range; any process's outgoing connection can
+# land on them as its local port and block the listener with "bind:
+# address already in use". Reserving them only affects automatic
+# allocation — explicit binds are untouched.
+SYSCTL=/etc/sysctl.d/99-dcnetlab-ports.conf
+if run test -f "$SYSCTL"; then
+  echo "reserved ports: already configured"
+else
+  echo "reserving platform ports out of the ephemeral range..."
+  printf '%s\n' \
+    '# dcnetlab: keep outgoing connections off the platform listeners' \
+    'net.ipv4.ip_local_reserved_ports = 50062,50063' \
+    | run sudo tee "$SYSCTL" >/dev/null
+  run sudo sysctl -q --load "$SYSCTL"
+fi
+
 if has containerlab; then
   echo "containerlab: already installed"
 else
