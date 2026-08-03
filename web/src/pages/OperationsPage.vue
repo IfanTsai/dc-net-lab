@@ -5,14 +5,22 @@ import { useLabStore } from '../stores/lab'
 
 const store = useLabStore()
 const { t } = useI18n()
-let timer: ReturnType<typeof setInterval> | undefined
+// Fallback while the operations feed is down: the WebSocket pushes
+// every change, so this only fires when the socket is disconnected.
+let fallbackTimer: ReturnType<typeof setInterval> | undefined
 
 onMounted(async () => {
   if (store.labs.length === 0) await store.refreshLabs()
   await store.refreshOperations()
-  timer = setInterval(() => store.refreshOperations(), 2000)
+  store.acquireOperationsFeed()
+  fallbackTimer = setInterval(() => {
+    if (!store.opsFeedLive) void store.refreshOperations()
+  }, 3000)
 })
-onBeforeUnmount(() => timer && clearInterval(timer))
+onBeforeUnmount(() => {
+  store.releaseOperationsFeed()
+  if (fallbackTimer) clearInterval(fallbackTimer)
+})
 
 async function onLabChange(id: string) {
   await store.selectLab(id)

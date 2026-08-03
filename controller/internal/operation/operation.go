@@ -59,6 +59,9 @@ type Manager struct {
 	store   Store
 	log     *slog.Logger
 	timeout time.Duration
+
+	subMu sync.Mutex
+	subs  map[string]map[chan *model.Operation]struct{} // lab ID → subscriber channels
 }
 
 // NewManager creates a manager. timeout bounds one operation run.
@@ -67,7 +70,60 @@ func NewManager(st Store, log *slog.Logger, timeout time.Duration) *Manager {
 		timeout = 10 * time.Minute
 	}
 
-	return &Manager{store: st, log: log, timeout: timeout}
+	return &Manager{
+		store: st, log: log, timeout: timeout,
+		subs: make(map[string]map[chan *model.Operation]struct{}),
+	}
+}
+
+// Subscribe delivers every future state change of one lab's
+// operations as deep copies; cancel must be called to release the
+// subscription. A slow consumer misses intermediate updates but
+// always receives the newest one, so the terminal state cannot be
+// dropped.
+func (m *Manager) Subscribe(labID string) (<-chan *model.Operation, func()) {
+	ch := make(chan *model.Operation, 8)
+
+	m.subMu.Lock()
+	if m.subs[labID] == nil {
+		m.subs[labID] = make(map[chan *model.Operation]struct{})
+	}
+
+	m.subs[labID][ch] = struct{}{}
+	m.subMu.Unlock()
+
+	return ch, func() {
+		m.subMu.Lock()
+		delete(m.subs[labID], ch)
+		m.subMu.Unlock()
+	}
+}
+
+// publish fans a snapshot of op out to the lab's subscribers. When a
+// subscriber's buffer is full the oldest buffered update is dropped
+// in its favour: progress frames are cumulative, only the newest
+// matters.
+func (m *Manager) publish(op *model.Operation) {
+	m.subMu.Lock()
+	defer m.subMu.Unlock()
+
+	for ch := range m.subs[op.LabID] {
+		cp := op.Clone()
+		for {
+			select {
+			case ch <- cp:
+			default:
+				select {
+				case <-ch:
+				default:
+				}
+
+				continue
+			}
+
+			break
+		}
+	}
 }
 
 // Create persists a new queued operation.
@@ -85,6 +141,8 @@ func (m *Manager) Create(labID string, typ model.OperationType, res model.Resour
 	if err := m.store.CreateOperation(op); err != nil {
 		return nil, fmt.Errorf("persist operation: %w", err)
 	}
+
+	m.publish(op)
 
 	return op, nil
 }
@@ -186,4 +244,9 @@ func (m *Manager) persist(op *model.Operation) {
 	if err := m.store.UpdateOperation(op); err != nil {
 		m.log.Error("persist operation", "operation_id", op.ID, "error", err)
 	}
+
+	// Publish even when the store write failed: a lab deletion can
+	// cascade the row away before the final update lands, and
+	// subscribers still deserve the terminal frame.
+	m.publish(op)
 }

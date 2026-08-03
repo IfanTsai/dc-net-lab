@@ -57,6 +57,9 @@ type Collector struct {
 
 	mu        sync.Mutex
 	baselines map[string]statsLine // scenario ID → last processed stats line
+
+	subMu sync.Mutex
+	subs  map[string]map[chan struct{}]struct{} // lab ID → sweep tick subscribers
 }
 
 // NewCollector wires the traffic collector.
@@ -65,6 +68,42 @@ func NewCollector(store Store, agent Agent, driver runtime.Driver, stopper Stopp
 		store: store, agent: agent, driver: driver, stopper: stopper, history: history, log: log,
 		stop: make(chan struct{}), done: make(chan struct{}), now: time.Now,
 		baselines: make(map[string]statsLine),
+		subs:      make(map[string]map[chan struct{}]struct{}),
+	}
+}
+
+// Subscribe delivers a tick after every sweep of one deployed lab, so
+// a transport can push the freshly written scenario states; cancel
+// must be called to release the subscription. Ticks are conflated: a
+// slow consumer sees one tick, not a backlog.
+func (c *Collector) Subscribe(labID string) (<-chan struct{}, func()) {
+	ch := make(chan struct{}, 1)
+
+	c.subMu.Lock()
+	if c.subs[labID] == nil {
+		c.subs[labID] = make(map[chan struct{}]struct{})
+	}
+
+	c.subs[labID][ch] = struct{}{}
+	c.subMu.Unlock()
+
+	return ch, func() {
+		c.subMu.Lock()
+		delete(c.subs[labID], ch)
+		c.subMu.Unlock()
+	}
+}
+
+// notify wakes the lab's subscribers after a sweep.
+func (c *Collector) notify(labID string) {
+	c.subMu.Lock()
+	defer c.subMu.Unlock()
+
+	for ch := range c.subs[labID] {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
 	}
 }
 
@@ -115,6 +154,7 @@ func (c *Collector) sweep(ctx context.Context) {
 		}
 
 		c.sweepLab(ctx, lab, active)
+		c.notify(lab.Meta.ID)
 	}
 
 	c.history.Retain(active)

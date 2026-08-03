@@ -30,7 +30,60 @@ async function refresh() {
   }
 }
 
-let pollTimer: number | undefined
+// The traffic feed pushes the scenario list after every collector
+// sweep; the fallback poll only fires while the socket is down.
+let trafficSocket: WebSocket | null = null
+let feedLive = false
+let fallbackTimer: number | undefined
+
+function connectFeed() {
+  trafficSocket?.close()
+  trafficSocket = null
+  feedLive = false
+  if (!store.currentLabId) return
+
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+  const ws = new WebSocket(`${proto}://${location.host}/ws/v1/labs/${store.currentLabId}/traffic`)
+  trafficSocket = ws
+  ws.onopen = () => {
+    if (trafficSocket === ws) feedLive = true
+  }
+  ws.onmessage = (ev) => {
+    try {
+      const msg = JSON.parse(ev.data as string)
+      if (msg.type === 'scenarios') applyScenarios(msg.scenarios as TrafficScenario[])
+    } catch {
+      /* ignore malformed frames */
+    }
+  }
+  ws.onclose = () => {
+    if (trafficSocket === ws) {
+      feedLive = false
+      window.setTimeout(() => {
+        if (trafficSocket === ws) connectFeed()
+      }, 3000)
+    }
+  }
+}
+
+// applyScenarios merges a pushed list and, when the chart drawer is
+// open, appends the scenario's newest point so the curves move
+// without polling the history endpoint.
+function applyScenarios(list: TrafficScenario[]) {
+  scenarios.value = list
+
+  const open = chartScenario.value
+  if (!open) return
+  const fresh = list.find((s) => s.meta.id === open.meta.id)
+  if (!fresh) return
+
+  chartScenario.value = fresh
+  const p = fresh.status.lastPoint
+  const lastTs = historyPoints.value[historyPoints.value.length - 1]?.ts
+  if (p?.ts && Number(p.ts) > Number(lastTs ?? 0)) {
+    historyPoints.value = [...historyPoints.value, p]
+  }
+}
 
 onMounted(async () => {
   if (store.labs.length === 0) await store.refreshLabs()
@@ -38,15 +91,23 @@ onMounted(async () => {
   loading.value = true
   await refresh()
   loading.value = false
-  pollTimer = window.setInterval(refresh, 3000)
+  connectFeed()
+  fallbackTimer = window.setInterval(() => {
+    if (!feedLive) void refresh()
+  }, 3000)
 })
-onBeforeUnmount(() => window.clearInterval(pollTimer))
+onBeforeUnmount(() => {
+  window.clearInterval(fallbackTimer)
+  trafficSocket?.close()
+  trafficSocket = null
+})
 
 async function onLabChange(id: string) {
   await store.selectLab(id)
   loading.value = true
   await refresh()
   loading.value = false
+  connectFeed()
 }
 
 // --- create dialog ---
@@ -141,17 +202,16 @@ const usMs = (us?: string) => (us ? Number(us) / 1000 : 0)
 const chartScenario = ref<TrafficScenario | null>(null)
 const historyPoints = ref<TrafficPoint[]>([])
 const historyRange = ref(1800) // seconds; 30m default
-let chartTimer: number | undefined
 
+// The history endpoint seeds the series once; the traffic feed
+// appends live points from then on (applyScenarios).
 async function openChart(s: TrafficScenario) {
   chartScenario.value = s
   await refreshHistory()
-  chartTimer = window.setInterval(refreshHistory, 5000)
 }
 
 function closeChart() {
   chartScenario.value = null
-  window.clearInterval(chartTimer)
 }
 
 async function refreshHistory() {
@@ -168,7 +228,6 @@ async function refreshHistory() {
 }
 
 watch(historyRange, () => void refreshHistory())
-onBeforeUnmount(() => window.clearInterval(chartTimer))
 
 const toMs = (ts?: string) => Number(ts ?? 0) * 1000
 

@@ -61,3 +61,31 @@ type Operation struct {
 	CreatedAt time.Time       `json:"createdAt"`
 	UpdatedAt time.Time       `json:"updatedAt"`
 }
+
+// Clone returns a deep copy the caller may hand to another goroutine
+// while the executor keeps mutating the original.
+func (op *Operation) Clone() *Operation {
+	cp := *op
+
+	cp.Steps = make([]OperationStep, len(op.Steps))
+	for i, st := range op.Steps {
+		if st.StartedAt != nil {
+			t := *st.StartedAt
+			st.StartedAt = &t
+		}
+
+		if st.FinishedAt != nil {
+			t := *st.FinishedAt
+			st.FinishedAt = &t
+		}
+
+		cp.Steps[i] = st
+	}
+
+	if op.Error != nil {
+		e := *op.Error
+		cp.Error = &e
+	}
+
+	return &cp
+}

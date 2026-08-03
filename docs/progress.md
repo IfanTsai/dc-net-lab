@@ -331,6 +331,18 @@ containerlab 依赖 Linux 内核（netlink、网络命名空间），Darwin 无�
 - **真实环境验证**：API 驱动一轮真实扩缩容往返（+1 机柜 37 容器 → 缩回 32），采样断言进度单调不回退、每步耗时对比达标、存量容器 uptime 未变；Playwright 撤销 e2e 12 项断言全过（两次编辑 → 按钮撤销一步 → Ctrl+Z 归零横幅幽灵全清 → 空草稿 Ctrl+Z 无副作用，console 零错误）。
 - **一键恢复布局 + Pod 条带式分层布局**：拓扑页头新增「恢复布局」按钮——节点/框被拖乱后一键重排并 fit 视口（画布 `defineExpose` 出 `resetLayout`，即整体重渲染，幽灵/标红/诊断高亮一并重放）。布局算法同步治本：原先每个 tier 全局均分横向空间，Pod 间机柜数不对称时（如 3/2/1 柜）spine 行与机柜行横向错位，compound 框为包住孩子互相拉伸重叠；改为 **Pod 分横向条带、机柜在条带内再分子条带**——spine 永远居中在自家机柜上方，框天然不可能重叠；external/边界/superspine 全局层跨全宽居中。e2e 断言 fresh render 与打散后恢复的 Pod 框、机柜框两两不相交。
 
+### Operation 进度与 Traffic 指标实时推送（技术债清偿）
+
+把「迭代外技术债」第 1 条整体落地：Operation 进度与 Traffic 指标从 HTTP 轮询迁到既有 WebSocket 通道，UI 的进度条与流量曲线由推送驱动，轮询只在断线时兜底。
+
+- **两条新 WS 通道**（与 topology/captures 同风格的按用途通道）：`/ws/v1/labs/{labId}/operations` 连接即发全量快照（`type: "operations"`），此后每次状态变化推单个 Operation（`type: "operation"`）；`/ws/v1/labs/{labId}/traffic` 连接即发场景全量列表（`type: "scenarios"`），此后随 Traffic Collector 每 5 s 的 sweep 推送新列表——指标、断言结果与 duration 到期自动停止都在一个 sweep 内落到订阅者。帧内负载用与 REST 相同的转换器（`service.OperationToPB`/`TrafficScenarioToPB` 因此导出）+ Kratos 同款 protojson 选项（`EmitUnpopulated`）序列化，两条通路的 wire shape 永不漂移。
+- **operation.Manager 成为广播源**：`Subscribe(labID)` 按 lab 订阅，`Create` 与每次 `persist`（含 `Report` 的步内百分比推进——此前"整数百分比变化才落库"的节流现在同样节流了推送频率）发布 `model.Operation` 的深拷贝（新增 `Clone`，执行器随后的原地修改不会污染已发布帧）。慢消费者按"丢最旧、保最新"处理（buffer 满时挤掉最旧帧再入队），结构上保证终态帧不可能被丢弃；store 写失败仍然照常发布——DeleteLab 级联删掉 operation 行后，订阅者依然能收到最后的 Succeeded 帧（此前轮询端在这个场景只能拿 404 静默收场，推送反而更完整）。
+- **traffic.Collector 只广播 tick**：`Subscribe(labID)` 返回 conflated 的信号通道（buffer 1），sweep 完成后通知；WS handler 收到 tick 再经 biz 现查现转全量列表——单一事实来源仍是 SQLite 与既有 List 路径，collector 不做任何序列化。
+- **前端**：lab store 新增引用计数的共享 operations feed（`acquireOperationsFeed`/`releaseOperationsFeed`，多个消费者共用一条连接，切 lab 自动重连），Operations 页与 `OperationProgress` 组件（建实验/扩缩容/修复共用的进度卡）都改为消费 store 推送——进度条的渐近爬升动画保留，数据源从 500 ms 轮询换成推送；Traffic 页列表与图表抽屉改为订阅 traffic 通道，图表打开时先 REST 拉一次历史，之后由推送帧里的 `status.lastPoint` 增量追加（按 ts 去重）。三处均保留断线兜底：WS 断开期间以原频率轮询，3 s 重连。`powerLab`/`repairLab` 的等待循环保持 REST 轮询（有界控制流，非展示路径）。
+- **测试**：operation 侧覆盖订阅生命周期（Queued→Running→终态、进度单调、按 lab 隔离）、失败步骤的终态帧、store 写失败仍发布、cancel 停投递、慢消费者保最新帧、已发布帧与执行器隔离；traffic 侧覆盖 sweep 后 tick（未部署 lab 不 tick、conflation）与 cancel。
+- **真实环境验证**（dc1，32 容器 + Playwright Chromium）：API 侧按 operationId 严格追踪帧序列——真实 StopLab/StartLab 全程仅凭推送观测到 Queued→Running→Succeeded、进度单调（`0→0→0→100→100`）、快照 protojson 形状与 REST 一致；创建真实跨 Pod HTTP 流量场景（2 req/s，成功率 100%），推送帧里 `lastPoint.ts` 持续前移、停止删除无残留。UI 侧：Operations 页新行仅凭推送出现并到达终态、订阅期间对列表端点的 REST 请求为 0、Traffic 页 8 s 窗口（大于旧 3 s 轮询间隔）内零列表轮询、浏览器 console 零错误。
+- **验证脚本自身的一个教训**：首版 UI 断言用"页面文本包含 StopLab/Succeeded"判定完成，误匹配了历史列表里上一轮的同名成功行，导致 Stop/Start 两个操作间隔 40 ms 打进去赛跑（终态全暂停）。修正为按行数增量 + 最新行内容断言，并在脚本侧等操作真正终态再触发下一个——对着会累积历史的列表做断言，必须锚定"新增的那一行"。
+
 ### 控制面 / 数据面架构分离（agent）
 
 把此前"迭代外技术债"第 4 条整体落地（完整架构见 [architecture.md](architecture.md)）：
@@ -368,7 +380,7 @@ containerlab 依赖 Linux 内核（netlink、网络命名空间），Darwin 无�
 2. **管理网 IP 未在模型中分配**：containerlab 自管管理网络，管理 IP 暂未回填（Observer 已就绪，后续可补采）。
 3. **Observer 会纠正 phase**：突破设计"Observer 只写 Observed 状态"的原则，漂移时自动改写 node/lab phase（有意为之，换取免人工干预的状态收敛）。
 4. **采集周期**：设计 §13 的 2/3/5s 分表合并为 2s（容器状态）+ 6s（BGP/路由/接口）两档。
-5. **Operation 进度仍为 HTTP 轮询**：WebSocket 目前只覆盖拓扑观测，Operation 推送后续可迁移。
+5. ~~**Operation 进度仍为 HTTP 轮询**~~ ✅ 已迁移：Operation 与 Traffic 指标均改为 WebSocket 推送（见「Operation 进度与 Traffic 指标实时推送」），HTTP 轮询仅保留为断线兜底。
 6. **Daemon 未建独立资源**（设计 §9.7 的 `DaemonSpec` 内嵌 `ProgramSpec`）：存活 / 就绪检查、启动顺序等 Daemon 语义作为字段增量落在 `ProgramSpec` 上，"Daemon"即一种带健康检查的 simple Program——API、存储、agent 协议、UI 全部复用，迁移成本为零（有意为之，见"下一步计划"的建模决策）。
 7. **故障类型合并**：设计 §17 字面列了 Delay/Jitter/Loss/Rate Limit 四个独立故障类型，实现合并成一个 `impairment` 类型（字段可任意组合）——对齐 `tc netem` 本身"一张网卡一个 qdisc"的物理事实，四个独立类型并不能避免底层合并，只会把合并/回退逻辑转嫁给实现（有意为之，讨论阶段与用户对齐过，详见「故障注入子系统」）。
 8. **故障恢复不做快照结构**：设计 §17 要求"故障恢复必须基于故障前快照"，实现里同一 target 同一时刻只允许一个生效故障，Recover 恢复固定基线（接口 up / 无 qdisc / 容器 running）——当前平台里故障前状态永远是这个标准基线，二者事实等价，只是不存一份快照数据（有意为之，若未来要支持同一 target 叠加多个故障，需要重新引入真快照链）。
@@ -399,7 +411,7 @@ Auto Start 与 Restart Policy 已在"Program 的 systemd 化"一轮落地（`aut
 
 ### 迭代外技术债
 
-1. **Operation 进度仍为 HTTP 轮询**：Traffic 页面这轮同样保持轮询（列表 3 s、图表 5 s），未迁入现有 WebSocket 通道；故障实验若需要更低延迟的曲线联动，是把 Operation/Traffic 指标统一迁到 WebSocket 的合适时机。
+1. ~~**Operation 进度仍为 HTTP 轮询**~~ ✅ 已落地：Operation 与 Traffic 指标统一迁到 WebSocket 推送（详见上文「Operation 进度与 Traffic 指标实时推送」），前端仅在连接断开时回退轮询。
 2. **Package 格式扩展**：deb（需 Debian 系 server 镜像）与 OCI Image 作为 `format` 扩展位。It. 7 时与用户对齐**不搭车**——扩容装机复用现有 tar.gz 包通道即可，格式扩展等有真实使用场景（如在 lab 里装社区 deb 软件）再单独成轮；"集成进镜像"的预装通道梳理（capture 是否烤进 server 镜像）一并延后。
 3. **多 DC 互联**：dcedge 每 DC 独享、共享 external 骨干层；DC 间流量（目的 10/8）已在边界 NAT 规则中预留不做转换，对应真实 DCI 语义。
 4. ~~**控制面 / 数据面分离（宿主侧 runtime agent）**~~ ✅ 已落地：四处耦合（CLI 直调、bind mount 产物、管理网直拨、包回拉网关假设）全部由 agent 解开——产物随 Deploy RPC 传输、exec/终端走双向流、管理网访问走拨号代理、包拉取走 repo 反代（详见上文「控制面 / 数据面架构分离」与 [architecture.md](architecture.md)）。多宿主 / 多 DC 编排（一个 controller 管多个 agent）仍是后续项。

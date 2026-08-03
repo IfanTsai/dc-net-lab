@@ -182,3 +182,47 @@ func TestCollectorSweep_RetainsOnlyActiveScenarios(t *testing.T) {
 		t.Error("a scenario no longer listed by the store should be retained out of history")
 	}
 }
+
+func TestCollectorSweep_NotifiesSubscribers(t *testing.T) {
+	store := &fakeStore{labs: []*model.Lab{
+		deployedLab(),
+		{Meta: model.ResourceMeta{ID: "lab-2", Name: "undeployed", Generation: 0}},
+	}}
+	c := NewCollector(store, &fakeCollectorAgent{logs: map[string]string{}}, fakeCollectorDriver{}, &fakeStopper{}, NewHistory(), testLogger())
+
+	deployed, cancelDeployed := c.Subscribe("lab-1")
+	defer cancelDeployed()
+	undeployed, cancelUndeployed := c.Subscribe("lab-2")
+	defer cancelUndeployed()
+
+	c.sweep(context.Background())
+	c.sweep(context.Background()) // conflated into the single buffered tick
+
+	select {
+	case <-deployed:
+	default:
+		t.Error("expected a tick for the deployed lab after a sweep")
+	}
+
+	select {
+	case <-undeployed:
+		t.Error("an undeployed lab must not tick")
+	default:
+	}
+}
+
+func TestCollectorSubscribe_CancelStopsTicks(t *testing.T) {
+	store := &fakeStore{labs: []*model.Lab{deployedLab()}}
+	c := NewCollector(store, &fakeCollectorAgent{logs: map[string]string{}}, fakeCollectorDriver{}, &fakeStopper{}, NewHistory(), testLogger())
+
+	ticks, cancel := c.Subscribe("lab-1")
+	cancel()
+
+	c.sweep(context.Background())
+
+	select {
+	case <-ticks:
+		t.Error("no tick expected after cancel")
+	default:
+	}
+}

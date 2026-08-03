@@ -82,7 +82,7 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 	history := metrics.NewHistory(dc, log)
 	t.Cleanup(history.Close)
 	programs := biz.NewProgramUsecase(d, data.NewProgramAgent(runtime.NoopDriver{}, log), runtime.NoopDriver{}, packages, history, sc, log)
-	opsUC := biz.NewOperationUsecase(d, log)
+	opsUC := biz.NewOperationUsecase(d, ops, log)
 	power := biz.NewPowerUsecase(d, ops, runtime.NoopDriver{}, log)
 	rt := biz.NewRuntimeUsecase(d, d, runtime.NoopDriver{}, log)
 	trafficHistory := traffic.NewHistory()
@@ -100,7 +100,8 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 	obs := observer.New(d, runtime.NoopDriver{}, log)
 	// The Kratos HTTP server implements http.Handler, so the full
 	// transport stack (routing, codecs, error encoding) is under test.
-	srv := httptest.NewServer(NewHTTPServer(sc, svc, term, obs, history, captureUC, SlogLogger{S: log}))
+	collector := traffic.NewCollector(data.NewTrafficStore(d), data.NewTrafficAgent(data.NewProgramAgent(runtime.NoopDriver{}, log)), runtime.NoopDriver{}, trafficUC, trafficHistory, log)
+	srv := httptest.NewServer(NewHTTPServer(sc, svc, term, obs, history, captureUC, opsUC, trafficUC, collector, SlogLogger{S: log}))
 	t.Cleanup(srv.Close)
 
 	return srv, dataDir

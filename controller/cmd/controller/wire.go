@@ -17,6 +17,7 @@ import (
 	"github.com/ifantsai/dcnetlab/controller/internal/data"
 	"github.com/ifantsai/dcnetlab/controller/internal/metrics"
 	"github.com/ifantsai/dcnetlab/controller/internal/observer"
+	"github.com/ifantsai/dcnetlab/controller/internal/operation"
 	"github.com/ifantsai/dcnetlab/controller/internal/server"
 	"github.com/ifantsai/dcnetlab/controller/internal/service"
 	"github.com/ifantsai/dcnetlab/controller/internal/traffic"
@@ -36,8 +37,12 @@ func wireApp(*conf.Server, *conf.Data, klog.Logger, *slog.Logger) (*kratos.App, 
 		wire.Bind(new(server.TopologyWatcher), new(*observer.Observer)),
 		wire.Bind(new(server.MetricsSource), new(*metrics.History)),
 		wire.Bind(new(server.CaptureFeed), new(*biz.CaptureUsecase)),
+		wire.Bind(new(server.OperationFeed), new(*biz.OperationUsecase)),
+		wire.Bind(new(server.TrafficLister), new(*biz.TrafficUsecase)),
+		wire.Bind(new(server.TrafficTicker), new(*traffic.Collector)),
 		wire.Bind(new(biz.MetricsHistory), new(*metrics.History)),
 		wire.Bind(new(biz.TrafficHistory), new(*traffic.History)),
+		wire.Bind(new(biz.OperationBroadcaster), new(*operation.Manager)),
 		wire.Bind(new(traffic.Stopper), new(*biz.TrafficUsecase)),
 		newApp,
 	))

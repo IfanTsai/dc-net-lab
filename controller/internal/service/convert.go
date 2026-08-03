@@ -637,7 +637,9 @@ func planToPB(p *model.Plan) *v1.Plan {
 
 // --- Operation ---
 
-func operationToPB(op *model.Operation) *v1.Operation {
+// OperationToPB converts an operation for the API; exported because
+// the operations WebSocket pushes the same wire shape as REST.
+func OperationToPB(op *model.Operation) *v1.Operation {
 	pb := &v1.Operation{
 		Id:    op.ID,
 		LabId: op.LabID,
@@ -713,7 +715,10 @@ func trafficPointToPB(p model.TrafficPoint) *v1.TrafficPoint {
 	}
 }
 
-func trafficScenarioToPB(s *model.TrafficScenario) *v1.TrafficScenario {
+// TrafficScenarioToPB converts a traffic scenario for the API;
+// exported because the traffic WebSocket pushes the same wire shape
+// as REST.
+func TrafficScenarioToPB(s *model.TrafficScenario) *v1.TrafficScenario {
 	return &v1.TrafficScenario{
 		Meta: metaToPB(s.Meta),
 		Spec: &v1.TrafficScenarioSpec{

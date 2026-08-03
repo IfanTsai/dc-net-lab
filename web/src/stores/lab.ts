@@ -6,6 +6,11 @@ import type { Lab, Link, Node, Observation, Operation } from '../types/models'
 // proxies it.
 let obsSocket: WebSocket | null = null
 
+// The operations socket is shared by every consumer (operations page,
+// progress cards) and refcounted so the last one closes it.
+let opsSocket: WebSocket | null = null
+let opsFeedRefs = 0
+
 export const useLabStore = defineStore('lab', {
   state: () => ({
     labs: [] as Lab[],
@@ -15,6 +20,9 @@ export const useLabStore = defineStore('lab', {
     operations: [] as Operation[],
     loading: false,
     observing: false,
+    // Whether the operations WebSocket is connected; consumers poll
+    // as a fallback while it is not.
+    opsFeedLive: false,
   }),
   getters: {
     currentLab(state): Lab | undefined {
@@ -37,6 +45,7 @@ export const useLabStore = defineStore('lab', {
       this.currentLabId = id
       await this.refreshTopology()
       if (this.observing) this.startObserving()
+      if (opsFeedRefs > 0) this.connectOperationsFeed()
     },
     // startObserving subscribes to the lab's observation stream and
     // merges every sweep into nodes (fresh array: the canvas watches
@@ -113,6 +122,62 @@ export const useLabStore = defineStore('lab', {
     async refreshOperations() {
       if (!this.currentLabId) return
       this.operations = await labApi.operations(this.currentLabId)
+    },
+    // acquireOperationsFeed subscribes to the lab's operation stream
+    // (snapshot on connect, then every state change); consumers pair
+    // it with releaseOperationsFeed so the last one closes the socket.
+    acquireOperationsFeed() {
+      opsFeedRefs++
+      if (opsFeedRefs === 1) this.connectOperationsFeed()
+    },
+    releaseOperationsFeed() {
+      opsFeedRefs = Math.max(0, opsFeedRefs - 1)
+      if (opsFeedRefs === 0) {
+        this.opsFeedLive = false
+        opsSocket?.close()
+        opsSocket = null
+      }
+    },
+    connectOperationsFeed() {
+      opsSocket?.close()
+      opsSocket = null
+      this.opsFeedLive = false
+      if (!this.currentLabId) return
+
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+      const ws = new WebSocket(`${proto}://${location.host}/ws/v1/labs/${this.currentLabId}/operations`)
+      opsSocket = ws
+      ws.onopen = () => {
+        if (opsSocket === ws) this.opsFeedLive = true
+      }
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data as string)
+          if (msg.type === 'operations') this.operations = msg.operations as Operation[]
+          if (msg.type === 'operation') this.applyOperation(msg.operation as Operation)
+        } catch {
+          /* ignore malformed frames */
+        }
+      }
+      ws.onclose = () => {
+        // Reconnect while someone still holds the feed (e.g. after a
+        // controller restart); consumers poll in the meantime.
+        if (opsSocket === ws) {
+          this.opsFeedLive = false
+          setTimeout(() => {
+            if (opsFeedRefs > 0 && opsSocket === ws) this.connectOperationsFeed()
+          }, 3000)
+        }
+      }
+    },
+    applyOperation(op: Operation) {
+      const i = this.operations.findIndex((o) => o.id === op.id)
+      if (i >= 0) {
+        this.operations = this.operations.map((o) => (o.id === op.id ? op : o))
+      } else {
+        // New operations go first: the REST list is newest-first.
+        this.operations = [op, ...this.operations]
+      }
     },
     // powerLab starts/stops every device of the current lab and waits
     // for the async operation to finish before refreshing state.

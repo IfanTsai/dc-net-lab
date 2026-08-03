@@ -18,7 +18,7 @@ import (
 // observations) under /ws/v1 and the Prometheus scrape endpoint under
 // /metrics. The web UI lives in its own server (web/server), which
 // reverse-proxies these routes; the controller is API-only.
-func NewHTTPServer(c *conf.Server, svc *service.DCNetLabService, term TerminalOpener, watcher TopologyWatcher, msrc MetricsSource, capfeed CaptureFeed, logger log.Logger) *khttp.Server {
+func NewHTTPServer(c *conf.Server, svc *service.DCNetLabService, term TerminalOpener, watcher TopologyWatcher, msrc MetricsSource, capfeed CaptureFeed, opfeed OperationFeed, trlist TrafficLister, trticks TrafficTicker, logger log.Logger) *khttp.Server {
 	srv := khttp.NewServer(
 		khttp.Address(c.HTTPAddr),
 		khttp.Middleware(recovery.Recovery(), logging.Server(logger)),
@@ -28,6 +28,8 @@ func NewHTTPServer(c *conf.Server, svc *service.DCNetLabService, term TerminalOp
 	srv.HandleFunc("/ws/v1/labs/{labId}/nodes/{nodeId}/terminal", terminalHandler(term, logger))
 	srv.HandleFunc("/ws/v1/labs/{labId}/topology", topologyHandler(watcher))
 	srv.HandleFunc("/ws/v1/labs/{labId}/captures/{id}", captureHandler(capfeed))
+	srv.HandleFunc("/ws/v1/labs/{labId}/operations", operationsHandler(opfeed))
+	srv.HandleFunc("/ws/v1/labs/{labId}/traffic", trafficHandler(trlist, trticks))
 	srv.HandleFunc("/api/v1/labs/{labId}/captures/{id}/pcap", capturePcapHandler(capfeed))
 	srv.HandleFunc("/metrics", metricsHandler(msrc))
 

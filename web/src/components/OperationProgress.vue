@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { labApi } from '../api/lab'
+import { useLabStore } from '../stores/lab'
 import type { Operation } from '../types/models'
 
 const props = defineProps<{ operationId: string }>()
 const emit = defineEmits<{ done: [op: Operation] }>()
+
+const store = useLabStore()
 
 const op = ref<Operation | null>(null)
 // What the bar shows. The backend reports real progress (weighted
@@ -12,18 +15,31 @@ const op = ref<Operation | null>(null)
 // still creeps towards — never past — the running step's boundary,
 // so it moves instead of stalling and jumping.
 const displayed = ref(0)
-let timer: ReturnType<typeof setInterval> | undefined
+// Fallback while the operations feed is down; the WebSocket carries
+// every update otherwise.
+let fallbackTimer: ReturnType<typeof setInterval> | undefined
 let animTimer: ReturnType<typeof setInterval> | undefined
+let finished = false
+
+function consume(cur: Operation | null | undefined) {
+  if (!cur || finished) return
+  op.value = cur
+  if (cur.state === 'Succeeded' || cur.state === 'Failed' || cur.state === 'Cancelled') {
+    displayed.value = cur.progress
+    finished = true
+    stop()
+    emit('done', cur)
+  }
+}
+
+watch(
+  () => store.operations.find((o) => o.id === props.operationId),
+  (cur) => consume(cur),
+)
 
 async function poll() {
   try {
-    const cur = await labApi.getOperation(props.operationId)
-    op.value = cur
-    if (cur.state === 'Succeeded' || cur.state === 'Failed' || cur.state === 'Cancelled') {
-      displayed.value = cur.progress
-      stop()
-      emit('done', cur)
-    }
+    consume(await labApi.getOperation(props.operationId))
   } catch {
     // operation may already be gone after lab deletion
     stop()
@@ -59,18 +75,24 @@ function animate() {
 }
 
 function stop() {
-  if (timer) clearInterval(timer)
+  if (fallbackTimer) clearInterval(fallbackTimer)
   if (animTimer) clearInterval(animTimer)
-  timer = undefined
+  fallbackTimer = undefined
   animTimer = undefined
 }
 
 onMounted(() => {
-  poll()
-  timer = setInterval(poll, 500)
+  store.acquireOperationsFeed()
+  poll() // immediate first paint; the feed keeps it moving
+  fallbackTimer = setInterval(() => {
+    if (!store.opsFeedLive && !finished) void poll()
+  }, 2000)
   animTimer = setInterval(animate, 200)
 })
-onBeforeUnmount(stop)
+onBeforeUnmount(() => {
+  store.releaseOperationsFeed()
+  stop()
+})
 
 const stepIcon: Record<string, string> = {
   Succeeded: '✓',

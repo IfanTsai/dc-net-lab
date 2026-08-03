@@ -492,7 +492,7 @@ func (s *DCNetLabService) CreateTrafficScenario(ctx context.Context, req *v1.Cre
 		return nil, asAPIError(err)
 	}
 
-	return trafficScenarioToPB(sc), nil
+	return TrafficScenarioToPB(sc), nil
 }
 
 func (s *DCNetLabService) ListTrafficScenarios(ctx context.Context, req *v1.ListTrafficScenariosRequest) (*v1.ListTrafficScenariosReply, error) {
@@ -503,7 +503,7 @@ func (s *DCNetLabService) ListTrafficScenarios(ctx context.Context, req *v1.List
 
 	reply := &v1.ListTrafficScenariosReply{Scenarios: make([]*v1.TrafficScenario, 0, len(scenarios))}
 	for _, sc := range scenarios {
-		reply.Scenarios = append(reply.Scenarios, trafficScenarioToPB(sc))
+		reply.Scenarios = append(reply.Scenarios, TrafficScenarioToPB(sc))
 	}
 
 	return reply, nil
@@ -515,7 +515,7 @@ func (s *DCNetLabService) StartTrafficScenario(ctx context.Context, req *v1.Traf
 		return nil, asAPIError(err)
 	}
 
-	return trafficScenarioToPB(sc), nil
+	return TrafficScenarioToPB(sc), nil
 }
 
 func (s *DCNetLabService) StopTrafficScenario(ctx context.Context, req *v1.TrafficScenarioOpRequest) (*v1.TrafficScenario, error) {
@@ -524,7 +524,7 @@ func (s *DCNetLabService) StopTrafficScenario(ctx context.Context, req *v1.Traff
 		return nil, asAPIError(err)
 	}
 
-	return trafficScenarioToPB(sc), nil
+	return TrafficScenarioToPB(sc), nil
 }
 
 func (s *DCNetLabService) DeleteTrafficScenario(ctx context.Context, req *v1.TrafficScenarioOpRequest) (*v1.DeleteTrafficScenarioReply, error) {
@@ -746,7 +746,7 @@ func (s *DCNetLabService) GetOperation(ctx context.Context, req *v1.GetOperation
 		return nil, asAPIError(err)
 	}
 
-	return operationToPB(op), nil
+	return OperationToPB(op), nil
 }
 
 func (s *DCNetLabService) ListOperations(ctx context.Context, req *v1.ListOperationsRequest) (*v1.ListOperationsReply, error) {
@@ -757,7 +757,7 @@ func (s *DCNetLabService) ListOperations(ctx context.Context, req *v1.ListOperat
 
 	reply := &v1.ListOperationsReply{Operations: make([]*v1.Operation, 0, len(ops))}
 	for _, op := range ops {
-		reply.Operations = append(reply.Operations, operationToPB(op))
+		reply.Operations = append(reply.Operations, OperationToPB(op))
 	}
 
 	return reply, nil
